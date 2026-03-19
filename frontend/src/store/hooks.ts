@@ -372,6 +372,18 @@ export function useChapterSync() {
                   onProgressUpdate('生成完成', 100);
                 }
               } else if (message.type === 'done') {
+                // 生成完成，显示成功提示（在流式响应真正结束时）
+                // 检查是否真正有内容生成（避免上下文构建失败时误报成功）
+                if (fullContent && fullContent.length > 0) {
+                  if (analysisTaskId) {
+                    message.success('AI创作成功，正在分析章节内容...');
+                  } else {
+                    message.success('AI创作成功');
+                  }
+                } else {
+                  // 没有生成内容，可能是上下文构建失败或其他错误
+                  message.error('AI创作失败：未能生成有效内容，请检查日志');
+                }
                 // 生成完成，刷新章节数据
                 await refreshChapters();
               } else if (message.type === 'analysis_started') {

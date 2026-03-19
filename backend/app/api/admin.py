@@ -149,7 +149,7 @@ async def create_user(
                 )
                 db_user = result.scalar_one_or_none()
                 if db_user:
-                    db_user.is_admin = True
+                    db_user.is_admin = True  # type: ignore[assignment]
                     await session.commit()
                     new_user.is_admin = True
         
@@ -204,19 +204,19 @@ async def update_user(
             
             # 更新字段
             if data.display_name is not None:
-                db_user.display_name = data.display_name
+                db_user.display_name = data.display_name  # type: ignore[assignment]
             if data.avatar_url is not None:
-                db_user.avatar_url = data.avatar_url
+                db_user.avatar_url = data.avatar_url  # type: ignore[assignment]
             if data.trust_level is not None:
-                db_user.trust_level = data.trust_level
+                db_user.trust_level = data.trust_level  # type: ignore[assignment]
             if data.is_admin is not None:
                 # 检查是否是最后一个管理员
-                if db_user.is_admin and not data.is_admin:
+                if db_user.is_admin and not data.is_admin:  # type: ignore[misc]
                     all_users = await user_manager.get_all_users()
                     admin_count = sum(1 for u in all_users if u.is_admin)
                     if admin_count <= 1:
                         raise HTTPException(status_code=400, detail="不能取消最后一个管理员的权限")
-                db_user.is_admin = data.is_admin
+                db_user.is_admin = data.is_admin  # type: ignore[assignment]
             
             await session.commit()
             await session.refresh(db_user)
@@ -224,8 +224,11 @@ async def update_user(
         logger.info(f"管理员 {admin.user_id} 更新了用户 {user_id} 的信息")
         
         updated_user = await user_manager.get_user(user_id)
-        user_dict = updated_user.model_dump()
-        user_dict["is_active"] = updated_user.trust_level != -1
+        if updated_user:
+            user_dict = updated_user.model_dump()
+            user_dict["is_active"] = updated_user.trust_level != -1
+        else:
+            raise HTTPException(status_code=404, detail="用户不存在")
         
         return {
             "success": True,
@@ -270,10 +273,10 @@ async def toggle_user_status(
             
             if data.is_active:
                 # 启用用户：恢复trust_level为0（或之前的值）
-                db_user.trust_level = 0
+                db_user.trust_level = 0  # type: ignore[assignment]
             else:
                 # 禁用用户：设置trust_level为-1
-                db_user.trust_level = -1
+                db_user.trust_level = -1  # type: ignore[assignment]
             
             await session.commit()
         

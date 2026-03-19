@@ -1451,58 +1451,63 @@ async def generate_chapter_content_stream(
                     logger.info("未指定写作风格，使用原始提示词")
                 
                 # 🚀 根据大纲模式选择独立的上下文构建器
-                if outline_mode == 'one-to-one':
-                    # ========== 1-1模式：使用独立的简化构建器 ==========
-                    logger.info(f"🔧 [1-1模式] 使用 OneToOneContextBuilder")
-                    context_builder = OneToOneContextBuilder(
-                        memory_service=memory_service,
-                        foreshadow_service=foreshadow_service
-                    )
-                    chapter_context = await context_builder.build(
-                        chapter=current_chapter,
-                        project=project,
-                        outline=outline,
-                        user_id=current_user_id,
-                        db=db_session,
-                        target_word_count=target_word_count
-                    )
-                    
-                    # 日志输出统计信息
-                    logger.info(f"📊 [1-1模式] 上下文统计:")
-                    logger.info(f"  - 章节序号: {current_chapter.chapter_number}")
-                    logger.info(f"  - 大纲长度: {chapter_context.context_stats.get('outline_length', 0)} 字符")
-                    logger.info(f"  - 上一章内容: {chapter_context.context_stats.get('previous_content_length', 0)} 字符")
-                    logger.info(f"  - 角色信息: {chapter_context.context_stats.get('characters_length', 0)} 字符")
-                    logger.info(f"  - 伏笔提醒: {chapter_context.context_stats.get('foreshadow_length', 0)} 字符")
-                    logger.info(f"  - 相关记忆: {chapter_context.context_stats.get('memories_length', 0)} 字符")
-                    logger.info(f"  - 总长度: {chapter_context.context_stats.get('total_length', 0)} 字符")
-                else:
-                    # ========== 1-N模式：使用独立的完整构建器 ==========
-                    logger.info(f"🔧 [1-N模式] 使用 OneToManyContextBuilder")
-                    context_builder = OneToManyContextBuilder(
-                        memory_service=memory_service,
-                        foreshadow_service=foreshadow_service
-                    )
-                    chapter_context = await context_builder.build(
-                        chapter=current_chapter,
-                        project=project,
-                        outline=outline,
-                        user_id=current_user_id,
-                        db=db_session,
-                        style_content=style_content,
-                        target_word_count=target_word_count,
-                        temp_narrative_perspective=temp_narrative_perspective
-                    )
-                    
-                    # 日志输出统计信息
-                    logger.info(f"📊 [1-N模式] 上下文统计:")
-                    logger.info(f"  - 章节序号: {current_chapter.chapter_number}")
-                    logger.info(f"  - 衔接锚点: {chapter_context.context_stats.get('continuation_length', 0)} 字符")
-                    logger.info(f"  - 角色信息: {chapter_context.context_stats.get('characters_length', 0)} 字符")
-                    logger.info(f"  - 相关记忆: {chapter_context.context_stats.get('memories_length', 0)} 字符")
-                    logger.info(f"  - 故事骨架: {chapter_context.context_stats.get('skeleton_length', 0)} 字符")
-                    logger.info(f"  - 伏笔提醒: {chapter_context.context_stats.get('foreshadow_length', 0)} 字符")
-                    logger.info(f"  - 总长度: {chapter_context.context_stats.get('total_length', 0)} 字符")
+                try:
+                    if outline_mode == 'one-to-one':
+                        # ========== 1-1模式：使用独立的简化构建器 ==========
+                        logger.info(f"🔧 [1-1模式] 使用 OneToOneContextBuilder")
+                        context_builder = OneToOneContextBuilder(
+                            memory_service=memory_service,
+                            foreshadow_service=foreshadow_service
+                        )
+                        chapter_context = await context_builder.build(
+                            chapter=current_chapter,
+                            project=project,
+                            outline=outline,
+                            user_id=current_user_id,
+                            db=db_session,
+                            target_word_count=target_word_count
+                        )
+                        
+                        # 日志输出统计信息
+                        logger.info(f"📊 [1-1模式] 上下文统计:")
+                        logger.info(f"  - 章节序号: {current_chapter.chapter_number}")
+                        logger.info(f"  - 大纲长度: {chapter_context.context_stats.get('outline_length', 0)} 字符")
+                        logger.info(f"  - 上一章内容: {chapter_context.context_stats.get('previous_content_length', 0)} 字符")
+                        logger.info(f"  - 角色信息: {chapter_context.context_stats.get('characters_length', 0)} 字符")
+                        logger.info(f"  - 伏笔提醒: {chapter_context.context_stats.get('foreshadow_length', 0)} 字符")
+                        logger.info(f"  - 相关记忆: {chapter_context.context_stats.get('memories_length', 0)} 字符")
+                        logger.info(f"  - 总长度: {chapter_context.context_stats.get('total_length', 0)} 字符")
+                    else:
+                        # ========== 1-N模式：使用独立的完整构建器 ==========
+                        logger.info(f"🔧 [1-N模式] 使用 OneToManyContextBuilder")
+                        context_builder = OneToManyContextBuilder(
+                            memory_service=memory_service,
+                            foreshadow_service=foreshadow_service
+                        )
+                        chapter_context = await context_builder.build(
+                            chapter=current_chapter,
+                            project=project,
+                            outline=outline,
+                            user_id=current_user_id,
+                            db=db_session,
+                            style_content=style_content,
+                            target_word_count=target_word_count,
+                            temp_narrative_perspective=temp_narrative_perspective
+                        )
+                        
+                        # 日志输出统计信息
+                        logger.info(f"📊 [1-N模式] 上下文统计:")
+                        logger.info(f"  - 章节序号: {current_chapter.chapter_number}")
+                        logger.info(f"  - 衔接锚点: {chapter_context.context_stats.get('continuation_length', 0)} 字符")
+                        logger.info(f"  - 角色信息: {chapter_context.context_stats.get('characters_length', 0)} 字符")
+                        logger.info(f"  - 相关记忆: {chapter_context.context_stats.get('memories_length', 0)} 字符")
+                        logger.info(f"  - 故事骨架: {chapter_context.context_stats.get('skeleton_length', 0)} 字符")
+                        logger.info(f"  - 伏笔提醒: {chapter_context.context_stats.get('foreshadow_length', 0)} 字符")
+                        logger.info(f"  - 总长度: {chapter_context.context_stats.get('total_length', 0)} 字符")
+                except Exception as context_error:
+                    logger.error(f"❌ 构建章节上下文失败: {str(context_error)}", exc_info=True)
+                    yield await tracker.error(f"构建上下文失败: {str(context_error)}", 500)
+                    return
             
                 yield await tracker.loading("上下文构建完成", 0.8)
                 
@@ -1638,14 +1643,24 @@ async def generate_chapter_content_stream(
                 generate_kwargs = {
                     "prompt": prompt,
                     "system_prompt": system_prompt_with_style,
-                    "tool_choice": "required",
-                    "max_tokens": calculated_max_tokens  # 添加 max_tokens 限制
+                    "max_tokens": calculated_max_tokens,
+                    "auto_mcp": True
                 }
+                
+                # DeepSeek 等兼容 API 不支持 tools 和 tool_choice 参数
+                if custom_model and custom_model.startswith("deepseek"):
+                    generate_kwargs["auto_mcp"] = False
+                    # DeepSeek 模型限制 max_tokens 上限为 4096
+                    if calculated_max_tokens > 4096:
+                        calculated_max_tokens = 4096
+                        generate_kwargs["max_tokens"] = calculated_max_tokens
+                    logger.info(f"  DeepSeek 模型，已禁用 MCP 工具和 tool_choice，max_tokens 限制为 {calculated_max_tokens}")
+                elif custom_model:
+                    generate_kwargs["tool_choice"] = "required"
+                
                 if custom_model:
                     logger.info(f"  使用自定义模型: {custom_model}")
                     generate_kwargs["model"] = custom_model
-                    # 注意：这里使用用户配置的AI服务，模型参数会覆盖默认模型
-                    # 如果需要切换provider，需要在前端传递provider参数
                 
                 # === 生成阶段 ===
                 full_content = ""
@@ -3181,7 +3196,16 @@ async def generate_single_chapter_for_batch(
     # 如果传入了自定义模型，使用指定的模型
     if custom_model:
         generate_kwargs["model"] = custom_model
-        logger.info(f"  批量生成使用自定义模型: {custom_model}")
+        # DeepSeek 模型需要特殊处理
+        if custom_model.startswith("deepseek"):
+            generate_kwargs.pop("tool_choice", None)  # 移除 tool_choice
+            generate_kwargs["auto_mcp"] = False
+            # DeepSeek 模型限制 max_tokens 上限为 4096
+            if calculated_max_tokens > 4096:
+                generate_kwargs["max_tokens"] = 4096
+            logger.info(f"  批量生成 DeepSeek 模型，已禁用 MCP 工具和 tool_choice，max_tokens 限制为 {generate_kwargs['max_tokens']}")
+        else:
+            logger.info(f"  批量生成使用自定义模型: {custom_model}")
     
     # 批量生成中的流式生成（非SSE，不需要修改进度显示）
     async for chunk in ai_service.generate_text_stream(**generate_kwargs):

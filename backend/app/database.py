@@ -1,6 +1,6 @@
 """数据库连接和会话管理 - PostgreSQL 多用户数据隔离"""
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -64,7 +64,7 @@ async def get_engine(user_id: str):
             is_sqlite = 'sqlite' in settings.database_url.lower()
             
             # 基础引擎参数
-            engine_args = {
+            engine_args: Dict[str, Any] = {
                 "echo": settings.database_echo_pool,
                 "echo_pool": settings.database_echo_pool,
                 "future": True,
@@ -223,7 +223,7 @@ async def get_db(request: Request):
             except:
                 pass
 
-async def init_db(user_id: str = None):
+async def init_db(user_id: Optional[str] = None):
     """
     初始化数据库（已弃用）
     
@@ -333,12 +333,13 @@ async def get_database_stats():
     # 连接池使用率检查
     if pool_stats and "usage_percent" in pool_stats:
         usage = pool_stats["usage_percent"]
-        if usage > 90:
-            stats["health"]["status"] = "warning"
-            stats["health"]["warnings"].append(f"连接池使用率过高: {usage:.1f}%")
-        elif usage > 95:
-            stats["health"]["status"] = "critical"
-            stats["health"]["errors"].append(f"连接池几乎耗尽: {usage:.1f}%")
+        if isinstance(usage, (int, float)):
+            if usage > 90:
+                stats["health"]["status"] = "warning"
+                stats["health"]["warnings"].append(f"连接池使用率过高: {usage:.1f}%")
+            if usage > 95:
+                stats["health"]["status"] = "critical"
+                stats["health"]["errors"].append(f"连接池几乎耗尽: {usage:.1f}%")
     
     error_rate = (_session_stats["errors"] / max(_session_stats["created"], 1)) * 100
     if error_rate > 5:
@@ -351,7 +352,7 @@ async def get_database_stats():
     return stats
 
 
-async def check_database_health(user_id: str = None) -> dict:
+async def check_database_health(user_id: Optional[str] = None) -> dict:
     """检查数据库连接健康状态
     
     Args:

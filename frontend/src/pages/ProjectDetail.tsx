@@ -266,7 +266,7 @@ export default function ProjectDetail() {
     if (path.includes('/prompt-workshop')) return 'prompt-workshop';
     if (path.includes('/sponsor')) return 'sponsor';
     // if (path.includes('/polish')) return 'polish';
-    return 'sponsor'; // 默认选中赞助支持
+    return 'world-setting'; // 默认选中赞助支持
   }, [location.pathname]);
 
   if (loading || !currentProject) {
@@ -447,7 +447,7 @@ export default function ProjectDetail() {
                 }}>
                   <BookOutlined />
                 </div>
-                <span style={{ fontWeight: 600, fontSize: 16 }}>MuMuAINovel</span>
+                <span style={{ fontWeight: 600, fontSize: 16 }}>CloudEastNovel</span>
               </div>
             }
             placement="left"
@@ -543,7 +543,7 @@ export default function ProjectDetail() {
                         overflow: 'hidden',
                         textOverflow: 'ellipsis'
                       }}>
-                        MuMuAINovel
+                        CloudEastNovel
                       </span>
                     </div>
                     <Button

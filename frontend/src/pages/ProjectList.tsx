@@ -524,7 +524,7 @@ export default function ProjectList() {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis'
                   }}>
-                    MuMuAINovel
+                    CloudEastNovel
                   </span>
                 </div>
                 <Button
@@ -736,7 +736,7 @@ export default function ProjectList() {
               }}>
                 <BookOutlined />
               </div>
-              <span style={{ fontWeight: 600, fontSize: 16, fontFamily: token.fontFamily }}>MuMuAINovel</span>
+              <span style={{ fontWeight: 600, fontSize: 16, fontFamily: token.fontFamily }}>CloudEastNovel</span>
             </div>
           }
           placement="left"

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(pip install:*)",
+      "Bash(node_modules/.bin/eslint src:*)",
+      "Bash(npm run:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(.venv/Scripts/alembic current:*)",
+      "Bash(.venv/Scripts/alembic upgrade:*)",
+      "WebSearch"
+    ]
+  }
+}

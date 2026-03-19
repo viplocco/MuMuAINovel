@@ -103,7 +103,7 @@ export default function AppFooter({ sidebarWidth = 0 }: AppFooterProps) {
               type="text"
               size="small"
               icon={<GiftOutlined />}
-              onClick={() => window.open('https://mumuverse.space:1588/', '_blank')}
+              onClick={() => window.open('https://viplocco.cn/', '_blank')}
               style={{
                 color: token.colorTextSecondary,
                 fontSize: 11,

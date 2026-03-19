@@ -62,10 +62,10 @@ class UserPasswordManager:
             
             if pwd_record:
                 # 更新现有密码
-                pwd_record.username = username
-                pwd_record.password_hash = self._hash_password(actual_password)
-                pwd_record.has_custom_password = password is not None
-                pwd_record.updated_at = datetime.now()
+                pwd_record.username = username  # type: ignore[assignment]
+                pwd_record.password_hash = self._hash_password(actual_password)  # type: ignore[assignment]
+                pwd_record.has_custom_password = password is not None  # type: ignore[assignment]
+                pwd_record.updated_at = datetime.now()  # type: ignore[assignment]
             else:
                 # 创建新密码记录
                 pwd_record = UserPasswordModel(
@@ -105,7 +105,7 @@ class UserPasswordManager:
                 return False
             
             password_hash = self._hash_password(password)
-            return pwd_record.password_hash == password_hash
+            return pwd_record.password_hash == password_hash  # type: ignore[return-value]
     
     async def has_password(self, user_id: str) -> bool:
         """
@@ -148,7 +148,7 @@ class UserPasswordManager:
             if not pwd_record:
                 return False
             
-            return pwd_record.has_custom_password
+            return pwd_record.has_custom_password  # type: ignore[return-value]
     
     async def get_username(self, user_id: str) -> Optional[str]:
         """
@@ -171,7 +171,7 @@ class UserPasswordManager:
             if not pwd_record:
                 return None
             
-            return pwd_record.username
+            return pwd_record.username  # type: ignore[return-value]
 
 
 # 全局密码管理器实例

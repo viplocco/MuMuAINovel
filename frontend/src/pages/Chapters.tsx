@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { List, Button, Modal, Form, Input, Select, message, Empty, Space, Badge, Tag, Card, InputNumber, Alert, Radio, Descriptions, Collapse, Popconfirm, Pagination, theme } from 'antd';
+import { List, Button, Modal, Form, Input, Select, message, Empty, Space, Badge, Tag, Card, InputNumber, Alert, Radio, Descriptions, Collapse, Popconfirm, Pagination, theme, Typography } from 'antd';
 import { EditOutlined, FileTextOutlined, ThunderboltOutlined, LockOutlined, DownloadOutlined, SettingOutlined, FundOutlined, SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, RocketOutlined, StopOutlined, InfoCircleOutlined, CaretRightOutlined, DeleteOutlined, BookOutlined, FormOutlined, PlusOutlined, ReadOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useChapterSync } from '../store/hooks';
@@ -53,6 +53,8 @@ export default function Chapters() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isContinuing, setIsContinuing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [contentWordCount, setContentWordCount] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form] = Form.useForm();
   const [editorForm] = Form.useForm();
@@ -60,6 +62,7 @@ export default function Chapters() {
   const contentTextAreaRef = useRef<TextAreaRef>(null);
   const [writingStyles, setWritingStyles] = useState<WritingStyle[]>([]);
   const [selectedStyleId, setSelectedStyleId] = useState<number | undefined>();
+  const [lastSelectedStyleId, setLastSelectedStyleId] = useState<number | undefined>(); // 上一次选中的写作风格
   const [targetWordCount, setTargetWordCount] = useState<number>(getCachedWordCount);
   const [availableModels, setAvailableModels] = useState<Array<{ value: string, label: string }>>([]);
   const [selectedModel, setSelectedModel] = useState<string | undefined>();
@@ -470,6 +473,7 @@ export default function Chapters() {
       const defaultStyle = response.styles.find(s => s.is_default);
       if (defaultStyle) {
         setSelectedStyleId(defaultStyle.id);
+        setLastSelectedStyleId(defaultStyle.id); // 初始化上一次选择
       }
     } catch (error) {
       console.error('加载写作风格失败:', error);
@@ -787,6 +791,11 @@ export default function Chapters() {
       });
       setEditingId(id);
       setTemporaryNarrativePerspective(undefined); // 重置人称选择
+      setContentWordCount(chapter.content?.length || 0); // 初始化字数统计
+      // 如果没有选中写作风格，使用上一次的选中值
+      if (!selectedStyleId && lastSelectedStyleId) {
+        setSelectedStyleId(lastSelectedStyleId);
+      }
       setIsEditorOpen(true);
       // 打开编辑窗口时加载模型列表
       loadAvailableModels();
@@ -796,6 +805,7 @@ export default function Chapters() {
   const handleEditorSubmit = async (values: ChapterUpdate) => {
     if (!editingId || !currentProject) return;
 
+    setIsSaving(true);
     try {
       await updateChapter(editingId, values);
 
@@ -807,6 +817,8 @@ export default function Chapters() {
       setIsEditorOpen(false);
     } catch {
       message.error('保存失败');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -842,7 +854,7 @@ export default function Chapters() {
         temporaryNarrativePerspective  // 传递临时人称参数
       );
 
-      message.success('AI创作成功，正在分析章节内容...');
+      // 提示已移至 hooks.ts 的 done 事件处理中，确保在流式响应真正结束时显示
 
       // 如果返回了分析任务ID，启动轮询
       if (result?.analysis_task_id) {
@@ -2480,7 +2492,11 @@ export default function Chapters() {
         }}
         footer={null}
       >
-        <Form form={editorForm} layout="vertical" onFinish={handleEditorSubmit}>
+        <Form form={editorForm} layout="vertical" onFinish={handleEditorSubmit} onValuesChange={(_, allValues) => {
+          if (allValues.content !== undefined) {
+            setContentWordCount(allValues.content?.length || 0);
+          }
+        }}>
           {/* 章节标题和AI创作按钮 */}
           <Form.Item
             label="章节标题"
@@ -2529,7 +2545,10 @@ export default function Chapters() {
               <Select
                 placeholder="请选择写作风格"
                 value={selectedStyleId}
-                onChange={setSelectedStyleId}
+                onChange={(value) => {
+                  setSelectedStyleId(value);
+                  setLastSelectedStyleId(value); // 保存上一次的选择
+                }}
                 disabled={isGenerating}
                 status={!selectedStyleId ? 'error' : undefined}
               >
@@ -2640,7 +2659,11 @@ export default function Chapters() {
           </div>
 
           <Form.Item>
-            <Space style={{ width: '100%', justifyContent: 'flex-end', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center' }}>
+            <Space style={{ width: '100%', justifyContent: 'space-between', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center' }}>
+              {/* 字数统计 - 放在左侧 */}
+              <Typography.Text type="secondary">
+                {contentWordCount} 字
+              </Typography.Text>
               <Space style={{ width: isMobile ? '100%' : 'auto' }}>
                 <Button
                   onClick={() => {
@@ -2658,10 +2681,11 @@ export default function Chapters() {
                 <Button
                   type="primary"
                   htmlType="submit"
+                  loading={isSaving}
                   block={isMobile}
-                  disabled={isGenerating}
+                  disabled={isGenerating || isSaving}
                 >
-                  保存章节
+                  {isSaving ? '保存中...' : '保存章节'}
                 </Button>
               </Space>
             </Space>

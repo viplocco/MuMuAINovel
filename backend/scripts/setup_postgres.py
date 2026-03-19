@@ -25,16 +25,14 @@ import logging
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
-    import psycopg2
-    from psycopg2 import sql
-    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+    import psycopg  # type: ignore[import-not-found]
+    from psycopg import sql  # type: ignore[import-not-found]
 except ImportError:
-    print("❌ 缺少psycopg2依赖，正在安装...")
+    print("❌ 缺少psycopg依赖，正在安装...")
     import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "psycopg2-binary"])
-    import psycopg2
-    from psycopg2 import sql
-    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "psycopg[binary]"])
+    import psycopg  # type: ignore[import-not-found]
+    from psycopg import sql  # type: ignore[import-not-found]
 
 # 注意: 表结构应由 Alembic 管理
 from pathlib import Path
@@ -86,19 +84,19 @@ class PostgreSQLSetup:
         try:
             logger.info(f"🔌 连接到 PostgreSQL ({self.host}:{self.port})...")
             
-            self.conn = psycopg2.connect(
+            self.conn = psycopg.connect(
                 host=self.host,
                 port=self.port,
                 user=self.admin_user,
                 password=self.admin_password,
-                database="postgres"  # 连接到默认数据库
+                dbname="postgres"  # 连接到默认数据库
             )
-            self.conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-            
+            self.conn.autocommit = True
+
             logger.info(f"✅ 已连接到 PostgreSQL")
             return True
-            
-        except psycopg2.OperationalError as e:
+
+        except psycopg.OperationalError as e:
             logger.error(f"❌ 连接失败: {e}")
             logger.error("\n可能的原因:")
             logger.error("1. PostgreSQL服务未启动")

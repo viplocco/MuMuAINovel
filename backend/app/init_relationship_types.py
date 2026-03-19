@@ -1,12 +1,23 @@
 """初始化关系类型数据"""
 import asyncio
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select
-from app.database import AsyncSessionLocal
+from app.database import get_engine
 from app.models.relationship import RelationshipType
 from app.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+async def _get_session() -> AsyncSession:
+    """获取数据库会话"""
+    engine = await get_engine("_init_")
+    session_maker = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+    return session_maker()
 
 
 async def init_relationship_types():
@@ -44,7 +55,7 @@ async def init_relationship_types():
         {"name": "宿敌", "category": "hostile", "reverse_name": "宿敌", "intimacy_range": "low", "icon": "⚡"},
     ]
     
-    async with AsyncSessionLocal() as session:
+    async with await _get_session() as session:
         try:
             # 检查是否已经有数据
             result = await session.execute(select(RelationshipType))

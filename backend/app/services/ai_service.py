@@ -352,17 +352,33 @@ class AIService:
         # 使用全局配置的MCP轮数（如果未指定）
         if mcp_max_rounds is None:
             mcp_max_rounds = app_settings.mcp_max_rounds
-        
-        # 自动加载MCP工具
-        if auto_mcp and tools is None:
+
+        # 检测 DeepSeek 模型并限制 max_tokens 和禁用工具
+        effective_model = model or self.default_model
+        effective_max_tokens = max_tokens or self.default_max_tokens
+        is_deepseek = effective_model and effective_model.startswith("deepseek")
+        if is_deepseek:
+            if effective_max_tokens and effective_max_tokens > 4096:
+                effective_max_tokens = 4096
+                logger.info(f"  🔧 DeepSeek 模型，限制 max_tokens 为 {effective_max_tokens}")
+            # DeepSeek 不支持 tool_choice 参数，且可能不支持 MCP 工具，禁用工具
+            if tool_choice and tool_choice != "none":
+                tool_choice = None
+                logger.debug(f"  🔧 DeepSeek 模型，禁用 tool_choice")
+            # 禁用 MCP 工具以避免 400 错误
+            auto_mcp = False
+            logger.info(f"  🔧 DeepSeek 模型，禁用 MCP 工具避免 400 错误")
+
+        # 自动加载MCP工具（非 DeepSeek 模型）
+        if auto_mcp and tools is None and not is_deepseek:
             tools = await self._prepare_mcp_tools(auto_mcp=auto_mcp)
         
         prov = self._get_provider(provider)
         response = await prov.generate(
             prompt=prompt,
-            model=model or self.default_model,
+            model=effective_model,
             temperature=temperature or self.default_temperature,
-            max_tokens=max_tokens or self.default_max_tokens,
+            max_tokens=effective_max_tokens,
             system_prompt=system_prompt or self.default_system_prompt,
             tools=tools,
             tool_choice=tool_choice,
@@ -416,11 +432,27 @@ class AIService:
             生成的文本块
         """
         logger.debug(f"🔧 generate_text_stream: auto_mcp={auto_mcp}, tool_choice={tool_choice}")
-        
+
+        # 检测 DeepSeek 模型并限制 max_tokens 和禁用工具
+        effective_model = model or self.default_model
+        effective_max_tokens = max_tokens or self.default_max_tokens
+        is_deepseek = effective_model and effective_model.startswith("deepseek")
+        if is_deepseek:
+            if effective_max_tokens and effective_max_tokens > 4096:
+                effective_max_tokens = 4096
+                logger.info(f"  🔧 DeepSeek 模型，限制 max_tokens 为 {effective_max_tokens}")
+            # DeepSeek 不支持 tool_choice 参数，且可能不支持 MCP 工具，禁用工具
+            if tool_choice and tool_choice != "none":
+                tool_choice = None
+                logger.debug(f"  🔧 DeepSeek 模型，禁用 tool_choice")
+            # 禁用 MCP 工具以避免 400 错误
+            auto_mcp = False
+            logger.info(f"  🔧 DeepSeek 模型，禁用 MCP 工具避免 400 错误")
+
         tools_to_use = None
-        
-        # 加载MCP工具
-        if auto_mcp:
+
+        # 加载MCP工具（非 DeepSeek 模型）
+        if auto_mcp and not is_deepseek:
             tools_to_use = await self._prepare_mcp_tools(auto_mcp=auto_mcp)
             if tools_to_use:
                 logger.info(f"🔧 已获取 {len(tools_to_use)} 个MCP工具")
@@ -430,9 +462,9 @@ class AIService:
         logger.debug(f"🔧 开始流式生成，provider={provider or self.api_provider}, tools_count={len(tools_to_use) if tools_to_use else 0}")
         async for chunk in prov.generate_stream(
             prompt=prompt,
-            model=model or self.default_model,
+            model=effective_model,
             temperature=temperature or self.default_temperature,
-            max_tokens=max_tokens or self.default_max_tokens,
+            max_tokens=effective_max_tokens,
             system_prompt=system_prompt or self.default_system_prompt,
             tools=tools_to_use,
             tool_choice=tool_choice,

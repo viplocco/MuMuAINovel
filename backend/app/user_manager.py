@@ -89,15 +89,15 @@ class UserManager:
             
             if user:
                 # 更新现有用户
-                user.username = username
-                user.display_name = display_name
-                user.avatar_url = avatar_url
-                user.trust_level = trust_level
-                user.last_login = datetime.now()
-                
+                user.username = username  # type: ignore[assignment]
+                user.display_name = display_name  # type: ignore[assignment]
+                user.avatar_url = avatar_url  # type: ignore[assignment]
+                user.trust_level = trust_level  # type: ignore[assignment]
+                user.last_login = datetime.now()  # type: ignore[assignment]
+
                 # 更新管理员状态
-                if is_admin and not user.is_admin:
-                    user.is_admin = True
+                if is_admin and not user.is_admin:  # type: ignore[misc]
+                    user.is_admin = True  # type: ignore[assignment]
             else:
                 # 创建新用户
                 user = UserModel(
@@ -174,7 +174,7 @@ class UserManager:
                 if admin_count <= 1:
                     return False
             
-            user.is_admin = is_admin
+            user.is_admin = is_admin  # type: ignore[assignment]
             await session.commit()
             
             return True
@@ -201,7 +201,7 @@ class UserManager:
                 return False
             
             # 不能删除管理员
-            if user.is_admin:
+            if user.is_admin:  # type: ignore[misc]
                 return False
             
             await session.delete(user)
@@ -219,7 +219,7 @@ class UserManager:
             )
             user = result.scalar_one_or_none()
             
-            return user.is_admin if user else False
+            return user.is_admin if user else False  # type: ignore[return-value]
 
 
 # 全局用户管理器实例

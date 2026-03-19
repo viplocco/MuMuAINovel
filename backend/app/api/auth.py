@@ -200,8 +200,7 @@ async def get_linuxdo_auth_url():
 async def _handle_callback(
     code: Optional[str] = None,
     state: Optional[str] = None,
-    error: Optional[str] = None,
-    response: Response = None
+    error: Optional[str] = None
 ):
     """
     LinuxDO OAuth2 回调处理
@@ -307,22 +306,20 @@ async def _handle_callback(
 async def linuxdo_callback(
     code: Optional[str] = None,
     state: Optional[str] = None,
-    error: Optional[str] = None,
-    response: Response = None
+    error: Optional[str] = None
 ):
     """LinuxDO OAuth2 回调处理（标准路径）"""
-    return await _handle_callback(code, state, error, response)
+    return await _handle_callback(code, state, error)
 
 
 @router.get("/callback")
 async def callback_alias(
     code: Optional[str] = None,
     state: Optional[str] = None,
-    error: Optional[str] = None,
-    response: Response = None
+    error: Optional[str] = None
 ):
     """LinuxDO OAuth2 回调处理（兼容路径）"""
-    return await _handle_callback(code, state, error, response)
+    return await _handle_callback(code, state, error)
 
 
 @router.post("/refresh")
