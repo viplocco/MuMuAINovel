@@ -30,6 +30,7 @@ import {
   ApiOutlined,
   QuestionCircleOutlined,
   WarningOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
 import { mcpPluginApi, settingsApi } from '../services/api';
 import type { MCPPlugin, MCPTool } from '../types';
@@ -83,6 +84,11 @@ export default function MCPPluginsPage() {
   const [viewingTools, setViewingTools] = useState<{ pluginId: string; tools: MCPTool[] } | null>(null);
   const [checkingFunctionCalling, setCheckingFunctionCalling] = useState(false);
   const [modelSupportStatus, setModelSupportStatus] = useState<'unknown' | 'supported' | 'unsupported'>('unknown');
+
+  // 轮询相关状态
+  const [pollingPluginId, setPollingPluginId] = useState<string | null>(null);
+  const POLLING_INTERVAL = 2000; // 2秒轮询间隔
+  const POLLING_MAX_DURATION = 30000; // 30秒超时
 
   useEffect(() => {
     const initPage = async () => {
@@ -595,6 +601,14 @@ export default function MCPPluginsPage() {
       setModalVisible(false);
       form.resetFields();
       loadPlugins();
+
+      // 如果启用了插件，启动轮询检查注册状态
+      if (values.enabled) {
+        // 延迟一点再开始轮询，让后端有时间处理
+        setTimeout(() => {
+          startPollingAfterSave();
+        }, 500);
+      }
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } } };
       const errorMsg = err?.response?.data?.detail || '操作失败';
@@ -604,9 +618,67 @@ export default function MCPPluginsPage() {
     }
   };
 
+  // 轮询函数：保存插件后启动轮询检查状态
+  const startPollingAfterSave = async () => {
+    // 重新加载插件列表获取最新创建的插件
+    const pluginsData = await mcpPluginApi.getPlugins();
+    setPlugins(pluginsData);
+
+    // 找到最新创建/启用的插件（通常是最后一个）
+    const newPlugin = pluginsData.find(p => p.enabled && (p.status === 'pending' || p.status === 'inactive'));
+    if (!newPlugin) return;
+
+    setPollingPluginId(newPlugin.id);
+    const startTime = Date.now();
+
+    const poll = async () => {
+      // 检查是否超时
+      if (Date.now() - startTime > POLLING_MAX_DURATION) {
+        setPollingPluginId(null);
+        message.warning('插件注册超时，请稍后手动刷新或重试');
+        loadPlugins();
+        return;
+      }
+
+      try {
+        const status = await mcpPluginApi.getPluginStatus(newPlugin.id);
+
+        // 状态变为 active 时停止轮询
+        if (status.db_status === 'active') {
+          setPollingPluginId(null);
+          loadPlugins();
+          message.success('插件注册成功');
+          return;
+        }
+
+        // 状态变为 error 时停止轮询
+        if (status.db_status === 'error') {
+          setPollingPluginId(null);
+          loadPlugins();
+          message.error(status.session_status || '插件注册失败');
+          return;
+        }
+
+        // 继续轮询
+        setTimeout(poll, POLLING_INTERVAL);
+      } catch (error) {
+        console.error('轮询状态失败:', error);
+        // 继续轮询，即使出错
+        setTimeout(poll, POLLING_INTERVAL);
+      }
+    };
+
+    // 开始第一次检查
+    setTimeout(poll, POLLING_INTERVAL);
+  };
+
   const getStatusTag = (plugin: MCPPlugin) => {
     if (!plugin.enabled) {
       return <Tag color="default">已禁用</Tag>;
+    }
+    // 正在轮询中时显示特殊状态
+    if (pollingPluginId === plugin.id) {
+      return <Tag color="processing" icon={<SyncOutlined spin />}>正在连接...</Tag>;
     }
     switch (plugin.status) {
       case 'active':
@@ -615,6 +687,8 @@ export default function MCPPluginsPage() {
         return (
           <Tag color="error" icon={<CloseCircleOutlined />} title={plugin.last_error}>错误</Tag>
         );
+      case 'pending':
+        return <Tag color="processing" icon={<SyncOutlined spin />}>正在连接...</Tag>;
       default:
         return <Tag color="default">未激活</Tag>;
     }
@@ -973,14 +1047,24 @@ export default function MCPPluginsPage() {
                             />
                           )}
                           <Button
-                            title={modelSupportStatus !== 'supported' ? '请先完成模型能力检查' : '测试连接'}
+                            title={
+                              modelSupportStatus !== 'supported' ? '请先完成模型能力检查' :
+                              pollingPluginId === plugin.id ? '插件正在注册中，请稍候' :
+                              !plugin.enabled || plugin.status !== 'active' ? '插件未就绪，请等待注册完成' :
+                              '测试连接'
+                            }
                             icon={<ThunderboltOutlined />}
                             onClick={() => handleTest(plugin.id)}
-                            loading={testingPluginId === plugin.id}
-                            disabled={modelSupportStatus !== 'supported'}
+                            loading={testingPluginId === plugin.id || pollingPluginId === plugin.id}
+                            disabled={
+                              modelSupportStatus !== 'supported' ||
+                              pollingPluginId === plugin.id ||
+                              !plugin.enabled ||
+                              plugin.status !== 'active'
+                            }
                             size={isMobile ? 'small' : 'middle'}
                           >
-                            {!isMobile && '测试'}
+                            {!isMobile && (pollingPluginId === plugin.id ? '注册中' : '测试')}
                           </Button>
                           <Button
                             title={modelSupportStatus !== 'supported' ? '请先完成模型能力检查' : '查看工具'}

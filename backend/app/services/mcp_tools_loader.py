@@ -2,6 +2,7 @@
 
 在AI请求之前，自动检查用户MCP配置并加载可用工具。
 """
+import traceback
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
@@ -14,6 +15,9 @@ from app.models.mcp_plugin import MCPPlugin
 from app.mcp import mcp_client
 
 logger = get_logger(__name__)
+
+# 最大缓存条目限制
+MAX_CACHE_SIZE = 100
 
 
 @dataclass
@@ -47,15 +51,39 @@ class MCPToolsLoader:
     def __init__(self):
         if self._initialized:
             return
-        
+
         # 用户工具缓存: user_id -> UserToolsCache
         self._cache: Dict[str, UserToolsCache] = {}
-        
+
         # 缓存TTL（5分钟）
         self._cache_ttl = timedelta(minutes=5)
-        
+
+        # 最大缓存条目限制
+        self._max_cache_size = MAX_CACHE_SIZE
+
         self._initialized = True
         logger.info("✅ MCPToolsLoader 初始化完成")
+
+    def _evict_if_needed(self):
+        """清理过期缓存，防止内存无限增长"""
+        now = datetime.now()
+
+        # 1. 清理过期条目
+        expired_keys = [k for k, v in self._cache.items() if v.expire_time < now]
+        for k in expired_keys:
+            del self._cache[k]
+            logger.debug(f"🧹 清理过期缓存: {k}")
+
+        # 2. 如果还是太多，清理最老的
+        if len(self._cache) > self._max_cache_size:
+            sorted_keys = sorted(
+                self._cache.keys(),
+                key=lambda k: self._cache[k].expire_time
+            )
+            evict_count = len(self._cache) - self._max_cache_size
+            for k in sorted_keys[:evict_count]:
+                del self._cache[k]
+                logger.debug(f"🧹 清理最老缓存: {k}")
     
     async def has_enabled_plugins(
         self, 
@@ -108,7 +136,10 @@ class MCPToolsLoader:
             - List[Dict]: OpenAI Function Calling格式的工具列表
         """
         now = datetime.now()
-        
+
+        # 清理过期缓存，防止内存无限增长
+        self._evict_if_needed()
+
         # 检查缓存
         if use_cache and not force_refresh and user_id in self._cache:
             cache_entry = self._cache[user_id]
@@ -190,7 +221,14 @@ class MCPToolsLoader:
                 logger.debug(f"✅ 从插件 {plugin.plugin_name} 加载了 {len(formatted)} 个工具")
                 
             except Exception as e:
-                logger.warning(f"⚠️ 加载插件 {plugin.plugin_name} 工具失败: {e}")
+                # 获取详细错误信息
+                error_details = traceback.format_exc()
+                logger.warning(
+                    f"⚠️ 加载插件 {plugin.plugin_name} 工具失败: {type(e).__name__}: {e}\n"
+                    f"   插件URL: {plugin.server_url}\n"
+                    f"   插件类型: {plugin.plugin_type}\n"
+                    f"   堆栈: {error_details[:500] if error_details else '无'}"
+                )
                 continue
         
         return all_tools if all_tools else None
@@ -198,18 +236,26 @@ class MCPToolsLoader:
     def invalidate_cache(self, user_id: Optional[str] = None):
         """
         使缓存失效
-        
+
         Args:
             user_id: 用户ID，为None时清空所有缓存
         """
+        # 1. 清理本地缓存 (MCPToolsLoader)
         if user_id:
             if user_id in self._cache:
                 del self._cache[user_id]
-                logger.debug(f"🧹 清理用户工具缓存: {user_id}")
+                logger.debug(f"🧹 清理用户工具缓存(MCPToolsLoader): {user_id}")
         else:
             count = len(self._cache)
             self._cache.clear()
-            logger.info(f"🧹 清理所有用户工具缓存 ({count}个)")
+            logger.info(f"🧹 清理所有用户工具缓存(MCPToolsLoader) ({count}个)")
+
+        # 2. 同时清理 MCPClientFacade 的工具缓存
+        from app.mcp import mcp_client
+        try:
+            mcp_client.clear_cache(user_id=user_id)
+        except Exception as e:
+            logger.warning(f"清理MCPClientFacade缓存失败: {e}")
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """获取缓存统计"""

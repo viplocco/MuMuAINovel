@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-1.3.8-blue.svg)
+![Version](https://img.shields.io/badge/version-1.3.9-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109.0-green.svg)
 ![React](https://img.shields.io/badge/react-18.3.1-blue.svg)
@@ -519,33 +519,40 @@ ports:
 
 ```
 MuMuAINovel/
-├── backend/                 # 后端服务
+├── backend/                 # 后端服务 (FastAPI)
 │   ├── app/
-│   │   ├── api/            # API 路由
-│   │   ├── models/         # 数据模型
+│   │   ├── api/            # API 路由 (25+ 路由文件)
+│   │   ├── models/         # 数据模型 (21 个模型)
 │   │   ├── services/       # 业务逻辑
 │   │   ├── middleware/     # 中间件
+│   │   ├── schemas/        # Pydantic 模式
+│   │   ├── mcp/            # MCP 工具集成
 │   │   ├── database.py     # 数据库连接
 │   │   └── main.py         # 应用入口
 │   ├── scripts/            # 工具脚本
 │   └── requirements.txt    # Python 依赖
-├── frontend/               # 前端应用
+├── frontend/               # 前端应用 (React)
 │   ├── src/
-│   │   ├── pages/         # 页面组件
+│   │   ├── pages/         # 页面组件 (27+ 页面)
 │   │   ├── components/    # 通用组件
 │   │   ├── services/      # API 服务
-│   │   └── store/         # 状态管理
+│   │   └── store/         # 状态管理 (Zustand)
 │   └── package.json
 ├── docker-compose.yml      # Docker Compose 配置
 ├── Dockerfile             # Docker 镜像构建
+├── STARTUP.md             # 启动指南
+├── DEPLOYMENT.md          # 部署文档
+├── CLAUDE.md              # 开发指南
 └── README.md
 ```
 
 ## 🛠️ 技术栈
 
-**后端**: FastAPI • PostgreSQL • SQLAlchemy • OpenAI/Claude/Gemini SDK
+**后端**: FastAPI • PostgreSQL 18 • SQLAlchemy (async) • Alembic • OpenAI/Claude/Gemini SDK
 
-**前端**: React 18 • TypeScript • Ant Design • Zustand • Vite
+**前端**: React 18 • TypeScript • Vite • Ant Design • Zustand • React Router
+
+**部署**: Docker • Docker Compose
 
 ## 📖 使用指南
 

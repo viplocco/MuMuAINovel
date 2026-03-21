@@ -1026,7 +1026,7 @@ async def new_outline_generator(
         
         # 使用提示词模板
         yield await tracker.preparing("准备AI提示词...")
-        template = await PromptService.get_template("OUTLINE_CREATE", user_id_for_mcp, db)
+        template = await PromptService.get_template("OUTLINE_CREATE", user_id_for_mcp or "", db)
         prompt = PromptService.format_prompt(
             template,
             title=project.title,
@@ -1448,7 +1448,7 @@ async def continue_outline_generator(
             )
             
             # 使用标准续写提示词模板（简化版）
-            template = await PromptService.get_template("OUTLINE_CONTINUE", user_id, db)
+            template = await PromptService.get_template("OUTLINE_CONTINUE", user_id or "", db)
             prompt = PromptService.format_prompt(
                 template,
                 # 基础信息

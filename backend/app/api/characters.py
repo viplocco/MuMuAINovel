@@ -927,7 +927,7 @@ async def generate_character_stream(
             yield await tracker.preparing("构建AI提示词...")
             
             # 获取自定义提示词模板
-            template = await PromptService.get_template("SINGLE_CHARACTER_GENERATION", user_id, db)
+            template = await PromptService.get_template("SINGLE_CHARACTER_GENERATION", user_id or "", db)
             # 格式化提示词
             prompt = PromptService.format_prompt(
                 template,

@@ -1524,7 +1524,7 @@ async def generate_chapter_content_stream(
                     # 1-1模式
                     if chapter_context.continuation_point:
                         # 有上一章内容
-                        template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_ONE_NEXT", current_user_id, db_session)
+                        template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_ONE_NEXT", current_user_id or "", db_session)
                         base_prompt = PromptService.format_prompt(
                             template,
                             project_title=project.title,
@@ -1544,7 +1544,7 @@ async def generate_chapter_content_stream(
                         logger.debug(f"创建第{current_chapter.chapter_number}章提示词: {base_prompt}")
                     else:
                         # 第一章
-                        template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_ONE", current_user_id, db_session)
+                        template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_ONE", current_user_id or "", db_session)
                         base_prompt = PromptService.format_prompt(
                             template,
                             project_title=project.title,
@@ -1571,7 +1571,7 @@ async def generate_chapter_content_stream(
                         if chapter_context.previous_chapter_summary:
                             previous_summary = chapter_context.previous_chapter_summary
                         
-                        template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY_NEXT", current_user_id, db_session)
+                        template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY_NEXT", current_user_id or "", db_session)
                         base_prompt = PromptService.format_prompt(
                             template,
                             project_title=project.title,
@@ -1593,7 +1593,7 @@ async def generate_chapter_content_stream(
                     else:
                         # 第1章，使用无前置内容模板
                         logger.info(f"📝 [1-n模式] 使用第一章模板")
-                        template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY", current_user_id, db_session)
+                        template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY", current_user_id or "", db_session)
                         base_prompt = PromptService.format_prompt(
                             template,
                             project_title=project.title,
@@ -3078,7 +3078,7 @@ async def generate_single_chapter_for_batch(
         # 1-1模式
         if chapter_context.continuation_point:
             # 有上一章内容
-            template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_ONE_NEXT", user_id, db_session)
+            template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_ONE_NEXT", user_id or "", db_session)
             base_prompt = PromptService.format_prompt(
                 template,
                 project_title=project.title,
@@ -3097,7 +3097,7 @@ async def generate_single_chapter_for_batch(
             )
         else:
             # 第一章
-            template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_ONE", user_id, db_session)
+            template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_ONE", user_id or "", db_session)
             base_prompt = PromptService.format_prompt(
                 template,
                 project_title=project.title,
@@ -3124,7 +3124,7 @@ async def generate_single_chapter_for_batch(
             elif previous_summary_context:
                 final_prev_summary = previous_summary_context
                     
-            template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY_NEXT", user_id, db_session)
+            template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY_NEXT", user_id or "", db_session)
             base_prompt = PromptService.format_prompt(
                 template,
                 project_title=project.title,
@@ -3144,7 +3144,7 @@ async def generate_single_chapter_for_batch(
             )
         else:
             # 第一章，使用无前置内容模板
-            template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY", user_id, db_session)
+            template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY", user_id or "", db_session)
             base_prompt = PromptService.format_prompt(
                 template,
                 project_title=project.title,
@@ -3887,7 +3887,7 @@ async def partial_regenerate_stream(
                 length_requirement = f"保持与原文相近的字数（约{original_word_count}字）"
             
             # 获取提示词模板
-            template = await PromptService.get_template("PARTIAL_REGENERATE", user_id, db)
+            template = await PromptService.get_template("PARTIAL_REGENERATE", user_id or "", db)
             if not template:
                 template = PromptService.PARTIAL_REGENERATE
             

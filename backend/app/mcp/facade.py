@@ -202,10 +202,22 @@ class MCPClientFacade:
     def _get_key(self, user_id: str, plugin_name: str) -> str:
         """生成会话键"""
         return f"{user_id}:{plugin_name}"
-    
+
+    # 最大用户锁数量限制
+    MAX_USER_LOCKS = 500
+
     async def _get_user_lock(self, user_id: str) -> asyncio.Lock:
         """获取用户专属锁（细粒度锁）"""
         async with self._locks_lock:
+            # 限制锁数量，防止无限增长
+            if len(self._user_locks) > self.MAX_USER_LOCKS:
+                # 清理最老的锁（简化处理：保留最近的）
+                locks_to_remove = list(self._user_locks.keys())[:-self.MAX_USER_LOCKS]
+                for uid in locks_to_remove:
+                    del self._user_locks[uid]
+                if locks_to_remove:
+                    logger.debug(f"🧹 清理了 {len(locks_to_remove)} 个用户锁")
+
             if user_id not in self._user_locks:
                 self._user_locks[user_id] = asyncio.Lock()
             return self._user_locks[user_id]
@@ -224,9 +236,14 @@ class MCPClientFacade:
                     logger.info("✅ MCP健康检查任务已启动")
                 
                 self._tasks_started = True
-            except RuntimeError:
-                # 没有运行中的事件循环，稍后再试
-                pass
+            except RuntimeError as e:
+                # 没有运行中的事件循环，稍后重试
+                logger.warning(f"无法启动MCP后台任务，将在1秒后重试: {e}")
+                try:
+                    loop = asyncio.get_event_loop()
+                    loop.call_later(1, self._ensure_background_tasks)
+                except Exception:
+                    pass
     
     async def _cleanup_loop(self):
         """后台清理过期会话"""
@@ -316,6 +333,10 @@ class MCPClientFacade:
             if key in self._sessions:
                 await self._close_session_unsafe(key)
 
+            # 初始化资源引用，用于异常清理
+            stream_ctx = None
+            session = None
+
             try:
                 logger.info(f"🔗 连接MCP服务器: {config.plugin_name} -> {config.url} (类型: {config.plugin_type})")
 
@@ -336,11 +357,11 @@ class MCPClientFacade:
                         timeout=config.timeout
                     )
                     read, write, _ = await stream_ctx.__aenter__()
-                
+
                 session = ClientSession(read, write)
                 await session.__aenter__()
                 await session.initialize()
-                
+
                 now = time.time()
                 info = SessionInfo(
                     session=session,
@@ -350,10 +371,10 @@ class MCPClientFacade:
                     last_access=now,
                     _context_stack=[('stream', stream_ctx), ('session', session)]
                 )
-                
+
                 async with self._session_lock:
                     self._sessions[key] = info
-                
+
                 logger.info(f"✅ MCP会话建立成功: {key}")
                 await self._emit_status_change(config.user_id, config.plugin_name, "inactive", "active", "连接成功")
                 return True
@@ -372,6 +393,20 @@ class MCPClientFacade:
                 logger.error(f"❌ MCP连接失败 {key}: {type(e).__name__}: {e}")
                 await self._emit_status_change(config.user_id, config.plugin_name, "inactive", "error", str(e))
                 return False
+
+            finally:
+                # 确保异常时资源被正确清理
+                if session:
+                    try:
+                        await session.__aexit__(None, None, None)
+                    except Exception as cleanup_err:
+                        logger.debug(f"清理session失败: {cleanup_err}")
+
+                if stream_ctx:
+                    try:
+                        await stream_ctx.__aexit__(None, None, None)
+                    except Exception as cleanup_err:
+                        logger.debug(f"清理stream_ctx失败: {cleanup_err}")
     
     async def unregister(self, user_id: str, plugin_name: str):
         """
@@ -727,13 +762,15 @@ class MCPClientFacade:
             except Exception as e:
                 duration_ms = (time.time() - start_time) * 1000
                 self._metrics[tool_key].record_failure(duration_ms)
-                
-                # 更新会话错误计数
+
+                # 更新会话错误计数（使用锁保护，避免竞态条件）
                 key = self._get_key(user_id, plugin_name)
-                if key in self._sessions:
-                    session_info = self._sessions[key]
+                async with self._session_lock:
+                    session_info = self._sessions.get(key)
+
+                if session_info:
                     session_info.error_count += 1
-                    
+
                     # 检查是否需要更新状态
                     if session_info.request_count >= mcp_config.MIN_REQUESTS_FOR_HEALTH_CHECK:
                         old_status = session_info.status

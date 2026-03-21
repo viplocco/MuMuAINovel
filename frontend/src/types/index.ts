@@ -23,6 +23,20 @@ export interface Settings {
   max_tokens: number;
   system_prompt?: string;
   preferences?: string;
+  // SMTP 配置
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_username?: string;
+  smtp_password?: string;
+  smtp_use_tls?: number;
+  smtp_use_ssl?: number;
+  smtp_from_email?: string;
+  smtp_from_name?: string;
+  // 邮箱认证配置
+  email_auth_enabled?: number;
+  email_register_enabled?: number;
+  verification_code_ttl_minutes?: number;
+  verification_resend_interval_seconds?: number;
   created_at: string;
   updated_at: string;
 }
@@ -47,6 +61,30 @@ export interface APIKeyPresetConfig {
   temperature: number;
   max_tokens: number;
   system_prompt?: string;
+}
+
+// 邮箱相关类型定义
+export interface EmailLoginPayload {
+  email: string;
+  code: string;
+}
+
+export interface EmailRegisterPayload {
+  email: string;
+  code: string;
+  password: string;
+  display_name?: string;
+}
+
+export interface SendEmailCodePayload {
+  email: string;
+  scene: 'register' | 'login' | 'reset_password';
+}
+
+export interface ResetPasswordPayload {
+  email: string;
+  code: string;
+  new_password: string;
 }
 
 export interface APIKeyPreset {
@@ -706,7 +744,7 @@ export interface MCPPlugin {
 
   // 状态字段
   enabled: boolean;
-  status: 'active' | 'inactive' | 'error';
+  status: 'active' | 'inactive' | 'error' | 'pending';
   last_error?: string;
   last_test_at?: string;
 
@@ -742,6 +780,18 @@ export interface MCPTool {
   name: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
+}
+
+// 插件状态查询结果
+export interface MCPPluginStatus {
+  plugin_id: string;
+  plugin_name: string;
+  db_status: 'active' | 'inactive' | 'error' | 'pending';
+  session_status: string | null;
+  is_registered: boolean;
+  error_rate: number;
+  in_sync: boolean;
+  timestamp: string;
 }
 
 export interface MCPTestResult {

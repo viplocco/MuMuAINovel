@@ -62,7 +62,7 @@ async def world_building_generator(
         
         # 获取基础提示词（支持自定义）
         yield await tracker.preparing("准备AI提示词...")
-        template = await PromptService.get_template("WORLD_BUILDING", user_id, db)
+        template = await PromptService.get_template_with_fallback("WORLD_BUILDING", user_id, db)
         base_prompt = PromptService.format_prompt(
             template,
             title=title,
@@ -246,7 +246,7 @@ async def world_building_generator(
         
         # 更新向导步骤状态为1（世界观已完成）
         # wizard_step: 0=未开始, 1=世界观已完成, 2=职业体系已完成, 3=角色已完成, 4=大纲已完成
-        project.wizard_step = 1
+        project.wizard_step = 1  # type: ignore[reportAttributeAccessIssue]
         await db.commit()
         
         # ===== 世界观生成完成 =====
@@ -349,7 +349,7 @@ async def career_system_generator(
         
         # 获取职业生成提示词模板（支持用户自定义）
         yield await tracker.preparing("准备AI提示词...")
-        template = await PromptService.get_template("CAREER_SYSTEM_GENERATION", user_id, db)
+        template = await PromptService.get_template_with_fallback("CAREER_SYSTEM_GENERATION", user_id, db)
         career_prompt = PromptService.format_prompt(
             template,
             title=project.title,
@@ -491,7 +491,7 @@ async def career_system_generator(
                     
                     # 更新向导步骤状态为2（职业体系已完成）
                     # wizard_step: 0=未开始, 1=世界观已完成, 2=职业体系已完成, 3=角色已完成, 4=大纲已完成
-                    project.wizard_step = 2
+                    project.wizard_step = 2  # type: ignore[reportAttributeAccessIssue]
                     
                     await db.commit()
                     db_committed = True
@@ -524,6 +524,25 @@ async def career_system_generator(
                         return
                 except Exception as e:
                     logger.error(f"❌ 职业体系保存失败（尝试{career_retry_count+1}/{MAX_CAREER_RETRIES}）: {e}")
+                    # 回滚事务以恢复 session 状态
+                    try:
+                        await db.rollback()
+                    except Exception as rb_err:
+                        logger.warning(f"回滚失败: {rb_err}")
+
+                    # 检测数据库连接是否失效，尝试重新连接
+                    connection_error = False
+                    if "connection is closed" in str(e).lower() or "connection refused" in str(e).lower():
+                        connection_error = True
+                        logger.warning("检测到数据库连接失效，尝试重新连接...")
+                        try:
+                            # 关闭并重新创建 session
+                            await db.close()
+                            # 刷新 session 以重新获取连接
+                            await db.begin()
+                        except Exception as reconnect_err:
+                            logger.error(f"重新连接失败: {reconnect_err}")
+
                     career_retry_count += 1
                     if career_retry_count < MAX_CAREER_RETRIES:
                         yield await tracker.retry(career_retry_count, MAX_CAREER_RETRIES, "保存失败")
@@ -531,9 +550,28 @@ async def career_system_generator(
                     else:
                         yield await tracker.error("职业体系保存失败（已达最大重试次数）")
                         return
-            
+
             except Exception as e:
                 logger.error(f"❌ 职业体系生成异常（尝试{career_retry_count+1}/{MAX_CAREER_RETRIES}）: {e}")
+                # 回滚事务以恢复 session 状态
+                try:
+                    await db.rollback()
+                except Exception as rb_err:
+                    logger.warning(f"回滚失败: {rb_err}")
+
+                # 检测数据库连接是否失效，尝试重新连接
+                connection_error = False
+                if "connection is closed" in str(e).lower() or "connection refused" in str(e).lower():
+                    connection_error = True
+                    logger.warning("检测到数据库连接失效，尝试重新连接...")
+                    try:
+                        # 关闭并重新创建 session
+                        await db.close()
+                        # 刷新 session 以重新获取连接
+                        await db.begin()
+                    except Exception as reconnect_err:
+                        logger.error(f"重新连接失败: {reconnect_err}")
+
                 career_retry_count += 1
                 if career_retry_count < MAX_CAREER_RETRIES:
                     yield await tracker.retry(career_retry_count, MAX_CAREER_RETRIES, "生成异常")
@@ -607,7 +645,7 @@ async def characters_generator(
             yield await tracker.error("项目不存在", 404)
             return
         
-        project.wizard_step = 2
+        project.wizard_step = 2  # type: ignore[reportAttributeAccessIssue]
         
         world_context = world_context or {
             "time_period": project.world_time_period or "未设定",
@@ -714,7 +752,7 @@ async def characters_generator(
                             batch_requirements += "\n主要是配角(supporting)和反派(antagonist)"
                     
                     # 获取自定义提示词模板
-                    template = await PromptService.get_template("CHARACTERS_BATCH_GENERATION", user_id, db)
+                    template = await PromptService.get_template_with_fallback("CHARACTERS_BATCH_GENERATION", user_id, db)
                     # 构建基础提示词
                     base_prompt = PromptService.format_prompt(
                         template,
@@ -915,7 +953,7 @@ async def characters_generator(
             
             for character, char_data in created_characters:
                 # 跳过组织
-                if character.is_organization:
+                if getattr(character, "is_organization", False):
                     continue
                 
                 try:
@@ -997,14 +1035,14 @@ async def characters_generator(
         for character, _ in created_characters:
             await db.refresh(character)
             character_name_to_obj[character.name] = character
-            logger.info(f"向导创建角色：{character.name} (ID: {character.id}, 是否组织: {character.is_organization})")
+            logger.info(f"向导创建角色：{character.name} (ID: {character.id}, 是否组织: {getattr(character, 'is_organization', False)})")
         
         # 第三阶段：为is_organization=True的角色创建Organization记录
         yield await tracker.saving("创建组织记录...", 0.5)
         organization_name_to_obj = {}  # 组织名称到Organization对象的映射
         
         for character, char_data in created_characters:
-            if character.is_organization:
+            if getattr(character, "is_organization", False):
                 # 检查是否已存在Organization记录
                 org_check = await db.execute(
                     select(Organization).where(Organization.character_id == character.id)
@@ -1042,7 +1080,7 @@ async def characters_generator(
         
         for character, char_data in created_characters:
             # 跳过组织实体的角色关系处理（组织通过成员关系关联）
-            if character.is_organization:
+            if getattr(character, "is_organization", False):
                 continue
             
             # 处理relationships数组
@@ -1110,7 +1148,7 @@ async def characters_generator(
         
         for character, char_data in created_characters:
             # 跳过组织实体本身
-            if character.is_organization:
+            if getattr(character, "is_organization", False):
                 continue
             
             # 处理组织成员关系
@@ -1171,8 +1209,8 @@ async def characters_generator(
         
         # 更新项目的角色数量和向导步骤状态为3（角色已完成）
         # wizard_step: 0=未开始, 1=世界观已完成, 2=职业体系已完成, 3=角色已完成, 4=大纲已完成
-        project.character_count = len(created_characters)
-        project.wizard_step = 3
+        project.character_count = len(created_characters)  # type: ignore[reportAttributeAccessIssue]
+        project.wizard_step = 3  # type: ignore[reportAttributeAccessIssue]
         logger.info(f"✅ 更新项目角色数量: {project.character_count}")
         
         await db.commit()
@@ -1195,7 +1233,7 @@ async def characters_generator(
                     "name": char.name,
                     "age": char.age,
                     "gender": char.gender,
-                    "is_organization": char.is_organization,
+                    "is_organization": getattr(char, "is_organization", False),
                     "role_type": char.role_type,
                     "personality": char.personality,
                     "background": char.background,
@@ -1286,7 +1324,7 @@ async def outline_generator(
         characters = result.scalars().all()
         
         characters_info = "\n".join([
-            f"- {char.name} ({'组织' if char.is_organization else '角色'}, {char.role_type}): {char.personality[:100] if char.personality else '暂无描述'}"
+            f"- {char.name} ({'组织' if getattr(char, 'is_organization', False) else '角色'}, {getattr(char, 'role_type', '')}): {getattr(char, 'personality', '')[:100] if getattr(char, 'personality', None) else '暂无描述'}"
             for char in characters
         ])
         
@@ -1301,7 +1339,7 @@ async def outline_generator(
         outline_requirements += "5. 不要在JSON字符串值中使用中文引号（""''），请使用【】或《》标记\n"
         
         # 获取自定义提示词模板
-        template = await PromptService.get_template("OUTLINE_CREATE", user_id, db)
+        template = await PromptService.get_template_with_fallback("OUTLINE_CREATE", user_id, db)
         outline_prompt = PromptService.format_prompt(
             template,
             title=project.title,
@@ -1388,11 +1426,13 @@ async def outline_generator(
             from app.services.auto_character_service import get_auto_character_service
             
             auto_char_service = get_auto_character_service(user_ai_service)
+            proj_id = str(project_id)
+            uid = str(user_id) if user_id is not None else None
             char_check_result = await auto_char_service.check_and_create_missing_characters(
-                project_id=project_id,
+                project_id=proj_id,
                 outline_data_list=outline_data[:outline_count],
                 db=db,
-                user_id=user_id,
+                user_id=uid,
                 enable_mcp=enable_mcp
             )
             if char_check_result["created_count"] > 0:
@@ -1411,11 +1451,13 @@ async def outline_generator(
             from app.services.auto_organization_service import get_auto_organization_service
             
             auto_org_service = get_auto_organization_service(user_ai_service)
+            proj_id = str(project_id)
+            uid = str(user_id) if user_id is not None else None
             org_check_result = await auto_org_service.check_and_create_missing_organizations(
-                project_id=project_id,
+                project_id=proj_id,
                 outline_data_list=outline_data[:outline_count],
                 db=db,
-                user_id=user_id,
+                user_id=uid,
                 enable_mcp=enable_mcp
             )
             if org_check_result["created_count"] > 0:
@@ -1430,7 +1472,7 @@ async def outline_generator(
         
         # 根据项目的大纲模式决定是否自动创建章节
         created_chapters = []
-        if project.outline_mode == 'one-to-one':
+        if getattr(project, "outline_mode", None) == 'one-to-one':
             # 一对一模式：自动为每个大纲创建对应的章节
             yield await tracker.saving("一对一模式：自动创建章节...", 0.7)
             
@@ -1459,12 +1501,12 @@ async def outline_generator(
         
         # 更新项目信息
         # wizard_step: 0=未开始, 1=世界观已完成, 2=职业体系已完成, 3=角色已完成, 4=大纲已完成
-        project.chapter_count = len(created_chapters)  # 记录实际创建的章节数
-        project.narrative_perspective = narrative_perspective
+        project.chapter_count = len(created_chapters)  # type: ignore[reportAttributeAccessIssue]  # 记录实际创建的章节数
+        project.narrative_perspective = narrative_perspective  # type: ignore[reportAttributeAccessIssue]
         project.target_words = target_words
-        project.status = "writing"
-        project.wizard_status = "completed"
-        project.wizard_step = 4
+        project.status = "writing"  # type: ignore[reportAttributeAccessIssue]
+        project.wizard_status = "completed"  # type: ignore[reportAttributeAccessIssue]
+        project.wizard_step = 4  # type: ignore[reportAttributeAccessIssue]
         
         await db.commit()
         db_committed = True
@@ -1472,10 +1514,10 @@ async def outline_generator(
         logger.info(f"📊 向导大纲生成完成：")
         logger.info(f"  - 创建大纲节点：{len(created_outlines)} 个")
         logger.info(f"  - 创建章节：{len(created_chapters)} 个")
-        logger.info(f"  - 大纲模式：{project.outline_mode}")
+        logger.info(f"  - 大纲模式：{getattr(project, 'outline_mode', None)}")
         
         # 构建结果消息
-        if project.outline_mode == 'one-to-one':
+        if getattr(project, "outline_mode", None) == 'one-to-one':
             result_message = f"成功生成{len(created_outlines)}个大纲节点并自动创建{len(created_chapters)}个章节（传统模式）"
             result_note = "已自动创建章节，可直接生成内容"
         else:
@@ -1489,7 +1531,7 @@ async def outline_generator(
             "message": result_message,
             "outline_count": len(created_outlines),
             "chapter_count": len(created_chapters),
-            "outline_mode": project.outline_mode,
+            "outline_mode": getattr(project, "outline_mode", None),
             "outlines": [
                 {
                     "id": outline.id,
@@ -1567,7 +1609,7 @@ async def world_building_regenerate_generator(
         
         # 获取基础提示词（支持自定义）
         yield await tracker.preparing("准备AI提示词...")
-        template = await PromptService.get_template("WORLD_BUILDING", user_id, db)
+        template = await PromptService.get_template_with_fallback("WORLD_BUILDING", user_id, db)
         base_prompt = PromptService.format_prompt(
             template,
             title=project.title,

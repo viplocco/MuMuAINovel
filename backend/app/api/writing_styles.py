@@ -94,11 +94,12 @@ async def create_writing_style(
         
         # 使用预设内容填充（如果用户未提供）
         if not style_data.name:
-            style_data.name = preset.name
+            style_data.name = str(getattr(preset, "name", ""))
         if not style_data.description:
-            style_data.description = preset.description
+            desc = getattr(preset, "description", None)
+            style_data.description = None if desc is None else str(desc)
         if not style_data.prompt_content:
-            style_data.prompt_content = preset.prompt_content
+            style_data.prompt_content = str(getattr(preset, "prompt_content", ""))
     
     # 验证必填字段
     if not style_data.name or not style_data.prompt_content:
@@ -331,11 +332,11 @@ async def update_writing_style(
         raise HTTPException(status_code=404, detail="写作风格不存在")
     
     # 检查是否为全局预设风格（不允许修改）
-    if style.user_id is None:
+    if getattr(style, "user_id", None) is None:
         raise HTTPException(status_code=403, detail="不能修改全局预设风格，只能修改自定义风格")
     
     # 验证用户权限（只能修改自己的风格）
-    if style.user_id != user_id:
+    if getattr(style, "user_id", None) != user_id:
         raise HTTPException(status_code=403, detail="无权修改其他用户的风格")
     
     # 更新字段
@@ -398,11 +399,11 @@ async def delete_writing_style(
         raise HTTPException(status_code=404, detail="写作风格不存在")
     
     # 检查是否为全局预设风格（不允许删除）
-    if style.user_id is None:
+    if getattr(style, "user_id", None) is None:
         raise HTTPException(status_code=403, detail="不能删除全局预设风格，只能删除自定义风格")
     
     # 验证用户权限（只能删除自己的风格）
-    if style.user_id != user_id:
+    if getattr(style, "user_id", None) != user_id:
         raise HTTPException(status_code=403, detail="无权删除其他用户的风格")
     
     # 检查是否有项目将其设置为默认风格（一个风格可能被多个项目使用，使用 first() 避免 MultipleResultsFound）
@@ -410,7 +411,7 @@ async def delete_writing_style(
         select(ProjectDefaultStyle).where(ProjectDefaultStyle.style_id == style_id)
     )
     default_relation = result.scalars().first()
-    if default_relation:
+    if default_relation is not None:
         raise HTTPException(
             status_code=400,
             detail="不能删除默认风格，请先设置其他风格为默认"
@@ -464,7 +465,8 @@ async def set_default_style(
         raise HTTPException(status_code=404, detail="写作风格不存在")
     
     # 验证风格是否属于该用户（自定义风格）或是全局预设风格
-    if style.user_id is not None and style.user_id != user_id:
+    uid = getattr(style, "user_id", None)
+    if uid is not None and uid != user_id:
         raise HTTPException(status_code=403, detail="无权操作其他用户的风格")
     
     # 使用 UPSERT 逻辑：先删除该项目的旧默认风格记录，再插入新的

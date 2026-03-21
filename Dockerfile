@@ -1,32 +1,39 @@
 # 多阶段构建 Dockerfile for AI Story Creator
 # 支持多架构构建: linux/amd64, linux/arm64
 
-# 构建参数
-ARG USE_CN_MIRROR=false
+# 设置 Docker 镜像源
+# 使用国内镜像加速构建
 
 # 阶段1: 构建前端
-FROM node:22-alpine AS frontend-builder
+FROM docker.1ms.run/library/node:22-bookworm AS frontend-builder
 
 ARG USE_CN_MIRROR
 
+# 安装构建原生模块所需的系统依赖
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /frontend
 
-# 复制前端依赖文件
-COPY frontend/package*.json ./
+# 复制所有前端文件（node_modules 会被 .dockerignore 排除）
+COPY frontend/ ./
+
+# 清理可能残留的 Windows node_modules
+RUN rm -rf node_modules package-lock.json
 
 # 根据参数决定是否使用国内npm镜像
 RUN if [ "$USE_CN_MIRROR" = "true" ]; then \
         npm config set registry https://registry.npmmirror.com; \
     fi
 
-# 删除 package-lock.json 以避免因镜像源不一致导致的 404 错误
+# 清理 package-lock.json 以避免因镜像源不一致导致的 404 错误
 RUN rm -f package-lock.json
 
-# 安装依赖
+# 安装依赖（在 Linux 环境下安装正确的平台包）
 RUN npm install
-
-# 复制前端源代码
-COPY frontend/ ./
 
 # 临时修改vite配置，使其输出到dist目录（而不是../backend/static）
 RUN sed -i "s|outDir: '../backend/static'|outDir: 'dist'|g" vite.config.ts
@@ -35,7 +42,7 @@ RUN sed -i "s|outDir: '../backend/static'|outDir: 'dist'|g" vite.config.ts
 RUN npm run build
 
 # 阶段2: 构建最终镜像
-FROM python:3.11-slim
+FROM docker.1ms.run/library/python:3.11-slim
 
 ARG USE_CN_MIRROR
 ARG TARGETPLATFORM
@@ -79,19 +86,11 @@ RUN if [ "$USE_CN_MIRROR" = "true" ]; then \
 # 创建embedding目录
 RUN mkdir -p /app/embedding
 
+# 复制本地已有的 embedding 模型（从构建主机）
+COPY backend/embedding /app/embedding
+
 # 设置 Sentence-Transformers 缓存目录
 ENV SENTENCE_TRANSFORMERS_HOME=/app/embedding
-
-# 下载 embedding 模型（从 HuggingFace）
-# 使用 Python 脚本预下载模型，这样运行时不需要网络
-RUN python -c "\
-from sentence_transformers import SentenceTransformer; \
-import os; \
-os.environ['SENTENCE_TRANSFORMERS_HOME'] = '/app/embedding'; \
-print('Downloading sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2...'); \
-model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'); \
-print('Model downloaded successfully!'); \
-"
 
 # 复制后端代码（不包含embedding，因为已经下载了）
 COPY backend/ ./
@@ -105,8 +104,8 @@ COPY backend/alembic/postgres ./alembic
 COPY backend/scripts/entrypoint.sh /app/entrypoint.sh
 COPY backend/scripts/migrate.py ./scripts/migrate.py
 
-# 赋予执行权限
-RUN chmod +x /app/entrypoint.sh
+# 转换脚本为 Unix 换行符并设置执行权限
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # 创建必要的目录
 RUN mkdir -p /app/data /app/logs

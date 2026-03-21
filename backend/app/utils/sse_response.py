@@ -131,7 +131,7 @@ class WizardProgressTracker:
     ) -> str:
         """
         AI生成阶段进度更新
-        
+
         Args:
             current_chars: 当前已生成字符数
             estimated_total: 预估总字符数
@@ -140,27 +140,27 @@ class WizardProgressTracker:
             max_retries: 最大重试次数
         """
         self.current_stage = ProgressStage.GENERATING
-        
+
         # 计算生成进度 (0.0-1.0)
         sub_progress = min(current_chars / max(estimated_total, 1), 1.0)
         progress = self._get_stage_progress(ProgressStage.GENERATING, sub_progress)
-        
+
         # 确保进度单调递增
         if progress < self._last_generating_progress:
             progress = self._last_generating_progress
         else:
             self._last_generating_progress = progress
-        
+
         self.current_progress = progress
-        
+
         # 构建消息
         retry_suffix = f" (重试 {retry_count}/{max_retries})" if retry_count > 0 else ""
         if message:
             msg = f"{message}{retry_suffix}"
         else:
             msg = f"生成{self.task_name}中... ({current_chars}字符){retry_suffix}"
-        
-        return await SSEResponse.send_progress(msg, progress, "processing")
+
+        return await SSEResponse.send_progress(msg, progress, "processing", word_count=current_chars)
     
     async def generating_chunk(self, chunk: str) -> str:
         """发送生成的内容块"""
@@ -262,22 +262,27 @@ class SSEResponse:
     async def send_progress(
         message: str,
         progress: int,
-        status: str = "processing"
+        status: str = "processing",
+        word_count: int = None
     ) -> str:
         """
         发送进度消息
-        
+
         Args:
             message: 进度消息
             progress: 进度百分比(0-100)
             status: 状态(processing/success/error)
+            word_count: 当前已生成的字数
         """
-        return SSEResponse.format_sse({
+        data = {
             "type": "progress",
             "message": message,
             "progress": progress,
             "status": status
-        })
+        }
+        if word_count is not None:
+            data["word_count"] = word_count
+        return SSEResponse.format_sse(data)
     
     @staticmethod
     async def send_chunk(content: str) -> str:

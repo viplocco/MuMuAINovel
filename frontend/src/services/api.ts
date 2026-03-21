@@ -41,6 +41,7 @@ import type {
   MCPPlugin,
   MCPPluginCreate,
   MCPPluginUpdate,
+  MCPPluginStatus,
   MCPTestResult,
   MCPTool,
   MCPToolCallRequest,
@@ -139,10 +140,31 @@ api.interceptors.response.use(
 );
 
 export const authApi = {
-  getAuthConfig: () => api.get<unknown, { local_auth_enabled: boolean; linuxdo_enabled: boolean }>('/auth/config'),
+  getAuthConfig: () => api.get<unknown, {
+    local_auth_enabled: boolean;
+    linuxdo_enabled: boolean;
+    email_auth_enabled: boolean;
+    email_register_enabled: boolean;
+  }>('/auth/config'),
 
   localLogin: (username: string, password: string) =>
     api.post<unknown, { success: boolean; message: string; user: User }>('/auth/local/login', { username, password }),
+
+  // 邮箱登录
+  emailLogin: (payload: { email: string; code: string }) =>
+    api.post<unknown, { success: boolean; message: string; user: User }>('/auth/email/login', payload),
+
+  // 发送邮箱验证码
+  sendEmailCode: (payload: { email: string; scene: string }) =>
+    api.post<unknown, { success: boolean; message: string; expire_in_seconds: number; resend_interval_seconds: number }>('/auth/email/send-code', payload),
+
+  // 邮箱注册
+  emailRegister: (payload: { email: string; code: string; password: string; display_name?: string }) =>
+    api.post<unknown, { success: boolean; message: string; user: User }>('/auth/email/register', payload),
+
+  // 重置密码
+  resetEmailPassword: (payload: { email: string; code: string; new_password: string }) =>
+    api.post<unknown, { success: boolean; message: string }>('/auth/email/reset-password', payload),
 
   bindAccountLogin: (username: string, password: string) =>
     api.post<unknown, { success: boolean; message: string; user: User }>('/auth/bind/login', { username, password }),
@@ -1038,6 +1060,10 @@ export const mcpPluginApi = {
   // 获取插件工具列表
   getPluginTools: (id: string) =>
     api.get<unknown, { tools: MCPTool[] }>(`/mcp/plugins/${id}/tools`),
+
+  // 获取插件实时状态（用于轮询检查注册状态）
+  getPluginStatus: (id: string) =>
+    api.get<unknown, MCPPluginStatus>(`/mcp/plugins/${id}/status`),
 
   // 调用工具
   callTool: (data: MCPToolCallRequest) =>

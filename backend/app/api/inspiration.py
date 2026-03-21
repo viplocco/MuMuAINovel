@@ -124,8 +124,8 @@ async def generate_options(
             system_key, user_key = template_keys
             
             # 获取自定义提示词模板（分别获取 system 和 user）
-            system_template = await PromptService.get_template(system_key, user_id, db)
-            user_template = await PromptService.get_template(user_key, user_id, db)
+            system_template = await PromptService.get_template(system_key, user_id or "", db)
+            user_template = await PromptService.get_template(user_key, user_id or "", db)
             
             # 准备格式化参数
             format_params = {
@@ -284,8 +284,8 @@ async def refine_options(
             system_key, user_key = template_keys
             
             # 获取自定义提示词模板
-            system_template = await PromptService.get_template(system_key, user_id, db)
-            user_template = await PromptService.get_template(user_key, user_id, db)
+            system_template = await PromptService.get_template(system_key, user_id or "", db)
+            user_template = await PromptService.get_template(user_key, user_id or "", db)
             
             # 准备格式化参数
             format_params = {
@@ -441,7 +441,7 @@ async def quick_generate(
         existing_text = "\n".join(existing_info) if existing_info else "暂无信息"
         
         # 获取自定义提示词模板
-        system_template = await PromptService.get_template("INSPIRATION_QUICK_COMPLETE", user_id, db)
+        system_template = await PromptService.get_template("INSPIRATION_QUICK_COMPLETE", user_id or "", db)
         
         # 格式化提示词
         prompts = {
