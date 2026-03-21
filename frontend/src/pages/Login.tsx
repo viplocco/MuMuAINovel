@@ -36,7 +36,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [localAuthEnabled, setLocalAuthEnabled] = useState(false);
-  const [linuxdoEnabled, setLinuxdoEnabled] = useState(false);
   const [emailAuthEnabled, setEmailAuthEnabled] = useState(false);
   const [emailRegisterEnabled, setEmailRegisterEnabled] = useState(false);
   const [form] = Form.useForm();
@@ -46,7 +45,6 @@ export default function Login() {
   const { token } = theme.useToken();
   const alphaColor = (color: string, alpha: number) => `color-mix(in srgb, ${color} ${(alpha * 100).toFixed(0)}%, transparent)`;
   const primaryButtonShadow = `0 8px 20px ${alphaColor(token.colorPrimary, 0.28)}`;
-  const hoverButtonShadow = `0 12px 28px ${alphaColor(token.colorPrimary, 0.36)}`;
   const [showAnnouncement, setShowAnnouncement] = useState(false);
 
   // 邮箱验证码相关状态
@@ -71,13 +69,12 @@ export default function Login() {
         try {
           const config = await authApi.getAuthConfig();
           setLocalAuthEnabled(config.local_auth_enabled);
-          setLinuxdoEnabled(config.linuxdo_enabled);
           setEmailAuthEnabled(config.email_auth_enabled);
           setEmailRegisterEnabled(config.email_register_enabled);
         } catch (error) {
           console.error('获取认证配置失败:', error);
-          // 默认显示LinuxDO登录
-          setLinuxdoEnabled(true);
+          // 默认启用本地登录
+          setLocalAuthEnabled(true);
         }
         setChecking(false);
       }
@@ -128,26 +125,6 @@ export default function Login() {
       }
     } catch (error) {
       console.error('本地登录失败:', error);
-      setLoading(false);
-    }
-  };
-
-  const handleLinuxDOLogin = async () => {
-    try {
-      setLoading(true);
-      const response = await authApi.getLinuxDOAuthUrl();
-
-      // 保存重定向地址到 sessionStorage
-      const redirect = searchParams.get('redirect');
-      if (redirect) {
-        sessionStorage.setItem('login_redirect', redirect);
-      }
-
-      // 跳转到 LinuxDO 授权页面
-      window.location.href = response.auth_url;
-    } catch (error) {
-      console.error('获取授权地址失败:', error);
-      message.error('获取授权地址失败，请稍后重试');
       setLoading(false);
     }
   };
@@ -332,51 +309,6 @@ export default function Login() {
         </Button>
       </Form.Item>
     </Form>
-  );
-
-  // 渲染LinuxDO登录
-  const renderLinuxDOLogin = () => (
-    <div>
-      <Button
-        type="primary"
-        size="large"
-        icon={
-          <img
-            src="/favicon.ico"
-            alt="LinuxDO"
-            style={{
-              width: 20,
-              height: 20,
-              marginRight: 8,
-              verticalAlign: 'middle',
-            }}
-          />
-        }
-        loading={loading}
-        onClick={handleLinuxDOLogin}
-        block
-        style={{
-          height: 46,
-          fontSize: 16,
-          fontWeight: 600,
-          background: `linear-gradient(90deg, ${token.colorPrimary} 0%, ${alphaColor(token.colorPrimary, 0.86)} 100%)`,
-          border: 'none',
-          borderRadius: '12px',
-          boxShadow: primaryButtonShadow,
-          transition: 'all 0.3s ease',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = 'translateY(-2px)';
-          e.currentTarget.style.boxShadow = hoverButtonShadow;
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = primaryButtonShadow;
-        }}
-      >
-        使用 LinuxDO OAuth 登录
-      </Button>
-    </div>
   );
 
   // 渲染邮箱登录
@@ -710,15 +642,6 @@ export default function Login() {
           },
         ]
       : []),
-    ...(linuxdoEnabled
-      ? [
-          {
-            key: 'linuxdo-login',
-            label: 'LinuxDO 登录',
-            children: renderLinuxDOLogin(),
-          },
-        ]
-      : []),
   ];
 
   const handleAnnouncementClose = () => {
@@ -740,7 +663,6 @@ export default function Login() {
 
   const loginTips = [
     '本地登录默认账号：admin',
-    '首次 LinuxDO 登录会自动创建账号',
     '系统采用多用户数据隔离机制，每位用户拥有独立的创作空间与配置。',
   ];
 
@@ -825,7 +747,6 @@ export default function Login() {
                   justifyContent: 'space-between',
                   gap: 34,
                   width: '100%',
-                  // flex: 1,
                 }}
               >
                 <Space align="center" size={14}>
@@ -924,7 +845,6 @@ export default function Login() {
                   <Tag color="blue">OpenAI</Tag>
                   <Tag color="geekblue">Gemini</Tag>
                   <Tag color="purple">Claude</Tag>
-                  <Tag color="cyan">LinuxDO OAuth</Tag>
                   <Tag color="green">Docker Compose</Tag>
                   <Tag color="gold">PostgreSQL</Tag>
                 </Space>
@@ -971,12 +891,12 @@ export default function Login() {
                     <Tabs defaultActiveKey={authTabs[0].key} items={authTabs} />
                   ) : null}
 
-                  {!localAuthEnabled && !linuxdoEnabled && !emailAuthEnabled ? (
+                  {!localAuthEnabled && !emailAuthEnabled ? (
                     <Alert
                       type="warning"
                       showIcon
                       message="当前未启用可用登录方式"
-                      description="请联系管理员在系统配置中启用本地登录、邮箱认证或 LinuxDO OAuth 登录。"
+                      description="请联系管理员在系统配置中启用本地登录或邮箱认证。"
                     />
                   ) : null}
 

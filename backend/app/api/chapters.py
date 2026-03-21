@@ -1000,10 +1000,11 @@ async def analyze_chapter_background(
                 existing_analysis.character_states = analysis_result.get('character_states', [])
                 existing_analysis.scenes = analysis_result.get('scenes', [])
                 existing_analysis.pacing = analysis_result.get('pacing', 'moderate')
-                existing_analysis.overall_quality_score = analysis_result.get('scores', {}).get('overall', 0)
-                existing_analysis.pacing_score = analysis_result.get('scores', {}).get('pacing', 0)
-                existing_analysis.engagement_score = analysis_result.get('scores', {}).get('engagement', 0)
-                existing_analysis.coherence_score = analysis_result.get('scores', {}).get('coherence', 0)
+                # 分数可能是字符串或数字，统一转换为浮点数
+                existing_analysis.overall_quality_score = float(analysis_result.get('scores', {}).get('overall', 0) or 0)
+                existing_analysis.pacing_score = float(analysis_result.get('scores', {}).get('pacing', 0) or 0)
+                existing_analysis.engagement_score = float(analysis_result.get('scores', {}).get('engagement', 0) or 0)
+                existing_analysis.coherence_score = float(analysis_result.get('scores', {}).get('coherence', 0) or 0)
                 existing_analysis.analysis_report = analyzer.generate_analysis_summary(analysis_result)
                 existing_analysis.suggestions = analysis_result.get('suggestions', [])
                 existing_analysis.dialogue_ratio = analysis_result.get('dialogue_ratio', 0)
@@ -1029,10 +1030,11 @@ async def analyze_chapter_background(
                     character_states=analysis_result.get('character_states', []),
                     scenes=analysis_result.get('scenes', []),
                     pacing=analysis_result.get('pacing', 'moderate'),
-                    overall_quality_score=analysis_result.get('scores', {}).get('overall', 0),
-                    pacing_score=analysis_result.get('scores', {}).get('pacing', 0),
-                    engagement_score=analysis_result.get('scores', {}).get('engagement', 0),
-                    coherence_score=analysis_result.get('scores', {}).get('coherence', 0),
+                    # 分数可能是字符串或数字，统一转换为浮点数
+                    overall_quality_score=float(analysis_result.get('scores', {}).get('overall', 0) or 0),
+                    pacing_score=float(analysis_result.get('scores', {}).get('pacing', 0) or 0),
+                    engagement_score=float(analysis_result.get('scores', {}).get('engagement', 0) or 0),
+                    coherence_score=float(analysis_result.get('scores', {}).get('coherence', 0) or 0),
                     analysis_report=analyzer.generate_analysis_summary(analysis_result),
                     suggestions=analysis_result.get('suggestions', []),
                     dialogue_ratio=analysis_result.get('dialogue_ratio', 0),

@@ -58,7 +58,11 @@
       "Bash(docker-compose down:*)",
       "Bash(docker-compose build:*)",
       "Bash(docker-compose up:*)",
-      "Bash(docker ps:*)"
+      "Bash(docker ps:*)",
+      "Bash(docker start:*)",
+      "Bash(docker stop:*)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(ls -la *.md)"
     ]
   }
 }

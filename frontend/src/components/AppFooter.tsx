@@ -201,19 +201,6 @@ export default function AppFooter({ sidebarWidth = 0 }: AppFooterProps) {
               <span>GitHub</span>
             </Link>
 
-            {/* LinuxDO 社区 */}
-            <Link
-              href={VERSION_INFO.linuxDoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                fontSize: 12,
-                color: token.colorTextSecondary,
-              }}
-            >
-              LinuxDO 社区
-            </Link>
-
             {/* 赞助按钮 */}
             <Button
               type="primary"

@@ -63,6 +63,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./.env:/app/.env:ro
+      - chroma_data:/app/data/chroma_db
     environment:
       # 应用配置
       - APP_NAME=${APP_NAME:-MuMuAINovel}
@@ -131,6 +132,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  chroma_data:
     driver: local
 
 networks:

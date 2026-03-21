@@ -130,9 +130,9 @@ backend/.instance_id
 .env.backup
 *.backup
 
-# Project docs
-DEPLOYMENT.md
-STARTUP.md
+# Project docs (保留这些文件)
+# DEPLOYMENT.md
+# STARTUP.md
 
 # Type checking
 pyrightconfig.json
