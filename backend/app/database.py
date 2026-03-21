@@ -184,8 +184,10 @@ async def get_db(request: Request):
             _session_stats["errors"] += 1
             logger.error(f"❌ GeneratorExit回滚失败 [User:{user_id}][ID:{session_id}]: {str(rollback_error)}")
     except Exception as e:
+        import traceback
         _session_stats["errors"] += 1
-        logger.error(f"❌ 会话异常 [User:{user_id}][ID:{session_id}]: {str(e)}")
+        error_trace = traceback.format_exc()
+        logger.error(f"❌ 会话异常 [User:{user_id}][ID:{session_id}]: 类型:{type(e).__name__}, 消息:{str(e)}, 堆栈:{error_trace[:500]}")
         try:
             if session.in_transaction():
                 await session.rollback()

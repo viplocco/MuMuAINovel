@@ -387,26 +387,34 @@ class MCPClientFacade:
                 error_msg = "; ".join(error_details)
                 logger.error(f"❌ MCP连接失败 {key}: TaskGroup异常 - {error_msg}")
                 await self._emit_status_change(config.user_id, config.plugin_name, "inactive", "error", error_msg)
-                return False
-
-            except Exception as e:
-                logger.error(f"❌ MCP连接失败 {key}: {type(e).__name__}: {e}")
-                await self._emit_status_change(config.user_id, config.plugin_name, "inactive", "error", str(e))
-                return False
-
-            finally:
-                # 确保异常时资源被正确清理
+                # 注册失败时才清理资源
                 if session:
                     try:
                         await session.__aexit__(None, None, None)
                     except Exception as cleanup_err:
                         logger.debug(f"清理session失败: {cleanup_err}")
-
                 if stream_ctx:
                     try:
                         await stream_ctx.__aexit__(None, None, None)
                     except Exception as cleanup_err:
                         logger.debug(f"清理stream_ctx失败: {cleanup_err}")
+                return False
+
+            except Exception as e:
+                logger.error(f"❌ MCP连接失败 {key}: {type(e).__name__}: {e}")
+                await self._emit_status_change(config.user_id, config.plugin_name, "inactive", "error", str(e))
+                # 注册失败时才清理资源
+                if session:
+                    try:
+                        await session.__aexit__(None, None, None)
+                    except Exception as cleanup_err:
+                        logger.debug(f"清理session失败: {cleanup_err}")
+                if stream_ctx:
+                    try:
+                        await stream_ctx.__aexit__(None, None, None)
+                    except Exception as cleanup_err:
+                        logger.debug(f"清理stream_ctx失败: {cleanup_err}")
+                return False
     
     async def unregister(self, user_id: str, plugin_name: str):
         """
@@ -514,26 +522,44 @@ class MCPClientFacade:
     ) -> bool:
         """
         确保插件已注册（如果未注册则自动注册）
-        
+
         Args:
             user_id: 用户ID
             plugin_name: 插件名称
             url: 服务器URL
             plugin_type: 插件类型 (streamable_http, sse, http)
             headers: HTTP头
-            
+
         Returns:
             是否成功
         """
         key = self._get_key(user_id, plugin_name)
-        
+
         if key in self._sessions:
             info = self._sessions[key]
-            # 检查URL和类型是否变化
+            # 检查URL和类型是否变化，以及会话状态是否正常
             if info.url == url and info.plugin_type == plugin_type and info.status != "error":
-                return True
-        
+                # 额外检查：尝试发送一个ping请求来验证会话是否真的有效
+                try:
+                    # 尝试调用 list_tools 来验证连接
+                    # 只给很短的延时，如果失败就重新注册
+                    import asyncio
+                    result = await asyncio.wait_for(
+                        info.session.list_tools(),
+                        timeout=3.0
+                    )
+                    logger.debug(f"✅ 会话有效性验证成功: {plugin_name}")
+                    return True
+                except Exception as e:
+                    logger.warning(f"⚠️ 会话已失效，需要重新注册: {plugin_name}, 错误: {e}")
+                    # 关闭失效的会话
+                    try:
+                        await self._close_session_unsafe(key)
+                    except Exception:
+                        pass
+
         # 注册
+        logger.info(f"🔄 注册新会话: {plugin_name}")
         return await self.register(MCPPluginConfig(
             user_id=user_id,
             plugin_name=plugin_name,
@@ -600,29 +626,65 @@ class MCPClientFacade:
         """
         cache_key = self._get_key(user_id, plugin_name)
         now = datetime.now()
-        
+
         # 检查缓存
         if use_cache and cache_key in self._tool_cache:
             entry = self._tool_cache[cache_key]
             if now < entry.expire_time:
                 entry.hit_count += 1
                 logger.debug(f"🎯 工具缓存命中: {cache_key} (命中次数: {entry.hit_count})")
-                return entry.tools
+
+                # 检查会话是否仍然有效，如果无效则清除缓存
+                session_info = self._sessions.get(cache_key)
+                if not session_info or session_info.status != "active":
+                    logger.warning(f"⚠️ 缓存中的会话已失效，清除缓存: {cache_key}")
+                    del self._tool_cache[cache_key]
+                else:
+                    return entry.tools
             else:
                 del self._tool_cache[cache_key]
                 logger.debug(f"⏰ 工具缓存过期: {cache_key}")
-        
+
         # 从服务器获取
+        logger.info(f"🔍 开始获取工具列表: {plugin_name}")
         session = await self._get_session(user_id, plugin_name)
-        result = await session.list_tools()
-        
+        logger.info(f"🔍 Session对象: {session}, 类型: {type(session)}")
+        try:
+            result = await session.list_tools()
+            logger.info(f"✅ list_tools() 返回: {result}, 工具数: {len(result.tools) if result.tools else 0}")
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            logger.error(f"❌ list_tools() 调用失败: {plugin_name}, 错误类型: {type(e).__name__}")
+            logger.error(f"   错误信息: {str(e)}")
+            logger.error(f"   完整堆栈: {tb[:1000]}")
+            # 检查session状态
+            info = self._sessions.get(cache_key)
+            if info:
+                logger.error(f"   会话状态: {info.status}, 请求数: {info.request_count}")
+            else:
+                logger.error(f"   会话不存在于: {cache_key}")
+
+            # 尝试重新注册插件
+            logger.info(f"🔄 尝试重新注册插件: {plugin_name}")
+            try:
+                # 获取插件配置信息（这里简化处理，实际需要从数据库获取）
+                # 先清除失效的会话
+                if cache_key in self._sessions:
+                    await self._close_session_unsafe(cache_key)
+                # 重新注册需要调用者提供配置，这里暂时返回空列表
+            except Exception as re_reg_err:
+                logger.error(f"重新注册失败: {re_reg_err}")
+
+            raise
+
         tools = [
             {
                 "name": t.name,
                 "description": t.description or "",
                 "inputSchema": t.inputSchema
             }
-            for t in result.tools
+            for t in (result.tools or [])
         ]
         
         # 更新缓存

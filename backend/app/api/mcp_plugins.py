@@ -829,6 +829,7 @@ async def get_plugin_tools(
     """
     获取插件提供的工具列表
     """
+    logger.info(f"🚀 get_plugin_tools 被调用: plugin_id={plugin_id}, user={user.user_id}")
     result = await db.execute(
         select(MCPPlugin).where(
             MCPPlugin.id == plugin_id,
@@ -836,34 +837,56 @@ async def get_plugin_tools(
         )
     )
     plugin = result.scalar_one_or_none()
-    
+
     if not plugin:
         raise HTTPException(status_code=404, detail="插件不存在")
-    
+
     if not plugin.enabled:
         raise HTTPException(status_code=400, detail="插件未启用")
-    
-    try:
-        # 确保插件已注册
-        await _ensure_plugin_registered(plugin, user.user_id)
-        
-        # 使用统一门面获取工具列表
-        tools = await mcp_client.get_tools(user.user_id, plugin.plugin_name)
-        
-        # 更新数据库中的工具缓存
-        plugin.tools = tools
-        await db.commit()
-        
-        return {
-            "plugin_name": plugin.plugin_name,
-            "tools": tools,
-            "count": len(tools)
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"获取工具列表失败: {plugin.plugin_name}, 错误: {e}")
-        raise HTTPException(status_code=500, detail=f"获取工具列表失败: {str(e)}")
+
+    # 等待插件会话就绪（带重试机制）
+    max_retries = 5
+    retry_delay = 1.0  # 秒
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            # 检查会话是否已注册
+            if not mcp_client.is_registered(user.user_id, plugin.plugin_name):
+                # 确保插件已注册
+                await _ensure_plugin_registered(plugin, user.user_id)
+
+            # 短暂等待让会话稳定
+            await asyncio.sleep(0.5)
+
+            # 使用统一门面获取工具列表
+            tools = await mcp_client.get_tools(user.user_id, plugin.plugin_name)
+
+            # 更新数据库中的工具缓存
+            plugin.tools = tools
+            await db.commit()
+
+            return {
+                "plugin_name": plugin.plugin_name,
+                "tools": tools,
+                "count": len(tools)
+            }
+        except Exception as e:
+            import traceback
+            last_error = e
+            error_trace = traceback.format_exc()
+            logger.warning(f"获取工具列表尝试 {attempt + 1}/{max_retries} 失败: {plugin.plugin_name}, 错误类型: {type(e).__name__}")
+            logger.warning(f"   错误详情: {str(e)[:200]}")
+            logger.warning(f"   堆栈: {error_trace[:500]}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 1.5  # 指数退避
+            continue
+
+    # 所有重试都失败
+    error_msg = str(last_error) if last_error else f"未知错误 ({type(last_error).__name__ if last_error else 'None'})"
+    logger.error(f"获取工具列表最终失败: {plugin.plugin_name}, 错误类型: {type(last_error).__name__ if last_error else 'None'}, 错误: {error_msg}")
+    raise HTTPException(status_code=500, detail=f"获取工具列表失败: {error_msg}")
 
 
 @router.post("/call")
