@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { List, Button, Modal, Form, Input, Select, message, Empty, Space, Badge, Tag, Card, InputNumber, Alert, Radio, Descriptions, Collapse, Popconfirm, Pagination, theme, Typography } from 'antd';
+import { List, Button, Modal, Form, Input, Select, Empty, Space, Badge, Tag, Card, InputNumber, Alert, Radio, Descriptions, Collapse, Popconfirm, Pagination, theme, Typography, App } from 'antd';
 import { EditOutlined, FileTextOutlined, ThunderboltOutlined, LockOutlined, DownloadOutlined, SettingOutlined, FundOutlined, SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, RocketOutlined, StopOutlined, InfoCircleOutlined, CaretRightOutlined, DeleteOutlined, BookOutlined, FormOutlined, PlusOutlined, ReadOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useChapterSync } from '../store/hooks';
@@ -46,6 +46,7 @@ const setCachedWordCount = (value: number): void => {
 };
 
 export default function Chapters() {
+  const { message } = App.useApp();
   const { currentProject, chapters, outlines, setCurrentChapter, setCurrentProject } = useStore();
   const [modal, contextHolder] = Modal.useModal();
   const { token } = theme.useToken();
@@ -404,7 +405,7 @@ export default function Chapters() {
     } catch (error) {
       console.error('批量轮询分析任务失败:', error);
     }
-  }, [clearAnalysisPollingIfIdle, currentProject?.id]);
+  }, [clearAnalysisPollingIfIdle, currentProject?.id, message]);
 
   const ensureAnalysisPolling = useCallback(() => {
     if (analysisPollingIntervalRef.current) return;
@@ -2128,7 +2129,7 @@ export default function Chapters() {
         ) : (
           // one-to-many 模式：按大纲分组显示
           <Collapse
-            bordered={false}
+            ghost
             defaultActiveKey={pagedGroupedChapters.length > 0 ? ['0'] : []}
             destroyInactivePanel
             expandIcon={({ isActive }) => <CaretRightOutlined rotate={isActive ? 90 : 0} />}

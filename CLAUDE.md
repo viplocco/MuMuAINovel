@@ -9,7 +9,7 @@ MuMuAINovel 是一个 AI 驱动的智能小说创作助手。用户可以在 AI 
 
 **技术栈：**
 - 后端：FastAPI + PostgreSQL (SQLAlchemy async) + Alembic 数据库迁移
-- 前端：React + TypeScript + Vite + Ant Design + Zustand
+- 前端：React + TypeScript + Vite + Ant Design 5.x + Zustand
 - AI：OpenAI SDK、Anthropic SDK、Gemini（通过 OpenAI 兼容 API）
 - 向量检索：sentence-transformers + ChromaDB 语义搜索
 
@@ -105,6 +105,13 @@ frontend/src/
 - `AIService` 类为 OpenAI、Anthropic、Gemini 提供统一接口
 - `ai_providers/` 使用提供者模式适配各 AI 厂商
 - 启用时自动集成 MCP 工具
+- 用户可通过 `PromptTemplate` 自定义提示词模板，系统会优先使用用户模板
+
+**提示词模板系统：**
+- `PromptService` 管理所有 AI 提示词
+- 支持用户自定义模板覆盖系统默认模板
+- 模板使用 Python f-string 格式，注意 `{{` 和 `}}` 表示字面花括号
+- 模板键名格式：`SCENE_ACTION_SYSTEM`、`SCENE_ACTION_USER` 等
 
 **流式响应：**
 - 使用 SSE (Server-Sent Events) 流式传输 AI 生成内容
@@ -160,3 +167,24 @@ LOCAL_AUTH_PASSWORD=admin123
 ## 数据库驱动说明
 
 本项目使用 `psycopg[binary]` (psycopg3) 进行同步数据库操作（迁移），而非 `psycopg2-binary`。异步操作使用 `asyncpg`。支持 PostgreSQL 18。
+
+## 重要配置说明
+
+### AI Provider 配置
+
+`DEFAULT_AI_PROVIDER` 只支持三种值：`openai`、`anthropic`、`gemini`。
+
+使用 OpenAI 兼容 API（如 DeepSeek、通义千问等）时：
+- `DEFAULT_AI_PROVIDER=openai`（不是 deepseek）
+- `OPENAI_BASE_URL=https://api.deepseek.com`（或其他兼容端点）
+- `DEFAULT_MODEL=deepseek-chat`（模型名称）
+
+### 前端 Ant Design 5.x 规范
+
+避免使用已废弃的 API：
+- `dropdownRender` → 使用 `popupRender`
+- `bodyStyle` → 使用 `styles.body`
+- `bordered` → 使用 `variant`
+- `InputNumber` 的 `addonAfter` → 使用 `Space.Compact`
+- `Spin` 的 `tip` 属性需要嵌套子元素才能显示
+- 静态方法 `message.error()` 等无法使用动态主题，推荐在组件内使用 `App.useApp()` 获取 message 实例

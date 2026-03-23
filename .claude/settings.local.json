@@ -62,7 +62,32 @@
       "Bash(docker start:*)",
       "Bash(docker stop:*)",
       "Bash(curl -s http://localhost:8000/health)",
-      "Bash(ls -la *.md)"
+      "Bash(ls -la *.md)",
+      "Bash(psql -h localhost -U admin -d mydb -c \"\\\\dt\")",
+      "Bash(.venv/Scripts/python.exe -c \":*)",
+      "Bash(findstr :5432)",
+      "Bash(sc query:*)",
+      "Bash(docker --version)",
+      "Bash(docker exec:*)",
+      "Bash(.venv/Scripts/alembic.exe current:*)",
+      "Bash(start cmd:*)",
+      "Bash(grep -rn \"message\\\\.\\\\\\(error\\\\|success\\\\|warning\\\\|info\\\\|loading\\\\\\)\\(\" e:/project/lean/MuMuAINovel/MuMuAINovel/frontend/src/pages --include=*.tsx)",
+      "Bash(tasklist /FI 'IMAGENAME eq python.exe' /FO TABLE)",
+      "Bash(findstr python:*)",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(grep -rn 以{{ e:/project/lean/MuMuAINovel/MuMuAINovel/backend/ --include=*.py)",
+      "Bash(taskkill /F /IM python.exe /T)",
+      "Bash(taskkill /F /IM pythonw.exe /T)",
+      "Bash(wmic process:*)",
+      "Bash(taskkill /F /PID 29584 /PID 5044 /PID 31188)",
+      "Bash(powershell -Command \"Stop-Process -Id 29584,5044,31188 -Force\")",
+      "Bash(powershell -Command \"Stop-Process -Id 30372,29484,28836,28364 -Force\")",
+      "Bash(for pid:*)",
+      "Bash(do taskkill:*)",
+      "Bash(done)",
+      "Bash(curl -s http://localhost:8001/docs -o /dev/null)",
+      "Bash(findstr \":800\")",
+      "Bash(powershell -Command \"Get-Process | Where-Object { $_ -in @\\(28836, 30372, 28364, 29484\\) } | Stop-Process -Force\")"
     ]
   }
 }

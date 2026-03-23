@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
+  App,
   Button,
   Card,
   Col,
@@ -10,7 +11,6 @@ import {
   Input,
   InputNumber,
   List,
-  message,
   Popconfirm,
   Progress,
   Row,
@@ -107,6 +107,7 @@ function isNotFoundError(error: unknown): boolean {
 }
 
 export default function BookImport() {
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const { token } = theme.useToken();
   const isMobile = window.innerWidth <= 768;
@@ -204,7 +205,7 @@ export default function BookImport() {
       }
     }
     setCacheReady(true);
-  }, []);
+  }, [message]);
 
   useEffect(() => {
     if (!cacheReady) return;
@@ -277,7 +278,7 @@ export default function BookImport() {
     }, 1500);
 
     return () => clearInterval(timer);
-  }, [taskId, isTaskTerminal]);
+  }, [taskId, isTaskTerminal, message]);
 
   useEffect(() => {
     const fetchPreview = async () => {
@@ -309,7 +310,7 @@ export default function BookImport() {
     };
 
     fetchPreview();
-  }, [taskId, taskStatus, preview]);
+  }, [taskId, taskStatus, preview, message]);
 
   const startTask = async () => {
     if (!file) {
@@ -513,7 +514,7 @@ export default function BookImport() {
       message.error('重试请求失败，无法连接到服务器');
       setRetrying(false);
     }
-  }, [taskId, failedSteps, navigate]);
+  }, [taskId, failedSteps, navigate, message]);
 
   const skipFailedSteps = useCallback(() => {
     setFailedSteps([]);
@@ -523,7 +524,7 @@ export default function BookImport() {
       message.info('已跳过失败步骤，正在跳转到项目...');
       navigate(`/project/${projectId}/chapters`);
     }
-  }, [navigate]);
+  }, [navigate, message]);
 
   const restartImport = useCallback(() => {
     clearBookImportCache();
@@ -548,7 +549,7 @@ export default function BookImport() {
     setRetryMessage('');
 
     message.success('已重新开始，请重新上传 TXT 并解析');
-  }, []);
+  }, [message]);
 
   const updateChapter = (index: number, patch: Partial<BookImportPreview['chapters'][number]>) => {
     setPreview(prev => {

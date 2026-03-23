@@ -185,7 +185,9 @@ const ChapterAnalysis: React.FC = () => {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
-        <Spin size="large" tip="加载章节中..." />
+        <Spin size="large" tip="加载章节中...">
+          <div />
+        </Spin>
       </div>
     );
   }
@@ -218,7 +220,7 @@ const ChapterAnalysis: React.FC = () => {
         <Card
           title="章节列表"
           style={{ width: 280, height: '100%', overflow: 'hidden' }}
-          bodyStyle={{ padding: 0, height: 'calc(100% - 57px)', overflow: 'auto' }}
+          styles={{ body: { padding: 0, height: 'calc(100% - 57px)', overflow: 'auto' } }}
         >
           {chapters.length === 0 ? (
             <Empty description="暂无章节" style={{ marginTop: 60 }} />
@@ -467,7 +469,7 @@ const ChapterAnalysis: React.FC = () => {
               {/* 章节内容 */}
               <Card
                 style={{ flex: 1, overflow: 'auto' }}
-                bodyStyle={{ padding: isMobile ? '12px' : '24px' }}
+                styles={{ body: { padding: isMobile ? '12px' : '24px' } }}
                 loading={contentLoading}
               >
                 {!contentLoading && (
@@ -514,7 +516,7 @@ const ChapterAnalysis: React.FC = () => {
               {hasAnnotations && annotationsData && !isMobile && (
                 <Card
                   style={{ width: 400, overflow: 'auto' }}
-                  bodyStyle={{ padding: 0 }}
+                  styles={{ body: { padding: 0 } }}
                 >
                   <MemorySidebar
                     annotations={annotationsData.annotations}

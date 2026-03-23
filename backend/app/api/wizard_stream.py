@@ -419,11 +419,24 @@ async def career_system_generator(
                         yield await tracker.error("职业体系生成失败（AI多次返回为空）")
                         return
                 
+                # 诊断日志：记录AI原始响应
+                logger.warning(f"🔍 AI职业体系响应长度: {len(career_response)} 字符")
+                logger.warning(f"🔍 AI职业体系响应结尾200字符: {career_response[-200:] if len(career_response) > 200 else career_response}")
+                
+                yield await tracker.parsing("解析职业体系数据...")
+                
+                # 诊断日志：记录AI原始响应
+                logger.warning(f"🔍 AI职业体系响应长度: {len(career_response)} 字符")
+                logger.warning(f"🔍 AI职业体系响应结尾200字符: {career_response[-200:] if len(career_response) > 200 else career_response}")
+                
                 yield await tracker.parsing("解析职业体系数据...")
                 
                 # 清洗并解析JSON
                 try:
                     cleaned_response = user_ai_service._clean_json_response(career_response)
+                    # 诊断日志：记录清洗后的响应
+                    logger.warning(f"🔍 清洗后JSON长度: {len(cleaned_response)} 字符")
+                    logger.warning(f"🔍 清洗后JSON结尾200字符: {cleaned_response[-200:] if len(cleaned_response) > 200 else cleaned_response}")
                     career_data = json.loads(cleaned_response)
                     logger.info(f"✅ 职业体系JSON解析成功（尝试{career_retry_count+1}/{MAX_CAREER_RETRIES}）")
                     

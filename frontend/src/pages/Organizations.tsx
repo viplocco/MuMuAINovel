@@ -332,7 +332,7 @@ export default function Organizations() {
         <Card
           title={`组织列表 (${organizations.length})`}
           style={{ width: 300, height: '100%', overflow: 'hidden' }}
-          bodyStyle={{ padding: 0, height: 'calc(100% - 57px)', overflow: 'auto' }}
+          styles={{ body: { padding: 0, height: 'calc(100% - 57px)', overflow: 'auto' } }}
           loading={loading}
         >
           {organizations.length === 0 ? (
@@ -463,7 +463,7 @@ export default function Organizations() {
             }}>
               <Card
                 style={{ flex: 1, overflow: 'auto' }}
-                bodyStyle={{ padding: isMobile ? '12px' : '24px' }}
+                styles={{ body: { padding: isMobile ? '12px' : '24px' } }}
               >
                 <Space direction="vertical" style={{ width: '100%' }} size={isMobile ? 'middle' : 'large'}>
                 <Card
@@ -498,7 +498,7 @@ export default function Organizations() {
                       </Tag>
                     </Descriptions.Item>
                     {selectedOrg.location && (
-                      <Descriptions.Item label="所在地" span={isMobile ? 1 : 2}>
+                      <Descriptions.Item label="所在地">
                         {selectedOrg.location}
                       </Descriptions.Item>
                     )}
@@ -623,7 +623,7 @@ export default function Organizations() {
             label="初始忠诚度"
             initialValue={50}
           >
-            <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%" />
+            <InputNumber min={0} max={100} style={{ width: '100%' }} suffix="%" />
           </Form.Item>
 
           <Form.Item
@@ -705,14 +705,14 @@ export default function Organizations() {
             name="loyalty"
             label="忠诚度"
           >
-            <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%" />
+            <InputNumber min={0} max={100} style={{ width: '100%' }} suffix="%" />
           </Form.Item>
 
           <Form.Item
             name="contribution"
             label="贡献度"
           >
-            <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%" />
+            <InputNumber min={0} max={100} style={{ width: '100%' }} suffix="%" />
           </Form.Item>
 
           <Form.Item

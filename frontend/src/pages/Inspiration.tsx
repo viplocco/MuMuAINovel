@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Input, Button, Space, Typography, message, Spin, Modal, theme } from 'antd';
+import { Card, Input, Button, Space, Typography, Spin, Modal, theme, App } from 'antd';
 import { SendOutlined, ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import { inspirationApi } from '../services/api';
 import { AIProjectGenerator, type GenerationConfig } from '../components/AIProjectGenerator';
@@ -49,6 +49,7 @@ const CACHE_KEY = 'inspiration_conversation_cache';
 const CACHE_EXPIRY = 24 * 60 * 60 * 1000;
 
 const Inspiration: React.FC = () => {
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<Step>('idea');
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -185,7 +186,7 @@ const Inspiration: React.FC = () => {
       clearCache();
       return false;
     }
-  }, [clearCache]);
+  }, [clearCache, message]);
 
   // ==================== 组件挂载时恢复缓存 ====================
 
@@ -1010,7 +1011,9 @@ const Inspiration: React.FC = () => {
               padding: 20,
               animation: 'fadeIn 0.3s ease-in'
             }}>
-              <Spin tip={refining ? "正在根据您的反馈重新生成..." : "AI思考中..."} />
+              <Spin tip={refining ? "正在根据您的反馈重新生成..." : "AI思考中..."}>
+                <div />
+              </Spin>
             </div>
           )}
 

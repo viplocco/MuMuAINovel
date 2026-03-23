@@ -227,7 +227,9 @@ const ChapterReader: React.FC = () => {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
-        <Spin size="large" tip="加载章节中..." />
+        <Spin size="large" tip="加载章节中...">
+          <div />
+        </Spin>
       </div>
     );
   }

@@ -31,6 +31,32 @@ const ChapterContentComparison: React.FC<ChapterContentComparisonProps> = ({
   const [viewMode, setViewMode] = useState<'split' | 'unified'>('split');
   const [modal, contextHolder] = Modal.useModal();
 
+  // 检测是否为暗色主题
+  const isDarkTheme = token.colorBgContainer === token.colorBgElevated ||
+    token.colorBgContainer.toLowerCase().includes('1') ||
+    token.colorText.startsWith('#fff') ||
+    token.colorText.startsWith('rgba(255');
+
+  // 判断背景色亮度
+  const isLightColor = (color: string) => {
+    const hex = color.replace('#', '');
+    if (hex.length === 3) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      return (r * 299 + g * 587 + b * 114) / 1000 > 128;
+    }
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      return (r * 299 + g * 587 + b * 114) / 1000 > 128;
+    }
+    return true;
+  };
+
+  const isDark = !isLightColor(token.colorBgContainer);
+
   const originalWordCount = originalContent.length;
   const wordCountDiff = wordCount - originalWordCount;
   const wordCountDiffPercent = ((wordCountDiff / originalWordCount) * 100).toFixed(1);
@@ -162,7 +188,7 @@ const ChapterContentComparison: React.FC<ChapterContentComparisonProps> = ({
               title="字数变化"
               value={wordCountDiff}
               suffix="字"
-              valueStyle={{ color: wordCountDiff > 0 ? 'var(--color-success)' : 'var(--color-error)' }}
+              valueStyle={{ color: wordCountDiff > 0 ? token.colorSuccess : token.colorError }}
               prefix={wordCountDiff > 0 ? '+' : ''}
             />
           </Col>
@@ -171,7 +197,7 @@ const ChapterContentComparison: React.FC<ChapterContentComparisonProps> = ({
               title="变化比例"
               value={wordCountDiffPercent}
               suffix="%"
-              valueStyle={{ color: Math.abs(parseFloat(wordCountDiffPercent)) < 10 ? 'var(--color-primary)' : 'var(--color-warning)' }}
+              valueStyle={{ color: Math.abs(parseFloat(wordCountDiffPercent)) < 10 ? token.colorPrimary : token.colorWarning }}
               prefix={wordCountDiff > 0 ? '+' : ''}
             />
           </Col>
@@ -182,8 +208,8 @@ const ChapterContentComparison: React.FC<ChapterContentComparisonProps> = ({
       <div style={{
         maxHeight: 'calc(90vh - 300px)',
         overflow: 'auto',
-        border: '1px solid var(--color-border)',
-        borderRadius: 4
+        border: `1px solid ${token.colorBorder}`,
+        borderRadius: token.borderRadius
       }}>
         <ReactDiffViewer
           oldValue={originalContent}
@@ -192,23 +218,38 @@ const ChapterContentComparison: React.FC<ChapterContentComparisonProps> = ({
           leftTitle="原内容"
           rightTitle="新内容"
           showDiffOnly={false}
-          useDarkTheme={false}
+          useDarkTheme={isDark}
           styles={{
             variables: {
               light: {
                 diffViewerBackground: token.colorBgContainer,
-                addedBackground: 'var(--color-success-bg)',
-                addedColor: 'var(--color-text-primary)',
-                removedBackground: 'var(--color-error-bg)',
-                removedColor: 'var(--color-text-primary)',
-                wordAddedBackground: 'var(--color-success-border)',
-                wordRemovedBackground: 'var(--color-error-border)',
-                addedGutterBackground: 'var(--color-success-bg)',
-                removedGutterBackground: 'var(--color-error-bg)',
-                gutterBackground: 'var(--color-bg-layout)',
-                gutterBackgroundDark: 'var(--color-bg-container)',
-                highlightBackground: 'var(--color-warning-bg)',
-                highlightGutterBackground: 'var(--color-warning-border)',
+                addedBackground: token.colorSuccessBg,
+                addedColor: token.colorText,
+                removedBackground: token.colorErrorBg,
+                removedColor: token.colorText,
+                wordAddedBackground: token.colorSuccessBorder,
+                wordRemovedBackground: token.colorErrorBorder,
+                addedGutterBackground: token.colorSuccessBg,
+                removedGutterBackground: token.colorErrorBg,
+                gutterBackground: token.colorBgLayout,
+                gutterBackgroundDark: token.colorBgContainer,
+                highlightBackground: token.colorWarningBg,
+                highlightGutterBackground: token.colorWarningBorder,
+              },
+              dark: {
+                diffViewerBackground: token.colorBgContainer,
+                addedBackground: token.colorSuccessBg,
+                addedColor: token.colorText,
+                removedBackground: token.colorErrorBg,
+                removedColor: token.colorText,
+                wordAddedBackground: token.colorSuccessBorder,
+                wordRemovedBackground: token.colorErrorBorder,
+                addedGutterBackground: token.colorSuccessBg,
+                removedGutterBackground: token.colorErrorBg,
+                gutterBackground: token.colorBgElevated,
+                gutterBackgroundDark: token.colorBgContainer,
+                highlightBackground: token.colorWarningBg,
+                highlightGutterBackground: token.colorWarningBorder,
               },
             },
             line: {

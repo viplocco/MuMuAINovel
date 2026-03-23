@@ -314,7 +314,7 @@ export const PartialRegenerateModal: React.FC<PartialRegenerateModalProps> = ({
                 max={10000}
                 step={50}
                 disabled={isGenerating}
-                addonAfter="字"
+                suffix="字"
                 style={{ width: 150 }}
               />
             </Space>

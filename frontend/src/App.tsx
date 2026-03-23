@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { App as AntApp } from 'antd';
 import ProjectList from './pages/ProjectList';
 import ProjectWizardNew from './pages/ProjectWizardNew';
 import Inspiration from './pages/Inspiration';
@@ -27,14 +28,17 @@ import AuthCallback from './pages/AuthCallback';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppFooter from './components/AppFooter';
 import SpringFestival from './components/SpringFestival';
+import AntdStaticProvider from './components/AntdStaticProvider';
 import './App.css';
 
 function App() {
   return (
-    <>
-      {/* 🧧 春节喜庆装饰 */}
-      <SpringFestival />
-      <BrowserRouter
+    <AntApp>
+      <>
+        <AntdStaticProvider />
+        {/* 🧧 春节喜庆装饰 */}
+        <SpringFestival />
+        <BrowserRouter
         future={{
           v7_startTransition: true,
           v7_relativeSplatPath: true,
@@ -72,7 +76,8 @@ function App() {
           </Route>
         </Routes>
       </BrowserRouter>
-    </>
+      </>
+    </AntApp>
   );
 }
 

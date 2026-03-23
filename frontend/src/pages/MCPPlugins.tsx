@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
+  App,
   Card,
   Button,
   Space,
@@ -9,7 +10,6 @@ import {
   Input,
   Switch,
   Select,
-  message,
   Tag,
   Spin,
   Empty,
@@ -39,6 +39,7 @@ const { Paragraph, Text, Title } = Typography;
 const { TextArea } = Input;
 
 export default function MCPPluginsPage() {
+  const { message } = App.useApp();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [form] = Form.useForm();
   const { token } = theme.useToken();
@@ -168,7 +169,7 @@ export default function MCPPluginsPage() {
       }
     };
     initPage();
-  }, [modal]);
+  }, [modal, message]);
 
   const loadPlugins = async () => {
     try {

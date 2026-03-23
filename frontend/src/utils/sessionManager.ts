@@ -1,5 +1,5 @@
 import { authApi } from '../services/api';
-import { message } from 'antd';
+import { getMessageInstance } from './antdStatic';
 
 /**
  * 会话管理工具
@@ -98,7 +98,7 @@ class SessionManager {
       // 显示即将过期警告
       if (remaining <= this.WARNING_THRESHOLD && !this.warningShown) {
         this.warningShown = true;
-        message.warning({
+        getMessageInstance().warning({
           content: `您的登录状态将在 ${remainingMinutes} 分钟后过期，请注意保存数据`,
           duration: 10,
         });
@@ -128,7 +128,7 @@ class SessionManager {
       
       console.log(`🔄 [会话] 自动续期成功，延长 ${result.remaining_minutes} 分钟`);
       
-      message.success({
+      getMessageInstance().success({
         content: '登录状态已自动延长',
         duration: 2,
       });
@@ -157,7 +157,7 @@ class SessionManager {
       // 即使登出失败也继续跳转
     }
     
-    message.error({
+    getMessageInstance().error({
       content: '登录已过期，请重新登录',
       duration: 3,
     });

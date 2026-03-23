@@ -168,7 +168,9 @@ export default function ChangelogModal({ visible, onClose }: ChangelogModalProps
 
       {loading && changelog.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 0' }}>
-          <Spin size="large" tip="加载更新日志中..." />
+          <Spin size="large" tip="加载更新日志中...">
+            <div />
+          </Spin>
         </div>
       ) : changelog.length === 0 ? (
         <Empty description="暂无更新日志" />

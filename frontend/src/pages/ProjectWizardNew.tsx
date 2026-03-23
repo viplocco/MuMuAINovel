@@ -275,7 +275,7 @@ export default function ProjectWizardNew() {
                 max={20}
                 style={{ width: '100%' }}
                 size="large"
-                addonAfter="个"
+                suffix="个"
                 placeholder="AI生成的角色数量"
               />
             </Form.Item>
@@ -291,7 +291,7 @@ export default function ProjectWizardNew() {
             min={10000}
             style={{ width: '100%' }}
             size="large"
-            addonAfter="字"
+            suffix="字"
             placeholder="整部小说的目标字数"
           />
         </Form.Item>

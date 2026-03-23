@@ -435,12 +435,7 @@ export default function PromptWorkshop() {
                       flexDirection: 'column',
                       border: `1px solid ${token.colorBorderSecondary}`,
                     }}
-                    bodyStyle={{ 
-                      padding: 16, 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      flex: 1,
-                    }}
+                    styles={{ body: { padding: 16, display: 'flex', flexDirection: 'column', flex: 1 } }}
                     actions={[
                       <Tooltip title="查看详情" key="view">
                         <EyeOutlined onClick={() => handleViewDetail(item)} />
@@ -572,7 +567,7 @@ export default function PromptWorkshop() {
               >
                 <Card
                   style={{ borderRadius: 12, height: '100%', border: `1px solid ${token.colorBorderSecondary}` }}
-                  bodyStyle={{ padding: 16 }}
+                  styles={{ body: { padding: 16 } }}
                 >
                   <Space direction="vertical" style={{ width: '100%' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -856,7 +851,7 @@ export default function PromptWorkshop() {
               >
                 <Card
                   style={{ borderRadius: 12, border: `1px solid ${token.colorBorderSecondary}` }}
-                  bodyStyle={{ padding: 16 }}
+                  styles={{ body: { padding: 16 } }}
                   actions={[
                     <Button
                       key="approve"
@@ -931,7 +926,7 @@ export default function PromptWorkshop() {
               >
                 <Card
                   style={{ borderRadius: 12, border: `1px solid ${token.colorBorderSecondary}` }}
-                  bodyStyle={{ padding: 16 }}
+                  styles={{ body: { padding: 16 } }}
                   actions={[
                     <Tooltip title="编辑" key="edit">
                       <Button

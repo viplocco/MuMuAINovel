@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, Select, Slider, InputNumber, message, Space, Typography, Spin, Modal, Alert, Grid, Tabs, List, Tag, Popconfirm, Empty, Row, Col, theme } from 'antd';
+import { Card, Form, Input, Button, Select, Slider, InputNumber, Space, Typography, Spin, Modal, Alert, Grid, Tabs, List, Tag, Popconfirm, Empty, Row, Col, theme, App } from 'antd';
 import { SaveOutlined, DeleteOutlined, ReloadOutlined, InfoCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, ThunderboltOutlined, PlusOutlined, EditOutlined, CopyOutlined, WarningOutlined } from '@ant-design/icons';
 import { settingsApi, mcpPluginApi } from '../services/api';
 import type { SettingsUpdate, APIKeyPreset, PresetCreateRequest, APIKeyPresetConfig } from '../types';
@@ -12,6 +12,7 @@ const { TextArea } = Input;
 
 export default function SettingsPage() {
   const { token } = theme.useToken();
+  const { message } = App.useApp();
   const screens = useBreakpoint();
   const isMobile = !screens.md; // md断点是768px
   const [form] = Form.useForm();
@@ -1121,7 +1122,7 @@ export default function SettingsPage() {
                                 return (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
                                   (option?.description ?? '').toLowerCase().includes(input.toLowerCase());
                               }}
-                              dropdownRender={(menu) => (
+                              popupRender={(menu) => (
                                 <>
                                   {menu}
                                   {fetchingModels && (
@@ -1637,7 +1638,7 @@ export default function SettingsPage() {
                       return (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
                         (option?.description ?? '').toLowerCase().includes(input.toLowerCase());
                     }}
-                    dropdownRender={(menu) => (
+                    popupRender={(menu) => (
                       <>
                         {menu}
                         {fetchingPresetModels && (

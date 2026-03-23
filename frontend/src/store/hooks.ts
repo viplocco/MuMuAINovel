@@ -4,7 +4,7 @@
  */
 
 import { useCallback } from 'react';
-import { message } from 'antd';
+import { getMessageInstance } from '../utils/antdStatic';
 import { useStore } from './index';
 import { projectApi, outlineApi, characterApi, chapterApi } from '../services/api';
 import type {
@@ -39,7 +39,7 @@ export function useProjectSync() {
       return projects;
     } catch (error) {
       console.error('刷新项目列表失败:', error);
-      message.error('刷新项目列表失败');
+      getMessageInstance().error('刷新项目列表失败');
       return [];
     } finally {
       setLoading(false);
@@ -107,7 +107,7 @@ export function useCharacterSync() {
       return characters;
     } catch (error) {
       console.error('刷新角色列表失败:', error);
-      message.error('刷新角色列表失败');
+      getMessageInstance().error('刷新角色列表失败');
       return [];
     }
   }, [currentProject?.id, setCharacters]);
@@ -160,7 +160,7 @@ export function useOutlineSync() {
       return outlines;
     } catch (error) {
       console.error('刷新大纲列表失败:', error);
-      message.error('刷新大纲列表失败');
+      getMessageInstance().error('刷新大纲列表失败');
       return [];
     }
   }, [currentProject?.id, setOutlines]); // 添加 currentProject?.id 到依赖数组
@@ -240,7 +240,7 @@ export function useChapterSync() {
       return chapters;
     } catch (error) {
       console.error('刷新章节列表失败:', error);
-      message.error('刷新章节列表失败');
+      getMessageInstance().error('刷新章节列表失败');
       return [];
     }
   }, [currentProject?.id, setChapters]); // 添加 currentProject?.id 到依赖数组
@@ -376,13 +376,13 @@ export function useChapterSync() {
                 // 检查是否真正有内容生成（避免上下文构建失败时误报成功）
                 if (fullContent && fullContent.length > 0) {
                   if (analysisTaskId) {
-                    message.success('AI创作成功，正在分析章节内容...');
+                    getMessageInstance().success('AI创作成功，正在分析章节内容...');
                   } else {
-                    message.success('AI创作成功');
+                    getMessageInstance().success('AI创作成功');
                   }
                 } else {
                   // 没有生成内容，可能是上下文构建失败或其他错误
-                  message.error('AI创作失败：未能生成有效内容，请检查日志');
+                  getMessageInstance().error('AI创作失败：未能生成有效内容，请检查日志');
                 }
                 // 生成完成，刷新章节数据
                 await refreshChapters();

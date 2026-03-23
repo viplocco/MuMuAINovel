@@ -1,4 +1,4 @@
-import { Card, Descriptions, Empty, Typography, Button, Modal, Form, Input, message, Flex, InputNumber, Select, theme } from 'antd';
+import { Card, Descriptions, Empty, Typography, Button, Modal, Form, Input, message, Flex, InputNumber, Select, theme, Space } from 'antd';
 import { GlobalOutlined, EditOutlined, SyncOutlined, FormOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { useStore } from '../store';
@@ -589,7 +589,7 @@ export default function WorldSetting() {
               min={0}
               max={2147483647}
               step={1000}
-              addonAfter="字"
+              suffix="字"
             />
           </Form.Item>
         </Form>

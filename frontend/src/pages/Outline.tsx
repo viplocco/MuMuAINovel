@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useMemo } from 'react';
-import { Button, List, Modal, Form, Input, message, Empty, Space, Popconfirm, Card, Select, Radio, Tag, InputNumber, Tabs, Pagination, theme } from 'antd';
+import { Button, List, Modal, Form, Input, Empty, Space, Popconfirm, Card, Select, Radio, Tag, InputNumber, Tabs, Pagination, theme, App } from 'antd';
 import { EditOutlined, DeleteOutlined, ThunderboltOutlined, BranchesOutlined, AppstoreAddOutlined, CheckCircleOutlined, ExclamationCircleOutlined, PlusOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useOutlineSync } from '../store/hooks';
@@ -108,6 +108,7 @@ function parseOutlineStructure(structure?: string): OutlineStructureData {
 const { TextArea } = Input;
 
 export default function Outline() {
+  const { message } = App.useApp();
   const { currentProject, outlines, setCurrentProject } = useStore();
   const [isGenerating, setIsGenerating] = useState(false);
   const [editForm] = Form.useForm();
@@ -1758,15 +1759,15 @@ export default function Outline() {
             <div style={{ fontWeight: 500, marginBottom: 12, color: token.colorTextSecondary }}>章节详情</div>
             {batchPreviewData.expansion_results[selectedOutlineIdx]?.chapter_plans[selectedChapterIdx] ? (
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                <Card size="small" title="情节概要" bordered={false}>
+                <Card size="small" title="情节概要" variant="borderless">
                   {batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].plot_summary}
                 </Card>
 
-                <Card size="small" title="叙事目标" bordered={false}>
+                <Card size="small" title="叙事目标" variant="borderless">
                   {batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].narrative_goal}
                 </Card>
 
-                <Card size="small" title="关键事件" bordered={false}>
+                <Card size="small" title="关键事件" variant="borderless">
                   <Space direction="vertical" size="small" style={{ width: '100%' }}>
                     {(batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].key_events as string[]).map((event: string, eventIdx: number) => (
                       <div key={eventIdx}>• {event}</div>
@@ -1774,7 +1775,7 @@ export default function Outline() {
                   </Space>
                 </Card>
 
-                <Card size="small" title="涉及角色" bordered={false}>
+                <Card size="small" title="涉及角色" variant="borderless">
                   <Space wrap>
                     {(batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].character_focus as string[]).map((char: string, charIdx: number) => (
                       <Tag key={charIdx} color="purple">{char}</Tag>
@@ -1783,7 +1784,7 @@ export default function Outline() {
                 </Card>
 
                 {batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].scenes && batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].scenes!.length > 0 && (
-                  <Card size="small" title="场景" bordered={false}>
+                  <Card size="small" title="场景" variant="borderless">
                     <Space direction="vertical" size="small" style={{ width: '100%' }}>
                       {batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].scenes!.map((scene: SceneInfo, sceneIdx: number) => (
                         <Card key={sceneIdx} size="small" style={{ backgroundColor: token.colorFillQuaternary }}>
@@ -2010,9 +2011,7 @@ export default function Outline() {
                           boxShadow: `0 1px 2px ${alphaColor(token.colorTextBase, 0.08)}`,
                           transition: 'all 0.3s ease'
                         }}
-                        bodyStyle={{
-                          padding: isMobile ? '10px 12px' : 16
-                        }}
+                        styles={{ body: { padding: isMobile ? '10px 12px' : 16 } }}
                         onMouseEnter={(e) => {
                           if (!isMobile) {
                             e.currentTarget.style.boxShadow = `0 4px 12px ${alphaColor(token.colorTextBase, 0.16)}`;
