@@ -87,7 +87,11 @@
       "Bash(done)",
       "Bash(curl -s http://localhost:8001/docs -o /dev/null)",
       "Bash(findstr \":800\")",
-      "Bash(powershell -Command \"Get-Process | Where-Object { $_ -in @\\(28836, 30372, 28364, 29484\\) } | Stop-Process -Force\")"
+      "Bash(powershell -Command \"Get-Process | Where-Object { $_ -in @\\(28836, 30372, 28364, 29484\\) } | Stop-Process -Force\")",
+      "Bash(curl -s http://172.19.0.3:8000/api/auth/config)",
+      "Bash(echo $HTTP_PROXY $HTTPS_PROXY $NO_PROXY)",
+      "Bash(wget -qO- http://localhost:8000/api/auth/config)",
+      "Bash(curl -s --noproxy \"*\" http://localhost:8000/api/auth/config)"
     ]
   }
 }

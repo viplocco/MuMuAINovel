@@ -408,9 +408,9 @@ export const AIProjectGenerator: React.FC<AIProjectGeneratorProps> = ({
             throw new Error(error);
           },
           onComplete: () => {
-            console.log('世界观生成完成');
+              // onResult 已打印完成日志，此处无需重复
+            }
           }
-        }
       );
 
       if (!worldResult?.project_id) {
@@ -447,9 +447,9 @@ export const AIProjectGenerator: React.FC<AIProjectGeneratorProps> = ({
             throw new Error(error);
           },
           onComplete: () => {
-            console.log('职业体系生成完成');
+              // onResult 已打印完成日志
+            }
           }
-        }
       );
 
       // 步骤3: 生成角色
@@ -487,9 +487,9 @@ export const AIProjectGenerator: React.FC<AIProjectGeneratorProps> = ({
             throw new Error(error);
           },
           onComplete: () => {
-            console.log('角色生成完成');
+              // onResult 已打印完成日志
+            }
           }
-        }
       );
 
       // 步骤3: 生成大纲
@@ -521,9 +521,9 @@ export const AIProjectGenerator: React.FC<AIProjectGeneratorProps> = ({
             throw new Error(error);
           },
           onComplete: () => {
-            console.log('大纲生成完成');
+              // onResult 已打印完成日志
+            }
           }
-        }
       );
 
       // 全部完成 - 自动跳转到项目详情页

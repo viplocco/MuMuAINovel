@@ -695,7 +695,7 @@ export default function Foreshadows() {
         }}
         onOk={() => form.submit()}
         width={800}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={form}
@@ -944,7 +944,7 @@ export default function Foreshadows() {
           plantForm.resetFields();
         }}
         onOk={() => plantForm.submit()}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={plantForm} layout="vertical" onFinish={handlePlant}>
           <Form.Item name="chapter_id" label="选择埋入章节" rules={[{ required: true, message: '请选择章节' }]}>
@@ -973,7 +973,7 @@ export default function Foreshadows() {
           resolveForm.resetFields();
         }}
         onOk={() => resolveForm.submit()}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={resolveForm} layout="vertical" onFinish={handleResolve}>
           <Form.Item name="chapter_id" label="选择回收章节" rules={[{ required: true, message: '请选择章节' }]}>

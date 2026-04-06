@@ -106,6 +106,10 @@ export default function Characters() {
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  // 使用 useWatch 监听主职业ID，避免在 Form 未连接时调用 getFieldValue
+  const watchedMainCareerId = Form.useWatch('main_career_id', editForm);
+  // 监听副职业数据数组
+  const watchedSubCareerData = Form.useWatch('sub_career_data', editForm);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createType, setCreateType] = useState<'character' | 'organization'>('character');
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
@@ -1055,8 +1059,8 @@ export default function Characters() {
                         <Form.Item label="当前阶段" name="main_career_stage" tooltip="主职业当前修炼到的阶段" style={{ marginBottom: 12 }}>
                           <InputNumber
                             min={1}
-                            max={editForm.getFieldValue('main_career_id') ?
-                              mainCareers.find(c => c.id === editForm.getFieldValue('main_career_id'))?.max_stage || 10
+                            max={watchedMainCareerId ?
+                              mainCareers.find(c => c.id === watchedMainCareerId)?.max_stage || 10
                               : 10}
                             style={{ width: '100%' }}
                             placeholder="阶段"
@@ -1102,7 +1106,7 @@ export default function Characters() {
                                     <InputNumber
                                       min={1}
                                       max={(() => {
-                                        const careerId = editForm.getFieldValue(['sub_career_data', field.name, 'career_id']);
+                                        const careerId = watchedSubCareerData?.[field.name]?.career_id;
                                         const career = subCareers.find(c => c.id === careerId);
                                         return career?.max_stage || 10;
                                       })()}

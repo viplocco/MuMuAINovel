@@ -114,42 +114,16 @@ const Inspiration: React.FC = () => {
     }
   }, []);
 
-  // 保存到缓存
-  const saveToCache = useCallback(() => {
-    try {
-      // 只在对话阶段保存，生成阶段不保存
-      if (currentStep === 'generating' || currentStep === 'complete') {
-        return;
-      }
+  // ==================== 组件挂载时恢复缓存 ====================
 
-      // 只有用户有输入时才保存（至少两条消息：AI问候+用户回复）
-      if (messages.length <= 1) {
-        return;
-      }
+  useEffect(() => {
+    if (cacheLoaded) return;
 
-      const cacheData: CacheData = {
-        messages,
-        currentStep,
-        wizardData,
-        initialIdea,
-        selectedOptions,
-        lastFailedRequest,
-        timestamp: Date.now()
-      };
-
-      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-      console.log('💾 对话已自动保存');
-    } catch (error) {
-      console.error('保存缓存失败:', error);
-    }
-  }, [currentStep, messages, wizardData, initialIdea, selectedOptions, lastFailedRequest]);
-
-  // 从缓存恢复
-  const restoreFromCache = useCallback((): boolean => {
     try {
       const cached = localStorage.getItem(CACHE_KEY);
       if (!cached) {
-        return false;
+        setCacheLoaded(true);
+        return;
       }
 
       const cacheData: CacheData = JSON.parse(cached);
@@ -158,13 +132,15 @@ const Inspiration: React.FC = () => {
       // 检查缓存是否过期
       if (age > CACHE_EXPIRY) {
         console.log('⏰ 缓存已过期，清除');
-        clearCache();
-        return false;
+        localStorage.removeItem(CACHE_KEY);
+        setCacheLoaded(true);
+        return;
       }
 
       // 必须有有效的对话数据
       if (!cacheData.messages || cacheData.messages.length <= 1) {
-        return false;
+        setCacheLoaded(true);
+        return;
       }
 
       // 恢复所有状态
@@ -173,42 +149,49 @@ const Inspiration: React.FC = () => {
       setWizardData(cacheData.wizardData);
       setInitialIdea(cacheData.initialIdea);
       setSelectedOptions(cacheData.selectedOptions);
-      // 恢复失败请求信息，确保"重新生成"按钮可用
       if (cacheData.lastFailedRequest) {
         setLastFailedRequest(cacheData.lastFailedRequest);
       }
 
       console.log('✅ 已恢复上次的对话进度');
       message.success('已恢复上次的对话进度', 2);
-      return true;
     } catch (error) {
       console.error('恢复缓存失败:', error);
-      clearCache();
-      return false;
+      localStorage.removeItem(CACHE_KEY);
     }
-  }, [clearCache, message]);
-
-  // ==================== 组件挂载时恢复缓存 ====================
-
-  useEffect(() => {
-    if (!cacheLoaded) {
-      restoreFromCache();
-      setCacheLoaded(true);
-    }
-  }, [cacheLoaded, restoreFromCache]);
+    setCacheLoaded(true);
+  }, [cacheLoaded, message]);
 
   // ==================== 自动保存：状态变化时保存 ====================
 
   useEffect(() => {
     // 防抖保存
     const timer = setTimeout(() => {
-      if (cacheLoaded) {
-        saveToCache();
+      if (!cacheLoaded) return;
+      // 只在对话阶段保存，生成阶段不保存
+      if (currentStep === 'generating' || currentStep === 'complete') return;
+      // 只有用户有输入时才保存
+      if (messages.length <= 1) return;
+
+      try {
+        const cacheData: CacheData = {
+          messages,
+          currentStep,
+          wizardData,
+          initialIdea,
+          selectedOptions,
+          lastFailedRequest,
+          timestamp: Date.now()
+        };
+        localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+        console.log('💾 对话已自动保存');
+      } catch (error) {
+        console.error('保存缓存失败:', error);
       }
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [messages, currentStep, wizardData, initialIdea, selectedOptions, lastFailedRequest, cacheLoaded, saveToCache]);
+  }, [messages, currentStep, wizardData, initialIdea, selectedOptions, lastFailedRequest, cacheLoaded]);
 
   // 自动滚动到底部
   const scrollToBottom = () => {

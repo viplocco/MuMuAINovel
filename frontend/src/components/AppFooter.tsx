@@ -205,7 +205,7 @@ export default function AppFooter({ sidebarWidth = 0 }: AppFooterProps) {
             <Button
               type="primary"
               icon={<GiftOutlined style={{ fontSize: 14 }} />}
-              onClick={() => window.open('https://mumuverse.space:1588/', '_blank')}
+              onClick={() => window.open('https://ailocco.cn', '_blank')}
               style={{
                 background: token.colorPrimary,
                 border: 'none',

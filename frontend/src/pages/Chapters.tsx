@@ -2131,38 +2131,36 @@ export default function Chapters() {
           <Collapse
             ghost
             defaultActiveKey={pagedGroupedChapters.length > 0 ? ['0'] : []}
-            destroyInactivePanel
+            destroyOnHidden
             expandIcon={({ isActive }) => <CaretRightOutlined rotate={isActive ? 90 : 0} />}
             style={{ background: 'transparent' }}
-          >
-            {pagedGroupedChapters.map((group, groupIndex) => (
-              <Collapse.Panel
-                key={groupIndex.toString()}
-                header={
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <Tag color={group.outlineId ? 'blue' : 'default'} style={{ margin: 0 }}>
-                      {group.outlineId ? `📖 大纲 ${group.outlineOrder}` : '📝 未分类'}
-                    </Tag>
-                    <span style={{ fontWeight: 600, fontSize: 16 }}>
-                      {group.outlineTitle}
-                    </span>
-                    <Badge
-                      count={`${group.chapters.length} 章`}
-                      style={{ backgroundColor: token.colorSuccess }}
-                    />
-                    <Badge
-                      count={`${group.chapters.reduce((sum, ch) => sum + (ch.word_count || 0), 0)} 字`}
-                      style={{ backgroundColor: token.colorPrimary }}
-                    />
-                  </div>
-                }
-                style={{
-                  marginBottom: 16,
-                  background: token.colorBgContainer,
-                  borderRadius: token.borderRadius,
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                }}
-              >
+            items={pagedGroupedChapters.map((group, groupIndex) => ({
+              key: groupIndex.toString(),
+              label: (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <Tag color={group.outlineId ? 'blue' : 'default'} style={{ margin: 0 }}>
+                    {group.outlineId ? `📖 大纲 ${group.outlineOrder}` : '📝 未分类'}
+                  </Tag>
+                  <span style={{ fontWeight: 600, fontSize: 16 }}>
+                    {group.outlineTitle}
+                  </span>
+                  <Badge
+                    count={`${group.chapters.length} 章`}
+                    style={{ backgroundColor: token.colorSuccess }}
+                  />
+                  <Badge
+                    count={`${group.chapters.reduce((sum, ch) => sum + (ch.word_count || 0), 0)} 字`}
+                    style={{ backgroundColor: token.colorPrimary }}
+                  />
+                </div>
+              ),
+              style: {
+                marginBottom: 16,
+                background: token.colorBgContainer,
+                borderRadius: token.borderRadius,
+                border: `1px solid ${token.colorBorderSecondary}`,
+              },
+              children: (
                 <List
                   dataSource={group.chapters}
                   renderItem={(item) => (
@@ -2370,9 +2368,9 @@ export default function Chapters() {
                     </List.Item>
                   )}
                 />
-              </Collapse.Panel>
-            ))}
-          </Collapse>
+              ),
+            }))}
+          />
         )}
       </div>
 

@@ -101,10 +101,12 @@ api.interceptors.response.use(
           break;
         case 401:
           errorMessage = '未授权，请先登录';
+          // 只在非登录页面重定向，不显示错误消息
           if (window.location.pathname !== '/login') {
             window.location.href = '/login';
           }
-          break;
+          // 401 错误静默处理，不显示 toast 和 console.error
+          return Promise.reject(error);
         case 403:
           errorMessage = '没有权限访问';
           break;

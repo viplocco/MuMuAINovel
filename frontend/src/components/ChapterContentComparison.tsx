@@ -31,12 +31,6 @@ const ChapterContentComparison: React.FC<ChapterContentComparisonProps> = ({
   const [viewMode, setViewMode] = useState<'split' | 'unified'>('split');
   const [modal, contextHolder] = Modal.useModal();
 
-  // 检测是否为暗色主题
-  const isDarkTheme = token.colorBgContainer === token.colorBgElevated ||
-    token.colorBgContainer.toLowerCase().includes('1') ||
-    token.colorText.startsWith('#fff') ||
-    token.colorText.startsWith('rgba(255');
-
   // 判断背景色亮度
   const isLightColor = (color: string) => {
     const hex = color.replace('#', '');
