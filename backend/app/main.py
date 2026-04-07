@@ -29,22 +29,75 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 注册MCP状态同步服务
     register_status_sync()
-    
+
+    # 初始化提示词工坊默认数据
+    await init_workshop_items()
+
     logger.info("应用启动完成")
-    
+
     yield
-    
+
     # 清理MCP插件
     await mcp_client.cleanup()
-    
+
     # 清理HTTP客户端池
     from app.services.ai_service import cleanup_http_clients
     await cleanup_http_clients()
-    
+
     # 关闭数据库连接
     await close_db()
-    
+
     logger.info("应用已关闭")
+
+
+async def init_workshop_items():
+    """初始化提示词工坊默认数据（仅服务端模式且数据为空时）"""
+    from app.config import is_workshop_server
+    from app.database import get_engine
+    from sqlalchemy import select, text
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.models.prompt_workshop import PromptWorkshopItem
+    from app.constants.default_workshop_items import DEFAULT_WORKSHOP_ITEMS
+    import uuid
+
+    if not is_workshop_server():
+        return
+
+    try:
+        engine = await get_engine("_global_users_")
+        session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        async with session_maker() as session:
+            # 检查是否已有数据
+            result = await session.execute(
+                select(PromptWorkshopItem).limit(1)
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                logger.info("提示词工坊已有数据，跳过初始化")
+                return
+
+            # 导入默认数据
+            for item_data in DEFAULT_WORKSHOP_ITEMS:
+                item = PromptWorkshopItem(
+                    id=str(uuid.uuid4()),
+                    name=item_data["name"],
+                    description=item_data["description"],
+                    prompt_content=item_data["prompt_content"],
+                    category=item_data["category"],
+                    tags=item_data.get("tags", []),
+                    author_name=item_data.get("author_name", "官方"),
+                    is_official=item_data.get("is_official", False),
+                    status="active"
+                )
+                session.add(item)
+
+            await session.commit()
+            logger.info(f"已初始化 {len(DEFAULT_WORKSHOP_ITEMS)} 条提示词工坊默认数据")
+
+    except Exception as e:
+        logger.warning(f"初始化提示词工坊数据失败: {e}")
 
 
 app = FastAPI(

@@ -81,6 +81,9 @@ export default function Chapters() {
   const [chapterPage, setChapterPage] = useState(1);
   const [chapterPageSize, setChapterPageSize] = useState(20);
 
+  // 大纲展开状态
+  const [expandedOutlineKeys, setExpandedOutlineKeys] = useState<string[]>([]);
+
   // 阅读器状态
   const [readerVisible, setReaderVisible] = useState(false);
   const [readingChapter, setReadingChapter] = useState<Chapter | null>(null);
@@ -664,6 +667,30 @@ export default function Chapters() {
 
     return Object.values(groups).sort((a, b) => a.outlineOrder - b.outlineOrder);
   }, [pagedSortedChapters]);
+
+  // 初始化展开的大纲：优先展开包含"已完成"章节的大纲，否则展开第一个
+  useEffect(() => {
+    if (pagedGroupedChapters.length > 0 && expandedOutlineKeys.length === 0) {
+      // 找出所有已完成章节中章节号最大的
+      let maxChapterNumber = -1;
+      let targetGroupIndex = -1;
+
+      pagedGroupedChapters.forEach((group, index) => {
+        group.chapters.forEach(chapter => {
+          if (chapter.status === 'completed' && chapter.chapter_number > maxChapterNumber) {
+            maxChapterNumber = chapter.chapter_number;
+            targetGroupIndex = index;
+          }
+        });
+      });
+
+      if (targetGroupIndex >= 0) {
+        setExpandedOutlineKeys([targetGroupIndex.toString()]);
+      } else {
+        setExpandedOutlineKeys(['0']);
+      }
+    }
+  }, [pagedGroupedChapters, expandedOutlineKeys.length]);
 
   // 搜索词或分页大小变化时重置到第一页
   useEffect(() => {
@@ -1913,13 +1940,13 @@ export default function Chapters() {
               : '细化模式：章节可在大纲页面展开'}
           </Tag>
         </div>
-        <Space direction={isMobile ? 'vertical' : 'horizontal'} style={{ width: isMobile ? '100%' : 'auto' }}>
+        <Space direction={isMobile ? 'vertical' : 'horizontal'} style={{ width: isMobile ? '100%' : 'auto' }} wrap>
           <Input.Search
             allowClear
             placeholder="搜索章节（序号/标题/大纲）"
             value={chapterSearchKeyword}
             onChange={(e) => setChapterSearchKeyword(e.target.value)}
-            style={{ width: isMobile ? '100%' : 280 }}
+            style={{ width: isMobile ? '100%' : 220 }}
           />
           {currentProject.outline_mode === 'one-to-many' && (
             <Button
@@ -2130,7 +2157,8 @@ export default function Chapters() {
           // one-to-many 模式：按大纲分组显示
           <Collapse
             ghost
-            defaultActiveKey={pagedGroupedChapters.length > 0 ? ['0'] : []}
+            activeKey={expandedOutlineKeys}
+            onChange={(keys) => setExpandedOutlineKeys(keys as string[])}
             destroyOnHidden
             expandIcon={({ isActive }) => <CaretRightOutlined rotate={isActive ? 90 : 0} />}
             style={{ background: 'transparent' }}
