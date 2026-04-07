@@ -27,7 +27,7 @@ import Login from './pages/Login';
 import AuthCallback from './pages/AuthCallback';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppFooter from './components/AppFooter';
-import SpringFestival from './components/SpringFestival';
+import SeasonDecor from './components/SeasonDecor';
 import AntdStaticProvider from './components/AntdStaticProvider';
 import './App.css';
 
@@ -36,8 +36,8 @@ function App() {
     <AntApp>
       <>
         <AntdStaticProvider />
-        {/* 🧧 春节喜庆装饰 */}
-        <SpringFestival />
+        {/* 🌸 季节装饰（春节/春天/夏天/秋天/冬天） */}
+        <SeasonDecor />
         <BrowserRouter
         future={{
           v7_startTransition: true,

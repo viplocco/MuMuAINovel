@@ -1,0 +1,434 @@
+/**
+ * 🌸 春天装饰样式
+ *
+ * 包含：垂柳、飘落花瓣、横幅、装饰条、风效指示器等
+ */
+
+/* ===== 控制按钮（由 SeasonDecor 统一管理） ===== */
+
+/* ===== 春天横幅 ===== */
+.ss-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9998;
+  display: flex;
+  justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
+  animation: ss-banner-slide-in 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.ss-banner-content {
+  background: linear-gradient(135deg, #228B22 0%, #4CAF50 30%, #90EE90 50%, #4CAF50 70%, #228B22 100%);
+  color: #FFFFFF;
+  padding: 10px 40px;
+  border-radius: 0 0 20px 20px;
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 8px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow:
+    0 4px 20px rgba(34, 139, 34, 0.5),
+    0 0 40px rgba(255, 182, 193, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(144, 238, 144, 0.4);
+  border-top: none;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: ss-banner-glow 3s ease-in-out infinite;
+}
+
+.ss-banner-icon {
+  font-size: 24px;
+  animation: ss-banner-icon-bounce 1s ease-in-out infinite alternate;
+}
+
+.ss-banner-text {
+  font-family: 'STKaiti', 'KaiTi', 'SimSun', serif;
+}
+
+@keyframes ss-banner-slide-in {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes ss-banner-glow {
+  0%, 100% { box-shadow: 0 4px 20px rgba(34, 139, 34, 0.5), 0 0 40px rgba(255, 182, 193, 0.3); }
+  50% { box-shadow: 0 4px 30px rgba(34, 139, 34, 0.7), 0 0 60px rgba(255, 182, 193, 0.5); }
+}
+
+@keyframes ss-banner-icon-bounce {
+  from { transform: translateY(0) rotate(-5deg); }
+  to { transform: translateY(-4px) rotate(5deg); }
+}
+
+/* ===== 垂柳组 ===== */
+.ss-willow-group {
+  position: fixed;
+  top: 0;
+  z-index: 9990;
+  display: flex;
+  gap: 15px;
+  cursor: pointer;
+  transition: filter 0.3s ease;
+  pointer-events: auto;
+}
+
+.ss-willow-group:hover {
+  filter: brightness(1.1) drop-shadow(0 0 12px rgba(144, 238, 144, 0.4));
+}
+
+.ss-willow-left {
+  left: calc(50% - 300px);
+}
+
+.ss-willow-right {
+  right: calc(50% - 300px);
+}
+
+/* ===== 垂柳 SVG 树 ===== */
+.ss-willow-tree {
+  width: 70px;
+  height: 200px;
+  overflow: visible;
+}
+
+.ss-willow-1 {
+  width: 70px;
+  height: 190px;
+}
+.ss-willow-2 {
+  width: 60px;
+  height: 150px;
+}
+.ss-willow-3 {
+  width: 70px;
+  height: 190px;
+}
+.ss-willow-4 {
+  width: 60px;
+  height: 150px;
+}
+
+/* 柳枝组 - 整体摇摆 */
+.ss-willow-branch-group {
+  animation: ss-willow-sway 5s ease-in-out infinite;
+  transform-origin: 35px 0; /* 以顶部中心为摇摆原点 */
+}
+
+.ss-willow-1 .ss-willow-branch-group {
+  animation-delay: 0s;
+}
+.ss-willow-2 .ss-willow-branch-group {
+  animation-delay: 0.8s;
+}
+.ss-willow-3 .ss-willow-branch-group {
+  animation-delay: 0.4s;
+}
+.ss-willow-4 .ss-willow-branch-group {
+  animation-delay: 1.2s;
+}
+
+/* 柳枝干 - 弯曲的棕色线条 */
+.ss-willow-branch-path {
+  fill: none;
+  stroke: #5D4037;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.15));
+}
+
+/* 柳叶 - 细长绿色叶子 */
+.ss-willow-leaf {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  animation: ss-leaf-flutter 3s ease-in-out infinite;
+}
+
+/* 左侧柳叶（向左飘） */
+.ss-leaf-left {
+  stroke: #7CB342;
+  transform-origin: left center;
+}
+
+/* 右侧柳叶（向右飘） */
+.ss-leaf-right {
+  stroke: #8BC34A;
+  transform-origin: left center;
+}
+
+/* 柳叶颜色层次 */
+.ss-willow-leaf:nth-child(odd) {
+  stroke: #689F38;
+}
+.ss-willow-leaf:nth-child(3n) {
+  stroke: #9CCC65;
+}
+.ss-willow-leaf:nth-child(5n) {
+  stroke: #558B2F;
+}
+
+/* 柳枝摇摆动画 */
+@keyframes ss-willow-sway {
+  0%, 100% {
+    transform: rotate(-10deg);
+  }
+  25% {
+    transform: rotate(-5deg);
+  }
+  50% {
+    transform: rotate(10deg);
+  }
+  75% {
+    transform: rotate(5deg);
+  }
+}
+
+/* 柳叶飘动动画 - 相对于枝干的微小摆动 */
+@keyframes ss-leaf-flutter {
+  0%, 100% {
+    transform: rotate(0deg) scaleX(1);
+    opacity: 0.92;
+  }
+  25% {
+    transform: rotate(4deg) scaleX(1.02);
+    opacity: 0.88;
+  }
+  50% {
+    transform: rotate(-2deg) scaleX(0.98);
+    opacity: 0.95;
+  }
+  75% {
+    transform: rotate(3deg) scaleX(1);
+    opacity: 0.90;
+  }
+}
+
+/* ===== 飘落装饰物 ===== */
+.ss-falling-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9985;
+  overflow: hidden;
+}
+
+.ss-falling-item {
+  position: absolute;
+  top: -60px;
+  animation: ss-fall linear forwards;
+  opacity: 0.8;
+  will-change: transform;
+}
+
+/* 柳叶 SVG */
+.ss-willow-leaf-svg {
+  display: block;
+}
+
+/* 樱花 emoji */
+.ss-sakura-emoji {
+  font-size: inherit;
+}
+
+/* 桃花花瓣 SVG */
+.ss-peach-petal-svg {
+  display: block;
+}
+
+/* 飘落动画（带水平漂移） */
+@keyframes ss-fall {
+  0% {
+    transform: translateY(0) rotate(0deg) translateX(0);
+    opacity: 0;
+  }
+  5% {
+    opacity: 0.75;
+  }
+  25% {
+    transform: translateY(25vh) rotate(180deg) translateX(var(--drift-x, 30px));
+    opacity: 0.8;
+  }
+  75% {
+    transform: translateY(75vh) rotate(540deg) translateX(calc(var(--drift-x, 30px) * -0.5));
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(calc(100vh + 80px)) rotate(720deg) translateX(calc(var(--drift-x, 30px) * 0.3));
+    opacity: 0;
+  }
+}
+
+/* ===== 顶部绿色装饰条 ===== */
+.ss-top-border {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    #228B22 0%,
+    #90EE90 15%,
+    #FFB7C5 25%,
+    #4CAF50 35%,
+    #FF69B4 45%,
+    #90EE90 50%,
+    #FF69B4 55%,
+    #4CAF50 65%,
+    #FFB7C5 75%,
+    #90EE90 85%,
+    #228B22 100%
+  );
+  background-size: 300% 100%;
+  animation: ss-border-flow 6s linear infinite;
+  z-index: 9995;
+  box-shadow: 0 2px 8px rgba(34, 139, 34, 0.3);
+}
+
+@keyframes ss-border-flow {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 300% 0%; }
+}
+
+/* ===== 风效指示器 ===== */
+.ss-wind-indicator {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9980;
+  opacity: 0.6;
+  transition: transform 0.5s ease-out;
+  pointer-events: none;
+}
+
+.ss-wind-arrow {
+  font-size: 24px;
+  animation: ss-wind-blow 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes ss-wind-blow {
+  from { transform: translateX(-10px) rotate(-15deg); }
+  to { transform: translateX(10px) rotate(15deg); }
+}
+
+/* ===== 点击交互效果 ===== */
+.ss-willow-group:hover .ss-willow-tree {
+  filter: drop-shadow(0 0 12px rgba(144, 238, 144, 0.5));
+}
+
+.ss-willow-group:active .ss-willow-tree {
+  transform: scale(0.97);
+}
+
+/* ===== 移动端适配 ===== */
+@media (max-width: 768px) {
+  .ss-willow-left {
+    left: calc(50% - 100px);
+  }
+
+  .ss-willow-right {
+    right: calc(50% - 100px);
+  }
+
+  .ss-willow-tree {
+    width: 50px;
+    height: 130px;
+  }
+
+  .ss-willow-1, .ss-willow-3 {
+    width: 50px;
+    height: 120px;
+  }
+
+  .ss-willow-2, .ss-willow-4 {
+    width: 42px;
+    height: 100px;
+  }
+
+  /* 减少柳叶数量 */
+  .ss-willow-leaf:nth-child(n+8) {
+    display: none;
+  }
+
+  .ss-willow-group {
+    gap: 8px;
+  }
+
+  .ss-banner-content {
+    padding: 8px 20px;
+    font-size: 16px;
+    letter-spacing: 4px;
+    gap: 8px;
+  }
+
+  .ss-banner-icon {
+    font-size: 18px;
+  }
+
+  /* 减少飘落物 */
+  .ss-falling-item:nth-child(n+10) {
+    display: none;
+  }
+}
+
+/* 更小屏幕 */
+@media (max-width: 576px) {
+  .ss-willow-left {
+    left: calc(50% - 50px);
+  }
+
+  .ss-willow-right {
+    right: calc(50% - 50px);
+  }
+
+  .ss-willow-tree {
+    width: 36px;
+    height: 100px;
+  }
+
+  .ss-willow-1, .ss-willow-3 {
+    width: 36px;
+    height: 90px;
+  }
+
+  .ss-willow-2, .ss-willow-4 {
+    width: 30px;
+    height: 80px;
+  }
+
+  /* 更少柳叶 */
+  .ss-willow-leaf:nth-child(n+5) {
+    display: none;
+  }
+}
+
+/* ===== 减少动画偏好 ===== */
+@media (prefers-reduced-motion: reduce) {
+  .ss-willow-branch-group {
+    animation: none;
+  }
+  .ss-willow-leaf {
+    animation: none;
+  }
+  .ss-falling-item {
+    display: none;
+  }
+  .ss-banner {
+    animation: none;
+  }
+  .ss-top-border {
+    animation: none;
+  }
+  .ss-wind-indicator {
+    display: none;
+  }
+}

@@ -107,9 +107,12 @@ export default function Characters() {
   const [editForm] = Form.useForm();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   // 使用 useWatch 监听主职业ID，避免在 Form 未连接时调用 getFieldValue
-  const watchedMainCareerId = Form.useWatch('main_career_id', editForm);
+  const watchedEditMainCareerId = Form.useWatch('main_career_id', editForm);
   // 监听副职业数据数组
-  const watchedSubCareerData = Form.useWatch('sub_career_data', editForm);
+  const watchedEditSubCareerData = Form.useWatch('sub_career_data', editForm);
+  // 监听 createForm 的字段
+  const watchedCreateMainCareerId = Form.useWatch('main_career_id', createForm);
+  const watchedCreateSubCareerData = Form.useWatch('sub_career_data', createForm);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createType, setCreateType] = useState<'character' | 'organization'>('character');
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
@@ -1059,8 +1062,8 @@ export default function Characters() {
                         <Form.Item label="当前阶段" name="main_career_stage" tooltip="主职业当前修炼到的阶段" style={{ marginBottom: 12 }}>
                           <InputNumber
                             min={1}
-                            max={watchedMainCareerId ?
-                              mainCareers.find(c => c.id === watchedMainCareerId)?.max_stage || 10
+                            max={watchedEditMainCareerId ?
+                              mainCareers.find(c => c.id === watchedEditMainCareerId)?.max_stage || 10
                               : 10}
                             style={{ width: '100%' }}
                             placeholder="阶段"
@@ -1082,7 +1085,7 @@ export default function Characters() {
                               <Row key={field.key} gutter={8} style={{ marginBottom: 4 }}>
                                 <Col span={16}>
                                   <Form.Item
-                                    {...field}
+                                    key={field.key}
                                     name={[field.name, 'career_id']}
                                     rules={[{ required: true, message: '请选择副职业' }]}
                                     style={{ marginBottom: 0 }}
@@ -1098,7 +1101,7 @@ export default function Characters() {
                                 </Col>
                                 <Col span={5}>
                                   <Form.Item
-                                    {...field}
+                                    key={`${field.key}-stage`}
                                     name={[field.name, 'stage']}
                                     rules={[{ required: true, message: '阶段' }]}
                                     style={{ marginBottom: 0 }}
@@ -1106,7 +1109,7 @@ export default function Characters() {
                                     <InputNumber
                                       min={1}
                                       max={(() => {
-                                        const careerId = watchedSubCareerData?.[field.name]?.career_id;
+                                        const careerId = watchedEditSubCareerData?.[field.name]?.career_id;
                                         const career = subCareers.find(c => c.id === careerId);
                                         return career?.max_stage || 10;
                                       })()}
@@ -1338,8 +1341,8 @@ export default function Characters() {
                         <Form.Item label="当前阶段" name="main_career_stage" tooltip="主职业当前修炼到的阶段" style={{ marginBottom: 12 }}>
                           <InputNumber
                             min={1}
-                            max={createForm.getFieldValue('main_career_id') ?
-                              mainCareers.find(c => c.id === createForm.getFieldValue('main_career_id'))?.max_stage || 10
+                            max={watchedCreateMainCareerId ?
+                              mainCareers.find(c => c.id === watchedCreateMainCareerId)?.max_stage || 10
                               : 10}
                             style={{ width: '100%' }}
                             placeholder="阶段"
@@ -1361,7 +1364,7 @@ export default function Characters() {
                               <Row key={field.key} gutter={8} style={{ marginBottom: 4 }}>
                                 <Col span={16}>
                                   <Form.Item
-                                    {...field}
+                                    key={field.key}
                                     name={[field.name, 'career_id']}
                                     rules={[{ required: true, message: '请选择副职业' }]}
                                     style={{ marginBottom: 0 }}
@@ -1377,7 +1380,7 @@ export default function Characters() {
                                 </Col>
                                 <Col span={5}>
                                   <Form.Item
-                                    {...field}
+                                    key={`${field.key}-stage`}
                                     name={[field.name, 'stage']}
                                     rules={[{ required: true, message: '阶段' }]}
                                     style={{ marginBottom: 0 }}
@@ -1385,7 +1388,7 @@ export default function Characters() {
                                     <InputNumber
                                       min={1}
                                       max={(() => {
-                                        const careerId = createForm.getFieldValue(['sub_career_data', field.name, 'career_id']);
+                                        const careerId = watchedCreateSubCareerData?.[field.name]?.career_id;
                                         const career = subCareers.find(c => c.id === careerId);
                                         return career?.max_stage || 10;
                                       })()}

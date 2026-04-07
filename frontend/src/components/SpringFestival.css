@@ -1,43 +1,9 @@
 /**
  * 🧧 春节喜庆装饰样式
- * 
+ *
  * 包含：灯笼、飘落物、横幅、装饰条等
+ * 控制按钮由 SeasonDecor 组件统一管理
  */
-
-/* ===== 控制按钮 ===== */
-.sf-toggle-btn {
-  z-index: 9999;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 2px solid #FFD700;
-  background: linear-gradient(135deg, #FF0000 0%, #CC0000 100%);
-  color: white;
-  font-size: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(255, 0, 0, 0.4), 0 0 20px rgba(255, 215, 0, 0.3);
-  animation: sf-btn-glow 2s ease-in-out infinite;
-  outline: none;
-  padding: 0;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.sf-toggle-btn:hover {
-  box-shadow: 0 6px 24px rgba(255, 0, 0, 0.5), 0 0 30px rgba(255, 215, 0, 0.5);
-}
-
-.sf-toggle-btn.sf-dragging {
-  animation: none;
-  box-shadow: 0 8px 32px rgba(255, 0, 0, 0.6), 0 0 40px rgba(255, 215, 0, 0.6);
-  transform: scale(1.1);
-}
-
-@keyframes sf-btn-glow {
-  0%, 100% { box-shadow: 0 4px 16px rgba(255, 0, 0, 0.4), 0 0 20px rgba(255, 215, 0, 0.3); }
-  50% { box-shadow: 0 4px 20px rgba(255, 0, 0, 0.6), 0 0 30px rgba(255, 215, 0, 0.5); }
-}
 
 /* ===== 新春祝福横幅 ===== */
 .sf-banner {
@@ -376,13 +342,6 @@
     font-size: 18px;
   }
 
-  /* 控制按钮调整 */
-  .sf-toggle-btn {
-    width: 38px;
-    height: 38px;
-    font-size: 18px;
-  }
-
   /* 减少飘落物 */
   .sf-falling-item:nth-child(n+8) {
     display: none;
@@ -418,9 +377,6 @@
     animation: none;
   }
   .sf-top-border {
-    animation: none;
-  }
-  .sf-toggle-btn {
     animation: none;
   }
 }
