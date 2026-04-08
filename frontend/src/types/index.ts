@@ -140,6 +140,7 @@ export interface Project {
   chapter_count?: number;
   narrative_perspective?: string;
   character_count?: number;
+  attribute_schema?: string;  // 能力属性配置(JSON字符串)
   created_at: string;
   updated_at: string;
 }
@@ -271,8 +272,45 @@ export interface Character {
     career_id: string;
     stage: number;
   }>;
+  // 能力数值字段（根据项目的attribute_schema动态配置）
+  attributes?: Record<string, AttributeValue>;
+  base_attributes?: Record<string, AttributeValue>;
   created_at: string;
   updated_at: string;
+}
+
+// 能力值类型定义
+export interface AttributeValue {
+  type: 'numeric' | 'stage' | 'combo_select';
+  value?: number;
+  name?: string;  // 阶段名称
+  elements?: string[];  // 组合元素（如灵根元素）
+  quality?: string;  // 品质（如双灵根）
+  rank?: string;  // 品质评级
+  growth_rate?: number;  // 成长倍率
+}
+
+// 属性配置类型定义（用于前端渲染）
+export interface AttributeConfig {
+  type: 'numeric' | 'stage' | 'combo_select';
+  name: string;
+  min?: number;
+  max?: number;
+  default?: number | string[];
+  stages?: string[];
+  elements?: Record<string, { name?: string; color?: string; traits?: string }>;
+  max_select?: number;
+  quality_config?: Record<number, { name: string; rank: string; growth_rate: number }>;
+  hidden?: boolean;
+  optional?: boolean;
+  unit?: string;
+}
+
+// 属性Schema类型定义
+export interface AttributeSchema {
+  attributes: Record<string, AttributeConfig>;
+  display_order: string[];
+  primary_attribute?: string;
 }
 
 export interface CharacterUpdate {

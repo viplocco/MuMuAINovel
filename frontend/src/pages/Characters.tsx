@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button, Modal, Form, Input, Select, Row, Col, Empty, Tabs, Divider, Typography, Space, InputNumber, Checkbox, theme, App } from 'antd';
-import { ThunderboltOutlined, UserOutlined, TeamOutlined, PlusOutlined, ExportOutlined, ImportOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined, UserOutlined, TeamOutlined, PlusOutlined, ExportOutlined, ImportOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useCharacterSync } from '../store/hooks';
 import { charactersPageGridConfig } from '../components/CardStyles';
 import { CharacterCard } from '../components/CharacterCard';
 import { SSELoadingOverlay } from '../components/SSELoadingOverlay';
-import type { Character, ApiError } from '../types';
+import DynamicAttributesEditor from '../components/DynamicAttributesEditor';
+import type { Character, ApiError, AttributeValue, AttributeSchema } from '../types';
 import { characterApi } from '../services/api';
 import { SSEPostClient } from '../utils/sseClient';
 import api from '../services/api';
@@ -91,6 +92,7 @@ interface CharacterUpdateData {
   location?: string;
   motto?: string;
   color?: string;
+  attributes?: string; // 能力值 JSON
 }
 
 export default function Characters() {
@@ -121,6 +123,10 @@ export default function Characters() {
   const [selectedCharacters, setSelectedCharacters] = useState<string[]>([]);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // 能力属性 Schema 状态
+  const [attributeSchema, setAttributeSchema] = useState<AttributeSchema | null>(null);
+  // 当前编辑的能力值
+  const [editingAttributes, setEditingAttributes] = useState<Record<string, AttributeValue> | null>(null);
 
   const {
     refreshCharacters,
@@ -131,6 +137,7 @@ export default function Characters() {
     if (currentProject?.id) {
       refreshCharacters();
       fetchCareers();
+      fetchAttributeSchema();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject?.id]);
@@ -146,6 +153,40 @@ export default function Characters() {
       setSubCareers(response.sub_careers || []);
     } catch (error) {
       console.error('获取职业列表失败:', error);
+    }
+  };
+
+  // 获取项目的能力属性配置
+  const fetchAttributeSchema = async () => {
+    if (!currentProject?.id) return;
+    try {
+      const response = await api.get<unknown, { attribute_schema: string | null }>(`/projects/${currentProject.id}`);
+      if (response.attribute_schema) {
+        const schema = JSON.parse(response.attribute_schema) as AttributeSchema;
+        setAttributeSchema(schema);
+      } else {
+        setAttributeSchema(null);
+      }
+    } catch (error) {
+      console.error('获取能力属性配置失败:', error);
+      setAttributeSchema(null);
+    }
+  };
+
+  // 刷新项目的能力属性配置（使用最新默认配置）
+  const refreshAttributeSchema = async () => {
+    if (!currentProject?.id) return;
+    try {
+      const response = await api.post<unknown, { success: boolean; attribute_schema: AttributeSchema }>(
+        `/projects/${currentProject.id}/refresh-attribute-schema`
+      );
+      if (response.success && response.attribute_schema) {
+        setAttributeSchema(response.attribute_schema);
+        message.success('能力属性配置已更新');
+      }
+    } catch (error) {
+      console.error('刷新能力属性配置失败:', error);
+      message.error('刷新能力属性配置失败');
     }
   };
 
@@ -320,6 +361,13 @@ export default function Characters() {
       stage: sc.stage || 1
     })) || [];
 
+    // 设置能力值
+    if (character.attributes) {
+      setEditingAttributes(character.attributes);
+    } else {
+      setEditingAttributes(null);
+    }
+
     editForm.setFieldsValue({
       ...character,
       sub_career_data: subCareerData
@@ -342,11 +390,17 @@ export default function Characters() {
         updateData.sub_careers = JSON.stringify([]);
       }
 
+      // 处理能力值字段
+      if (editingAttributes && !editingCharacter.is_organization) {
+        updateData.attributes = JSON.stringify(editingAttributes);
+      }
+
       await characterApi.updateCharacter(editingCharacter.id, updateData);
       message.success('更新成功');
       setIsEditModalOpen(false);
       editForm.resetFields();
       setEditingCharacter(null);
+      setEditingAttributes(null);
       await refreshCharacters();
     } catch (error) {
       console.error('更新失败:', error);
@@ -942,6 +996,7 @@ export default function Characters() {
           setIsEditModalOpen(false);
           editForm.resetFields();
           setEditingCharacter(null);
+          setEditingAttributes(null);
         }}
         footer={
           <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
@@ -949,6 +1004,7 @@ export default function Characters() {
               setIsEditModalOpen(false);
               editForm.resetFields();
               setEditingCharacter(null);
+              setEditingAttributes(null);
             }}>
               取消
             </Button>
@@ -1144,6 +1200,29 @@ export default function Characters() {
                       )}
                     </Form.List>
                   )}
+                </>
+              )}
+
+              {/* 能力值编辑区域 */}
+              {attributeSchema && !editingCharacter?.is_organization && (
+                <>
+                  <Divider style={{ margin: '8px 0' }}>
+                    <Space>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>能力值</Typography.Text>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        onClick={refreshAttributeSchema}
+                        title="刷新属性配置（使用最新默认配置）"
+                      />
+                    </Space>
+                  </Divider>
+                  <DynamicAttributesEditor
+                    attributeSchema={attributeSchema}
+                    values={editingAttributes}
+                    onChange={setEditingAttributes}
+                  />
                 </>
               )}
             </>

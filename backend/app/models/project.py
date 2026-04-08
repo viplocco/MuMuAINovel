@@ -15,6 +15,9 @@ class Project(Base):
     description = Column(Text, comment="项目简介")
     theme = Column(Text, comment="主题")
     genre = Column(String(50), comment="小说类型")
+
+    # 能力属性配置（根据小说类型动态生成）
+    attribute_schema = Column(Text, comment="能力属性配置(JSON)，继承自小说类型或自定义")
     target_words = Column(Integer, default=0, comment="目标字数")
     current_words = Column(Integer, default=0, comment="当前字数")
     status = Column(String(20), default="planning", comment="创作状态")

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Space, Typography, message, Progress } from 'antd';
+import { Card, Button, Space, Typography, Progress, App } from 'antd';
 import { CheckCircleOutlined, LoadingOutlined } from '@ant-design/icons';
 import { wizardStreamApi } from '../services/api';
 import type { ApiError } from '../types';
@@ -53,6 +53,7 @@ export const AIProjectGenerator: React.FC<AIProjectGeneratorProps> = ({
   resumeProjectId
 }) => {
   const navigate = useNavigate();
+  const { message } = App.useApp();
 
   // 状态管理
   const [loading, setLoading] = useState(false);

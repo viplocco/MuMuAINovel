@@ -9,7 +9,8 @@ class SessionManager {
   private checkInterval: number | null = null;
   private activityTimeout: number | null = null;
   private lastActivityTime: number = Date.now();
-  
+  private isRunning = false; // 防止重复启动
+
   // 配置参数
   private readonly CHECK_INTERVAL = 60 * 1000; // 每分钟检查一次
   private readonly REFRESH_THRESHOLD = 30 * 60 * 1000; // 剩余30分钟时刷新
@@ -22,6 +23,11 @@ class SessionManager {
    * 启动会话监控
    */
   start() {
+    // 防止重复启动（React StrictMode 会导致组件挂载两次）
+    if (this.isRunning) {
+      return;
+    }
+
     // 先检查是否有有效的会话
     const expireAt = this.getSessionExpireTime();
     
@@ -37,7 +43,8 @@ class SessionManager {
     if (remaining <= 0) {
       return;
     }
-    
+
+    this.isRunning = true;
     console.log(`✅ [会话] 启动监控，剩余 ${remainingMinutes} 分钟`);
     
     // 立即检查一次
@@ -56,7 +63,12 @@ class SessionManager {
    * 停止会话监控
    */
   stop() {
+    if (!this.isRunning) {
+      return;
+    }
+
     console.log('[SessionManager] 停止会话监控');
+    this.isRunning = false;
     
     if (this.checkInterval) {
       clearInterval(this.checkInterval);

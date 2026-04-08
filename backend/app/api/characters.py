@@ -141,13 +141,13 @@ async def get_characters(
         .order_by(Character.created_at.desc())
     )
     characters = result.scalars().all()
-    
+
     # 为角色填充关系摘要、组织额外字段、职业信息
     enriched_characters = []
     for char in characters:
         # 从 character_relationships 表动态生成关系摘要
         rel_summary = await _build_relationships_summary(char.id, project_id, db)
-        
+
         char_dict = {
             "id": char.id,
             "project_id": char.project_id,
@@ -173,9 +173,10 @@ async def get_characters(
             "color": None,
             "main_career_id": char.main_career_id,
             "main_career_stage": char.main_career_stage,
-            "sub_careers": json.loads(char.sub_careers) if char.sub_careers else None
+            "sub_careers": json.loads(char.sub_careers) if char.sub_careers else None,
+            "attributes": json.loads(char.attributes) if char.attributes else None
         }
-        
+
         if char.is_organization:
             org_result = await db.execute(
                 select(Organization).where(Organization.character_id == char.id)
@@ -188,9 +189,9 @@ async def get_characters(
                     "motto": org.motto,
                     "color": org.color
                 })
-        
+
         enriched_characters.append(char_dict)
-    
+
     return CharacterListResponse(total=total, items=enriched_characters)
 
 
@@ -204,13 +205,13 @@ async def get_project_characters(
     # 验证用户权限
     user_id = getattr(request.state, 'user_id', None)
     await verify_project_access(project_id, user_id, db)
-    
+
     # 获取总数
     count_result = await db.execute(
         select(func.count(Character.id)).where(Character.project_id == project_id)
     )
     total = count_result.scalar_one()
-    
+
     # 获取角色列表
     result = await db.execute(
         select(Character)
@@ -218,13 +219,13 @@ async def get_project_characters(
         .order_by(Character.created_at.desc())
     )
     characters = result.scalars().all()
-    
+
     # 为角色填充关系摘要、组织额外字段、职业信息
     enriched_characters = []
     for char in characters:
         # 从 character_relationships 表动态生成关系摘要
         rel_summary = await _build_relationships_summary(char.id, project_id, db)
-        
+
         char_dict = {
             "id": char.id,
             "project_id": char.project_id,
@@ -250,9 +251,10 @@ async def get_project_characters(
             "color": None,
             "main_career_id": char.main_career_id,
             "main_career_stage": char.main_career_stage,
-            "sub_careers": json.loads(char.sub_careers) if char.sub_careers else None
+            "sub_careers": json.loads(char.sub_careers) if char.sub_careers else None,
+            "attributes": json.loads(char.attributes) if char.attributes else None
         }
-        
+
         if char.is_organization:
             org_result = await db.execute(
                 select(Organization).where(Organization.character_id == char.id)
@@ -265,9 +267,9 @@ async def get_project_characters(
                     "motto": org.motto,
                     "color": org.color
                 })
-        
+
         enriched_characters.append(char_dict)
-    
+
     return CharacterListResponse(total=total, items=enriched_characters)
 
 
@@ -318,7 +320,8 @@ async def get_character(
         "color": None,
         "main_career_id": character.main_career_id,
         "main_career_stage": character.main_career_stage,
-        "sub_careers": json.loads(character.sub_careers) if character.sub_careers else None
+        "sub_careers": json.loads(character.sub_careers) if character.sub_careers else None,
+        "attributes": json.loads(character.attributes) if character.attributes else None
     }
     
     if character.is_organization:
@@ -565,6 +568,7 @@ async def update_character(
         "main_career_id": character.main_career_id,
         "main_career_stage": character.main_career_stage,
         "sub_careers": json.loads(character.sub_careers) if character.sub_careers else None,
+        "attributes": json.loads(character.attributes) if character.attributes else None,
         "power_level": None,
         "location": None,
         "motto": None,
@@ -666,7 +670,8 @@ async def create_character(
             avatar_url=character_data.avatar_url,
             main_career_id=character_data.main_career_id,
             main_career_stage=character_data.main_career_stage,
-            sub_careers=character_data.sub_careers
+            sub_careers=character_data.sub_careers,
+            attributes=character_data.attributes
         )
         db.add(character)
         await db.flush()  # 获取character.id
@@ -786,7 +791,8 @@ async def create_character(
             "color": None,
             "main_career_id": character.main_career_id,
             "main_career_stage": character.main_career_stage,
-            "sub_careers": json.loads(character.sub_careers) if character.sub_careers else None
+            "sub_careers": json.loads(character.sub_careers) if character.sub_careers else None,
+            "attributes": json.loads(character.attributes) if character.attributes else None
         }
         
         if character.is_organization:

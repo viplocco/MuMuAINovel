@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Button, Modal, Form, Input, Select, message, Row, Col, Empty, Tabs, Card, Tag, Space, Divider, Typography, InputNumber } from 'antd';
+import { Button, Modal, Form, Input, Select, App, Row, Col, Empty, Tabs, Card, Tag, Space, Divider, Typography, InputNumber, Collapse } from 'antd';
 import { ThunderboltOutlined, PlusOutlined, EditOutlined, DeleteOutlined, TrophyOutlined } from '@ant-design/icons';
 import { useParams } from 'react-router-dom';
 import api from '../services/api';
 import SSEProgressModal from '../components/SSEProgressModal';
+import type { AttributeSchema } from '../types';
 
 const { TextArea } = Input;
 const { Title, Text, Paragraph } = Typography;
@@ -27,9 +28,17 @@ interface Career {
     special_abilities?: string;
     worldview_rules?: string;
     source: string;
+    base_attributes?: Record<string, number>;
+    per_stage_bonus?: Record<string, { per_stage: number }>;
+}
+
+// 能力值类型
+interface AttributeBonus {
+    per_stage: number;
 }
 
 export default function Careers() {
+    const { message } = App.useApp();
     const { projectId } = useParams<{ projectId: string }>();
     const [mainCareers, setMainCareers] = useState<Career[]>([]);
     const [subCareers, setSubCareers] = useState<Career[]>([]);
@@ -40,6 +49,9 @@ export default function Careers() {
     const [form] = Form.useForm();
     const [aiForm] = Form.useForm();
     const [modal, contextHolder] = Modal.useModal();
+
+    // 能力属性 Schema
+    const [attributeSchema, setAttributeSchema] = useState<AttributeSchema | null>(null);
 
     // AI生成状态
     const [aiGenerating, setAiGenerating] = useState(false);
@@ -61,11 +73,26 @@ export default function Careers() {
         }
     }, [projectId]);
 
+    // 获取项目的能力属性配置
+    const fetchAttributeSchema = useCallback(async () => {
+        if (!projectId) return;
+        try {
+            const response = await api.get<unknown, { attribute_schema: string | null }>(`/projects/${projectId}`);
+            if (response.attribute_schema) {
+                const schema = JSON.parse(response.attribute_schema) as AttributeSchema;
+                setAttributeSchema(schema);
+            }
+        } catch (error) {
+            console.error('获取能力属性配置失败:', error);
+        }
+    }, [projectId]);
+
     useEffect(() => {
         if (projectId) {
             fetchCareers();
+            fetchAttributeSchema();
         }
-    }, [projectId, fetchCareers]);
+    }, [projectId, fetchCareers, fetchAttributeSchema]);
 
     const handleOpenModal = (career?: Career) => {
         if (career) {
@@ -90,6 +117,8 @@ export default function Careers() {
         requirements?: string;
         special_abilities?: string;
         worldview_rules?: string;
+        base_attributes?: Record<string, number>;
+        per_stage_bonus?: Record<string, AttributeBonus>;
     }
 
     const handleSubmit = async (values: CareerFormValues) => {
@@ -117,7 +146,9 @@ export default function Careers() {
             const data = {
                 ...values,
                 stages,
-                max_stage: stages.length
+                max_stage: stages.length,
+                base_attributes: values.base_attributes ? JSON.stringify(values.base_attributes) : null,
+                per_stage_bonus: values.per_stage_bonus ? JSON.stringify(values.per_stage_bonus) : null
             };
 
             if (editingCareer) {
@@ -345,7 +376,15 @@ export default function Careers() {
                     form.resetFields();
                 }}
                 footer={null}
-                width={700}
+                width={800}
+                centered
+                styles={{
+                    body: {
+                        maxHeight: 'calc(100vh - 200px)',
+                        overflowY: 'auto',
+                        padding: '16px 24px'
+                    }
+                }}
             >
                 <Form form={form} layout="vertical" onFinish={handleSubmit}>
                     <Row gutter={16}>
@@ -390,6 +429,71 @@ export default function Careers() {
                     <Form.Item label="世界观规则" name="worldview_rules">
                         <TextArea rows={2} placeholder="如何融入世界观..." />
                     </Form.Item>
+
+                    {/* 能力值配置 */}
+                    {attributeSchema && (
+                        <Collapse
+                            style={{ marginBottom: 16 }}
+                            items={[{
+                                key: 'attributes',
+                                label: '能力值配置（可选）',
+                                children: (
+                                    <>
+                                        <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                                            设置该职业的基础能力值和每阶段成长加成。
+                                            角色选择此职业时会自动应用这些数值。
+                                        </Paragraph>
+
+                                        <Title level={5}>基础能力值</Title>
+                                        <Row gutter={[12, 8]}>
+                                            {Object.entries(attributeSchema.attributes)
+                                                .filter(([, config]) => config.type === 'numeric' && !config.hidden)
+                                                .map(([attrName, config]) => (
+                                                    <Col span={12} key={attrName}>
+                                                        <Form.Item
+                                                            label={config.name || attrName}
+                                                            name={['base_attributes', attrName]}
+                                                            tooltip={`角色选择此职业时的初始${config.name || attrName}`}
+                                                        >
+                                                            <InputNumber
+                                                                min={config.min ?? 0}
+                                                                max={config.max ?? 100}
+                                                                style={{ width: '100%' }}
+                                                                placeholder={`默认 ${config.default ?? 50}`}
+                                                            />
+                                                        </Form.Item>
+                                                    </Col>
+                                                ))}
+                                        </Row>
+
+                                        <Divider style={{ margin: '12px 0' }} />
+
+                                        <Title level={5}>每阶段成长加成</Title>
+                                        <Row gutter={[12, 8]}>
+                                            {Object.entries(attributeSchema.attributes)
+                                                .filter(([, config]) => config.type === 'numeric' && !config.hidden)
+                                                .map(([attrName, config]) => (
+                                                    <Col span={12} key={attrName}>
+                                                        <Form.Item
+                                                            label={`${config.name || attrName} +`}
+                                                            name={['per_stage_bonus', attrName, 'per_stage']}
+                                                            tooltip={`每晋升一阶段增加的${config.name || attrName}`}
+                                                        >
+                                                            <InputNumber
+                                                                min={0}
+                                                                max={1000}
+                                                                style={{ width: '100%' }}
+                                                                placeholder="每阶段增加量"
+                                                            />
+                                                        </Form.Item>
+                                                    </Col>
+                                                ))}
+                                        </Row>
+                                    </>
+                                )
+                            }]}
+                        />
+                    )}
 
                     <Form.Item>
                         <Space style={{ width: '100%', justifyContent: 'flex-end' }}>

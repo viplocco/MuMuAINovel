@@ -2,6 +2,7 @@
 from typing import Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+import json
 from app.models.character import Character
 from app.models.career import Career, CharacterCareer
 from app.logger import get_logger
@@ -78,6 +79,7 @@ class CareerUpdateService:
                 success = await CareerUpdateService._update_main_career_stage(
                     db=db,
                     character=character,
+                    project_id=project_id,
                     stage_change=main_stage_change,
                     chapter_number=chapter_number,
                     career_changes=career_changes,
@@ -130,6 +132,7 @@ class CareerUpdateService:
     async def _update_main_career_stage(
         db: AsyncSession,
         character: Character,
+        project_id: str,
         stage_change: int,
         chapter_number: int,
         career_changes: Dict[str, Any],
@@ -145,40 +148,50 @@ class CareerUpdateService:
                 )
             )
             char_career = char_career_result.scalar_one_or_none()
-            
+
             if not char_career:
                 logger.warning(f"  ⚠️ {character.name} 没有主职业关联记录")
                 return False
-            
+
             # 查询职业信息
             career_result = await db.execute(
                 select(Career).where(Career.id == char_career.career_id)
             )
             career = career_result.scalar_one_or_none()
-            
+
             if not career:
                 logger.warning(f"  ⚠️ 职业ID {char_career.career_id} 不存在")
                 return False
-            
+
             # 计算新阶段（不超过最大阶段，不低于1）
             old_stage = char_career.current_stage
             new_stage = min(max(1, old_stage + stage_change), career.max_stage)
-            
+
             # 如果没有实际变化，跳过
             if new_stage == old_stage:
                 logger.info(f"  📊 {character.name} 的 {career.name} 已达到边界，无法变更")
                 return False
-            
+
             # 更新CharacterCareer表
             char_career.current_stage = new_stage
-            
+
             # 同步更新Character表的冗余字段
             character.main_career_stage = new_stage
-            
+
+            # 【新增】计算能力值增长
+            await CareerUpdateService._update_attributes_on_stage_change(
+                db=db,
+                character=character,
+                project_id=project_id,
+                career=career,
+                old_stage=old_stage,
+                new_stage=new_stage
+            )
+
             # 记录变更日志
             change_desc = f"{'晋升' if stage_change > 0 else '降级'}"
             breakthrough_desc = career_changes.get('career_breakthrough', '')
-            
+
             changes_log.append({
                 'character': character.name,
                 'career': career.name,
@@ -189,16 +202,16 @@ class CareerUpdateService:
                 'chapter': chapter_number,
                 'description': breakthrough_desc
             })
-            
+
             logger.info(
                 f"  ✨ {character.name} 的主职业 [{career.name}] "
                 f"{old_stage}阶 → {new_stage}阶 ({change_desc})"
             )
             if breakthrough_desc:
                 logger.info(f"     突破描述: {breakthrough_desc[:50]}...")
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"  ❌ 更新主职业失败: {str(e)}")
             return False
@@ -392,7 +405,76 @@ class CareerUpdateService:
             })
             
             return True
-            
+
         except Exception as e:
             logger.error(f"  ❌ 添加新职业失败: {str(e)}")
             return False
+
+    @staticmethod
+    async def _update_attributes_on_stage_change(
+        db: AsyncSession,
+        character: Character,
+        project_id: str,
+        career: Career,
+        old_stage: int,
+        new_stage: int
+    ) -> None:
+        """
+        职业晋升时更新角色能力值
+
+        Args:
+            db: 数据库会话
+            character: 角色对象
+            project_id: 项目ID
+            career: 职业对象
+            old_stage: 原阶段
+            new_stage: 新阶段
+        """
+        try:
+            # 检查是否有能力配置
+            if not career.per_stage_bonus:
+                return
+
+            # 查询项目的attribute_schema
+            from app.models.project import Project
+            project_result = await db.execute(
+                select(Project).where(Project.id == project_id)
+            )
+            project = project_result.scalar_one_or_none()
+
+            if not project or not project.attribute_schema:
+                return
+
+            # 检查角色是否有能力值
+            if not character.attributes:
+                # 如果没有能力值，初始化能力值
+                from app.services.attribute_service import AttributeService
+                initial_attrs = AttributeService.calculate_initial_attributes(
+                    attribute_schema=project.attribute_schema,
+                    career_base_attributes=json.loads(career.base_attributes) if career.base_attributes else None,
+                    stage=new_stage,
+                    role_type=character.role_type or 'supporting'
+                )
+                character.attributes = json.dumps(initial_attrs, ensure_ascii=False)
+                character.base_attributes = json.dumps(initial_attrs, ensure_ascii=False)
+                logger.info(f"  📊 {character.name} 初始化能力值")
+                return
+
+            # 计算能力值增长
+            from app.services.attribute_service import AttributeService
+            current_attrs = json.loads(character.attributes) if isinstance(character.attributes, str) else character.attributes
+            per_stage_bonus = json.loads(career.per_stage_bonus) if isinstance(career.per_stage_bonus, str) else career.per_stage_bonus
+
+            new_attrs = AttributeService.apply_stage_growth(
+                attribute_schema=project.attribute_schema,
+                current_attributes=current_attrs,
+                per_stage_bonus=per_stage_bonus,
+                from_stage=old_stage,
+                to_stage=new_stage
+            )
+
+            character.attributes = json.dumps(new_attrs, ensure_ascii=False)
+            logger.info(f"  📊 {character.name} 能力值更新完成")
+
+        except Exception as e:
+            logger.error(f"  ⚠️ 更新能力值失败: {str(e)}")

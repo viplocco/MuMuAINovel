@@ -12,7 +12,7 @@ import {
   Spin,
   Modal,
   Form,
-  message,
+  App,
   Tooltip,
   Badge,
   Tabs,
@@ -122,6 +122,7 @@ export default function PromptWorkshop() {
   
   const isMobile = window.innerWidth <= 768;
   const { token } = theme.useToken();
+  const { message } = App.useApp();
   
   // 判断是否为服务端管理员
   const isServerAdmin = serviceStatus?.mode === 'server' && currentUser?.is_admin;

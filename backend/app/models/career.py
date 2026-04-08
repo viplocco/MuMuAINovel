@@ -29,6 +29,10 @@ class Career(Base):
     
     # 职业属性加成（可选，JSON格式）
     attribute_bonuses = Column(Text, comment="属性加成(JSON): {strength: '+10%', intelligence: '+5%'}")
+
+    # 能力初始化和成长配置（用于动态能力系统）
+    base_attributes = Column(Text, comment="职业基础能力配置(JSON): {灵力: 60, 悟性: 70}")
+    per_stage_bonus = Column(Text, comment="每阶段能力加成(JSON): {灵力: {per_stage: 50}, 悟性: {per_stage: 5}}")
     
     # 元数据
     source = Column(String(20), default='ai', comment="来源: ai/manual")

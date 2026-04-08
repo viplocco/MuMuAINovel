@@ -2262,6 +2262,8 @@ class PromptService:
 地理位置：{location}
 氛围基调：{atmosphere}
 世界规则：{rules}
+
+{attribute_schema_info}
 </worldview>
 
 <design_requirements priority="P0">
@@ -2283,13 +2285,17 @@ class PromptService:
 
 **3. 阶段设计（stages）**
 - 每个职业的stages数组长度必须等于max_stage
-- 阶段名称要符合世界观文化背景
+- 阶段名称必须使用项目定义的阶段名称（如上面的能力属性体系中列出的阶段）
 - 阶段描述要体现明确的能力提升路径
 - 确保职业间的阶段数量有差异
 - 主职业阶段数建议：8-12个
 - 副职业阶段数建议：5-8个
 
-**4. 简介契合度**
+**4. 属性配置**
+- base_attributes：选择该职业时的初始能力值，属性名必须使用项目定义的数值型属性名
+- per_stage_bonus：每晋升一阶段增加的能力值，格式为 {{ "属性名": {{ "per_stage": 增加值 }} }}
+
+**5. 简介契合度**
 - 职业体系必须与项目简介中的故事设定相匹配
 - 如果简介中提到特定职业或能力，优先设计相关职业
 - 职业的能力和特点要能支撑简介中的情节发展
@@ -2306,14 +2312,15 @@ class PromptService:
   "description": "职业描述（100-150字）",
   "category": "职业分类",
   "stages": [
-    {{"level": 1, "name": "阶段1名称", "description": "阶段描述"}},
-    {{"level": 2, "name": "阶段2名称", "description": "阶段描述"}}
+    {{"level": 1, "name": "{stage_example}", "description": "阶段描述"}},
+    {{"level": 2, "name": "第二阶段名称", "description": "阶段描述"}}
   ],
   "max_stage": 整数,
   "requirements": "职业要求和前置条件",
   "special_abilities": "职业特殊能力",
   "worldview_rules": "与世界观规则的关联",
-  "attribute_bonuses": {{"strength": "+10%"}}
+  "base_attributes": {{ "{attr_example_name}": 60 }},
+  "per_stage_bonus": {{ "{attr_example_name}": {{ "per_stage": 10 }} }}
 }}
 ],
 "sub_careers": [
@@ -2322,11 +2329,13 @@ class PromptService:
   "description": "职业描述（80-120字）",
   "category": "生产系/辅助系/特殊系",
   "stages": [
-    {{"level": 1, "name": "阶段1名称", "description": "阶段描述"}}
+    {{"level": 1, "name": "入门", "description": "阶段描述"}}
   ],
   "max_stage": 整数,
   "requirements": "职业要求",
-  "special_abilities": "特殊能力"
+  "special_abilities": "特殊能力",
+  "base_attributes": {{ "{attr_example_name}": 30 }},
+  "per_stage_bonus": {{ "{attr_example_name}": {{ "per_stage": 5 }} }}
 }}
 ]
 }}
@@ -2340,6 +2349,8 @@ class PromptService:
 ✅ 主职业阶段数建议：8-12个
 ✅ 副职业阶段数建议：5-8个
 ✅ stages数组长度必须等于max_stage
+✅ 阶段名称必须使用项目定义的阶段名称
+✅ 属性名必须使用项目定义的数值型属性名
 ✅ 确保职业体系与世界观高度契合
 ✅ 职业设计必须支撑项目简介中的故事情节
 
@@ -2350,6 +2361,7 @@ class PromptService:
 ❌ 输出markdown标记
 ❌ 职业设计与世界观或简介脱节
 ❌ 忽略简介中提到的职业或能力设定
+❌ 使用不在项目属性定义中的属性名
 </constraints>"""
 
     # 局部重写提示词（RTCO框架）
@@ -2993,7 +3005,7 @@ class PromptService:
                 "name": "职业体系生成",
                 "category": "世界构建",
                 "description": "根据世界观和项目简介自动生成完整的职业体系，包括主职业和副职业",
-                "parameters": ["title", "genre", "theme", "description", "time_period", "location", "atmosphere", "rules"]
+                "parameters": ["title", "genre", "theme", "description", "time_period", "location", "atmosphere", "rules", "attribute_schema_info", "attr_example_name", "stage_example"]
             },
             "INSPIRATION_TITLE_SYSTEM": {
                 "name": "灵感模式-书名生成(系统提示词)",

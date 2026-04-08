@@ -28,6 +28,7 @@ from app.services.ai_service import AIService
 from app.logger import get_logger
 from app.api.settings import get_user_ai_service
 from app.api.common import verify_project_access
+from app.constants.default_career_templates import get_templates_for_genre, DEFAULT_CAREER_TEMPLATES
 
 router = APIRouter(prefix="/careers", tags=["职业管理"])
 logger = get_logger(__name__)
@@ -65,7 +66,9 @@ async def get_careers(
         # 解析JSON字段
         stages = json.loads(career.stages) if career.stages else []
         attribute_bonuses = json.loads(career.attribute_bonuses) if career.attribute_bonuses else None
-        
+        base_attributes = json.loads(career.base_attributes) if career.base_attributes else None
+        per_stage_bonus = json.loads(career.per_stage_bonus) if career.per_stage_bonus else None
+
         career_dict = {
             "id": career.id,
             "project_id": career.project_id,
@@ -79,6 +82,8 @@ async def get_careers(
             "special_abilities": career.special_abilities,
             "worldview_rules": career.worldview_rules,
             "attribute_bonuses": attribute_bonuses,
+            "base_attributes": base_attributes,
+            "per_stage_bonus": per_stage_bonus,
             "source": career.source,
             "created_at": career.created_at,
             "updated_at": career.updated_at
@@ -105,12 +110,12 @@ async def create_career(
     """手动创建职业"""
     user_id = getattr(request.state, 'user_id', None)
     await verify_project_access(career_data.project_id, user_id, db)
-    
+
     try:
         # 转换stages为JSON字符串
         stages_json = json.dumps([stage.model_dump() for stage in career_data.stages], ensure_ascii=False)
         attribute_bonuses_json = json.dumps(career_data.attribute_bonuses, ensure_ascii=False) if career_data.attribute_bonuses else None
-        
+
         # 创建职业
         career = Career(
             project_id=career_data.project_id,
@@ -124,14 +129,16 @@ async def create_career(
             special_abilities=career_data.special_abilities,
             worldview_rules=career_data.worldview_rules,
             attribute_bonuses=attribute_bonuses_json,
+            base_attributes=career_data.base_attributes,
+            per_stage_bonus=career_data.per_stage_bonus,
             source=career_data.source
         )
         db.add(career)
         await db.commit()
         await db.refresh(career)
-        
+
         logger.info(f"✅ 创建职业成功：{career.name} (ID: {career.id}, 类型: {career.type})")
-        
+
         return CareerResponse(
             id=career.id,
             project_id=career.project_id,
@@ -145,11 +152,13 @@ async def create_career(
             special_abilities=career.special_abilities,
             worldview_rules=career.worldview_rules,
             attribute_bonuses=career_data.attribute_bonuses,
+            base_attributes=json.loads(career.base_attributes) if career.base_attributes else None,
+            per_stage_bonus=json.loads(career.per_stage_bonus) if career.per_stage_bonus else None,
             source=career.source,
             created_at=career.created_at,
             updated_at=career.updated_at
         )
-        
+
     except Exception as e:
         logger.error(f"创建职业失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"创建职业失败: {str(e)}")
@@ -211,7 +220,7 @@ async def generate_career_system(
             
             # 构建项目上下文
             yield await tracker.loading("分析项目世界观...", 0.6)
-            
+
             project_context = f"""
 项目信息：
 - 书名：{project.title}
@@ -222,9 +231,84 @@ async def generate_career_system(
 - 氛围基调：{project.world_atmosphere or '未设定'}
 - 世界规则：{project.world_rules or '未设定'}
 """
-            
+
+            # 解析项目的属性配置
+            attribute_schema_info = ""
+            stage_attr_example = ""
+            numeric_attr_example = ""
+
+            if project.attribute_schema:
+                try:
+                    schema = json.loads(project.attribute_schema)
+                    attributes = schema.get("attributes", {})
+                    display_order = schema.get("display_order", list(attributes.keys()))
+
+                    stage_attrs = []
+                    numeric_attrs = []
+                    combo_attrs = []
+
+                    for attr_name in display_order:
+                        config = attributes.get(attr_name, {})
+                        attr_type = config.get("type", "numeric")
+
+                        if attr_type == "stage":
+                            stages = config.get("stages", [])
+                            if stages:
+                                stage_attrs.append(f"{attr_name}（阶段列表：{', '.join(stages)}）")
+                                if not stage_attr_example:
+                                    stage_attr_example = stages[0] if stages else "第一阶段"
+                        elif attr_type == "numeric":
+                            min_val = config.get("min", 0)
+                            max_val = config.get("max", 100)
+                            default_val = config.get("default", 50)
+                            numeric_attrs.append(f"{attr_name}（范围：{min_val}-{max_val}，默认：{default_val}）")
+                            if not numeric_attr_example:
+                                numeric_attr_example = attr_name
+                        elif attr_type == "combo_select":
+                            elements = list(config.get("elements", {}).keys())
+                            max_select = config.get("max_select", 9)
+                            if elements:
+                                combo_attrs.append(f"{attr_name}（可选元素：{', '.join(elements)}，最多选{max_select}种）")
+
+                    if stage_attrs or numeric_attrs or combo_attrs:
+                        attribute_schema_info = f"""
+能力属性体系：
+- 阶段型属性：{'; '.join(stage_attrs) if stage_attrs else '无'}
+- 数值型属性：{'; '.join(numeric_attrs) if numeric_attrs else '无'}
+- 组合型属性：{'; '.join(combo_attrs) if combo_attrs else '无'}
+"""
+                        logger.info(f"项目属性配置：阶段型{len(stage_attrs)}个，数值型{len(numeric_attrs)}个，组合型{len(combo_attrs)}个")
+                except Exception as e:
+                    logger.warning(f"解析attribute_schema失败: {e}")
+
+            # 获取适合当前类型的职业模板作为参考
+            genre = project.genre or ""
+            template_examples = get_templates_for_genre(genre) if genre else []
+            # 如果没有匹配的模板，取前几个默认模板
+            if not template_examples:
+                template_examples = DEFAULT_CAREER_TEMPLATES[:6]
+
+            # 构建模板示例文本（主职业和副职业分开）
+            main_template_examples = [t for t in template_examples if t.get("type") == "main"][:3]
+            sub_template_examples = [t for t in template_examples if t.get("type") == "sub"][:2]
+
+            template_reference = ""
+            if main_template_examples:
+                template_reference += "\n\n【主职业参考示例】（仅供参考命名风格和结构，不要直接复制）：\n"
+                for t in main_template_examples:
+                    stages_preview = " → ".join([s["name"] for s in t.get("stages", [])[:5]])
+                    template_reference += f"- {t['name']}（{t.get('category', '战斗系')}）：{t.get('description', '')[:60]}... 阶段：{stages_preview}\n"
+            if sub_template_examples:
+                template_reference += "\n【副职业参考示例】（仅供参考命名风格和结构，不要直接复制）：\n"
+                for t in sub_template_examples:
+                    stages_preview = " → ".join([s["name"] for s in t.get("stages", [])[:3]])
+                    template_reference += f"- {t['name']}（{t.get('category', '生产系')}）：{t.get('description', '')[:50]}... 阶段：{stages_preview}\n"
+
             user_requirements = f"""
 已有职业情况：{existing_careers_text}
+
+{attribute_schema_info}
+{template_reference}
 
 生成要求（增量式）：
 - 本次新增主职业：{main_career_count}个
@@ -234,9 +318,13 @@ async def generate_career_system(
 - 主职业必须严格符合世界观规则，体现核心能力体系
 - 副职业可以更加自由灵活，包含生产、辅助、特殊类型
 """
-            
+
             yield await tracker.preparing("构建AI提示词...")
-            
+
+            # 构建动态属性示例
+            attr_example_name = numeric_attr_example or "属性名"
+            stage_example = stage_attr_example or "第一阶段"
+
             # 构建提示词
             prompt = f"""{project_context}
 
@@ -248,35 +336,59 @@ async def generate_career_system(
 3. 如果已有职业较少，可以生成核心基础职业
 4. 如果已有职业较多，可以生成特色化、专精化的职业
 
+---
+
+## 职业命名规范（非常重要！）
+
+### 主职业命名规范：
+- ✅ 正确命名：剑修、法修、体修、斗者、血脉武者、剑客、法师、战士、基因战士、机甲师
+- ❌ 错误命名：灵阵测绘师、古玉传承者、道心守正者、云梦散修、天命之子、命运守护者
+- **主职业名称必须是简短的"职业名称"，不能是"身份称号"或"特殊能力描述"**
+- 主职业通常是2-3个字，最多4个字，代表一类修炼方向或战斗风格
+- 主职业应该是可以"修炼"的方向，而不是"身份"或"特质"
+
+### 副职业命名规范：
+- ✅ 正确命名：炼丹师、炼器师、名医、设计师
+- ❌ 错误命名：丹药搬运工、器物鉴定者、医术传承人
+- 副职业名称应该明确表达技能领域，使用"XX师"或"XX者"等标准命名
+
+---
+
 返回JSON格式，结构如下：
 
 {{
   "main_careers": [
     {{
-      "name": "职业名称",
+      "name": "职业名称（2-4字，如：剑修、法修）",
       "description": "职业描述",
       "category": "职业分类（如：战斗系、法术系等）",
       "stages": [
-        {{"level": 1, "name": "阶段名称", "description": "阶段描述"}},
-        {{"level": 2, "name": "阶段名称", "description": "阶段描述"}},
+        {{ "level": 1, "name": "{stage_example}", "description": "阶段描述" }},
+        {{ "level": 2, "name": "第二阶段名称", "description": "阶段描述" }},
         ...
       ],
       "max_stage": 10,
       "requirements": "职业要求",
       "special_abilities": "特殊能力",
       "worldview_rules": "世界观规则关联",
-      "attribute_bonuses": {{"strength": "+10%", "intelligence": "+5%"}}
+      "base_attributes": {{ "{attr_example_name}": 60 }},
+      "per_stage_bonus": {{ "{attr_example_name}": {{ "per_stage": 10 }} }}
     }}
   ],
   "sub_careers": [
     {{
-      "name": "副职业名称",
+      "name": "副职业名称（如：炼丹师、炼器师）",
       "description": "职业描述",
       "category": "生产系/辅助系/特殊系",
-      "stages": [...],
+      "stages": [
+        {{ "level": 1, "name": "入门", "description": "初学阶段" }},
+        {{ "level": 2, "name": "熟练", "description": "熟练阶段" }}
+      ],
       "max_stage": 5,
       "requirements": "职业要求",
-      "special_abilities": "特殊能力"
+      "special_abilities": "特殊能力",
+      "base_attributes": {{ "{attr_example_name}": 30 }},
+      "per_stage_bonus": {{ "{attr_example_name}": {{ "per_stage": 5 }} }}
     }}
   ]
 }}
@@ -284,11 +396,15 @@ async def generate_career_system(
 注意事项：
 1. **避免重复**：生成的职业名称和定位不能与已有职业重复
 2. **互补性**：新职业应与已有职业形成互补，丰富职业体系
-3. 主职业的阶段设定要详细，体现明确的成长路径
-4. 阶段名称要符合世界观特色
+3. 主职业的阶段设定要详细（至少5-10个阶段），体现明确的成长路径
+4. **阶段名称匹配**：必须使用项目定义的阶段名称（如上面的能力属性体系中列出的阶段）
 5. 副职业可以相对简化，但要有独特性
 6. 所有职业都要符合项目的整体世界观设定
-7. 只返回纯JSON，不要添加任何解释文字
+7. **属性名匹配**：base_attributes 和 per_stage_bonus 中的属性名必须使用项目定义的数值型属性名（如上面的能力属性体系中列出的属性）
+8. base_attributes 是选择该职业时的初始能力值
+9. per_stage_bonus 是每晋升一阶段增加的能力值，格式为 {{ "属性名": {{ "per_stage": 增加值 }} }}
+10. 只返回纯JSON，不要添加任何解释文字
+11. **职业名称检查**：生成后请自查，职业名称是否是"可修炼的职业方向"，而不是"身份称号"
 """
             
             yield await tracker.generating(0, max(3000, len(prompt) * 8), "调用AI生成新职业...")
@@ -338,15 +454,24 @@ async def generate_career_system(
                 return
             
             yield await tracker.saving("保存主职业到数据库...", 0.3)
-            
+
             # 保存主职业
             main_careers_created = []
             for idx, career_info in enumerate(career_data.get("main_careers", [])):
                 try:
                     stages_json = json.dumps(career_info.get("stages", []), ensure_ascii=False)
+
+                    # 兼容旧格式 attribute_bonuses
                     attribute_bonuses = career_info.get("attribute_bonuses")
                     attribute_bonuses_json = json.dumps(attribute_bonuses, ensure_ascii=False) if attribute_bonuses else None
-                    
+
+                    # 新格式：base_attributes 和 per_stage_bonus
+                    base_attributes = career_info.get("base_attributes")
+                    base_attributes_json = json.dumps(base_attributes, ensure_ascii=False) if base_attributes else None
+
+                    per_stage_bonus = career_info.get("per_stage_bonus")
+                    per_stage_bonus_json = json.dumps(per_stage_bonus, ensure_ascii=False) if per_stage_bonus else None
+
                     career = Career(
                         project_id=project_id,
                         name=career_info.get("name", f"未命名主职业{idx+1}"),
@@ -359,6 +484,8 @@ async def generate_career_system(
                         special_abilities=career_info.get("special_abilities"),
                         worldview_rules=career_info.get("worldview_rules"),
                         attribute_bonuses=attribute_bonuses_json,
+                        base_attributes=base_attributes_json,
+                        per_stage_bonus=per_stage_bonus_json,
                         source="ai"
                     )
                     db.add(career)
@@ -370,15 +497,24 @@ async def generate_career_system(
                     continue
             
             yield await tracker.saving("保存副职业到数据库...", 0.6)
-            
+
             # 保存副职业
             sub_careers_created = []
             for idx, career_info in enumerate(career_data.get("sub_careers", [])):
                 try:
                     stages_json = json.dumps(career_info.get("stages", []), ensure_ascii=False)
+
+                    # 兼容旧格式 attribute_bonuses
                     attribute_bonuses = career_info.get("attribute_bonuses")
                     attribute_bonuses_json = json.dumps(attribute_bonuses, ensure_ascii=False) if attribute_bonuses else None
-                    
+
+                    # 新格式：base_attributes 和 per_stage_bonus
+                    base_attributes = career_info.get("base_attributes")
+                    base_attributes_json = json.dumps(base_attributes, ensure_ascii=False) if base_attributes else None
+
+                    per_stage_bonus = career_info.get("per_stage_bonus")
+                    per_stage_bonus_json = json.dumps(per_stage_bonus, ensure_ascii=False) if per_stage_bonus else None
+
                     career = Career(
                         project_id=project_id,
                         name=career_info.get("name", f"未命名副职业{idx+1}"),
@@ -391,6 +527,8 @@ async def generate_career_system(
                         special_abilities=career_info.get("special_abilities"),
                         worldview_rules=career_info.get("worldview_rules"),
                         attribute_bonuses=attribute_bonuses_json,
+                        base_attributes=base_attributes_json,
+                        per_stage_bonus=per_stage_bonus_json,
                         source="ai"
                     )
                     db.add(career)
@@ -471,13 +609,15 @@ async def update_career(
     
     await db.commit()
     await db.refresh(career)
-    
+
     logger.info(f"✅ 更新职业成功：{career.name} (ID: {career_id})")
-    
+
     # 解析JSON返回
     stages = json.loads(career.stages) if career.stages else []
     attribute_bonuses = json.loads(career.attribute_bonuses) if career.attribute_bonuses else None
-    
+    base_attributes = json.loads(career.base_attributes) if career.base_attributes else None
+    per_stage_bonus = json.loads(career.per_stage_bonus) if career.per_stage_bonus else None
+
     return CareerResponse(
         id=career.id,
         project_id=career.project_id,
@@ -491,6 +631,8 @@ async def update_career(
         special_abilities=career.special_abilities,
         worldview_rules=career.worldview_rules,
         attribute_bonuses=attribute_bonuses,
+        base_attributes=base_attributes,
+        per_stage_bonus=per_stage_bonus,
         source=career.source,
         created_at=career.created_at,
         updated_at=career.updated_at
@@ -558,7 +700,9 @@ async def get_career(
     # 解析JSON字段
     stages = json.loads(career.stages) if career.stages else []
     attribute_bonuses = json.loads(career.attribute_bonuses) if career.attribute_bonuses else None
-    
+    base_attributes = json.loads(career.base_attributes) if career.base_attributes else None
+    per_stage_bonus = json.loads(career.per_stage_bonus) if career.per_stage_bonus else None
+
     return CareerResponse(
         id=career.id,
         project_id=career.project_id,
@@ -572,6 +716,8 @@ async def get_career(
         special_abilities=career.special_abilities,
         worldview_rules=career.worldview_rules,
         attribute_bonuses=attribute_bonuses,
+        base_attributes=base_attributes,
+        per_stage_bonus=per_stage_bonus,
         source=career.source,
         created_at=career.created_at,
         updated_at=career.updated_at

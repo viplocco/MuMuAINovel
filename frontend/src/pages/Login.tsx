@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Card, Col, Divider, Form, Input, Layout, Row, Space, Spin, Tabs, Tag, Typography, message, theme } from 'antd';
+import { Alert, App, Button, Card, Col, Divider, Form, Input, Layout, Row, Space, Spin, Tabs, Tag, Typography, theme } from 'antd';
 import { BookOutlined, LockOutlined, MailOutlined, RobotOutlined, SafetyCertificateOutlined, TeamOutlined, ThunderboltOutlined, UserOutlined } from '@ant-design/icons';
 import { authApi } from '../services/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -43,6 +43,7 @@ export default function Login() {
   const [emailRegisterForm] = Form.useForm<EmailRegisterValues>();
   const [resetPasswordForm] = Form.useForm<ResetPasswordValues>();
   const { token } = theme.useToken();
+  const { message } = App.useApp();
   const alphaColor = (color: string, alpha: number) => `color-mix(in srgb, ${color} ${(alpha * 100).toFixed(0)}%, transparent)`;
   const primaryButtonShadow = `0 8px 20px ${alphaColor(token.colorPrimary, 0.28)}`;
   const [showAnnouncement, setShowAnnouncement] = useState(false);

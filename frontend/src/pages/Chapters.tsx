@@ -2519,11 +2519,7 @@ export default function Chapters() {
         }}
         footer={null}
       >
-        <Form form={editorForm} layout="vertical" onFinish={handleEditorSubmit} onValuesChange={(_, allValues) => {
-          if (allValues.content !== undefined) {
-            setContentWordCount(allValues.content?.length || 0);
-          }
-        }}>
+        <Form form={editorForm} layout="vertical" onFinish={handleEditorSubmit}>
           {/* 章节标题和AI创作按钮 */}
           <Form.Item
             label="章节标题"
@@ -2672,6 +2668,7 @@ export default function Chapters() {
               placeholder="开始写作..."
               style={{ fontFamily: 'monospace', fontSize: isMobile ? 12 : 14 }}
               disabled={isGenerating}
+              onChange={(e) => setContentWordCount(e.target.value.length)}
             />
           </Form.Item>
 

@@ -38,6 +38,7 @@ class ProjectUpdate(BaseModel):
     chapter_count: Optional[int] = None
     narrative_perspective: Optional[str] = None
     character_count: Optional[int] = None
+    attribute_schema: Optional[str] = Field(None, description="能力属性配置(JSON)")
     # current_words 由章节内容自动计算，不允许手动修改
 
 
@@ -56,9 +57,10 @@ class ProjectResponse(ProjectBase):
     narrative_perspective: Optional[str] = None
     character_count: Optional[int] = None
     outline_mode: str  # 显式声明以确保响应中包含
+    attribute_schema: Optional[str] = Field(None, description="能力属性配置(JSON)")
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 

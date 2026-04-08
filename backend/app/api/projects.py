@@ -54,19 +54,28 @@ async def create_project(
         if not user_id:
             logger.warning("未登录用户尝试创建项目")
             raise HTTPException(status_code=401, detail="未登录")
-        
+
         logger.info(f"创建新项目: {project.title}, user_id={user_id}")
-        
+
         # 创建项目时自动设置user_id
         project_data = project.model_dump()
         project_data['user_id'] = user_id
+
+        # 如果有 genre，自动初始化 attribute_schema
+        if project.genre:
+            from app.constants.attribute_definitions import ATTRIBUTE_DEFINITIONS_BY_GENRE, DEFAULT_ATTRIBUTES
+            import json
+            genre_schema = ATTRIBUTE_DEFINITIONS_BY_GENRE.get(project.genre, DEFAULT_ATTRIBUTES)
+            project_data['attribute_schema'] = json.dumps(genre_schema, ensure_ascii=False)
+            logger.info(f"自动初始化能力属性配置: genre={project.genre}")
+
         db_project = Project(**project_data)
-        
+
         db.add(db_project)
         await db.commit()
         await db.refresh(db_project)
         logger.info(f"项目创建成功: project_id={db_project.id}, user_id={user_id}")
-        
+
         return db_project
     except HTTPException:
         raise
@@ -166,9 +175,9 @@ async def update_project(
         if not user_id:
             logger.warning("未登录用户尝试更新项目")
             raise HTTPException(status_code=401, detail="未登录")
-        
+
         logger.info(f"更新项目: project_id={project_id}, user_id={user_id}")
-        
+
         # 只查询当前用户的项目
         result = await db.execute(
             select(Project).where(
@@ -177,16 +186,27 @@ async def update_project(
             )
         )
         project = result.scalar_one_or_none()
-        
+
         if not project:
             logger.warning(f"项目不存在或无权访问: project_id={project_id}, user_id={user_id}")
             raise HTTPException(status_code=404, detail="项目不存在")
-        
+
         update_data = project_update.model_dump(exclude_unset=True)
         logger.debug(f"更新字段: {list(update_data.keys())}")
+
+        # 如果 genre 变化，自动更新 attribute_schema
+        new_genre = update_data.get('genre')
+        if new_genre and new_genre != project.genre:
+            from app.constants.attribute_definitions import ATTRIBUTE_DEFINITIONS_BY_GENRE, DEFAULT_ATTRIBUTES
+            import json
+
+            genre_schema = ATTRIBUTE_DEFINITIONS_BY_GENRE.get(new_genre, DEFAULT_ATTRIBUTES)
+            project.attribute_schema = json.dumps(genre_schema, ensure_ascii=False)
+            logger.info(f"自动更新能力属性配置: genre={new_genre}")
+
         for field, value in update_data.items():
             setattr(project, field, value)
-        
+
         await db.commit()
         await db.refresh(project)
         logger.info(f"项目更新成功: {project.title}")
@@ -195,6 +215,52 @@ async def update_project(
         raise
     except Exception as e:
         logger.error(f"更新项目失败: {str(e)}", exc_info=True)
+        raise
+
+
+@router.post("/{project_id}/refresh-attribute-schema", summary="重新初始化能力属性配置")
+async def refresh_attribute_schema(
+    project_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """重新初始化项目的能力属性配置，使用当前小说类型的最新默认配置"""
+    try:
+        user_id = getattr(request.state, 'user_id', None)
+        if not user_id:
+            raise HTTPException(status_code=401, detail="未登录")
+
+        result = await db.execute(
+            select(Project).where(
+                Project.id == project_id,
+                Project.user_id == user_id
+            )
+        )
+        project = result.scalar_one_or_none()
+
+        if not project:
+            raise HTTPException(status_code=404, detail="项目不存在")
+
+        from app.constants.attribute_definitions import ATTRIBUTE_DEFINITIONS_BY_GENRE, DEFAULT_ATTRIBUTES
+        import json
+
+        genre = project.genre or 'default'
+        genre_schema = ATTRIBUTE_DEFINITIONS_BY_GENRE.get(genre, DEFAULT_ATTRIBUTES)
+        project.attribute_schema = json.dumps(genre_schema, ensure_ascii=False)
+
+        await db.commit()
+        logger.info(f"重新初始化能力属性配置: project_id={project_id}, genre={genre}")
+
+        return {
+            "success": True,
+            "message": "能力属性配置已重新初始化",
+            "genre": genre,
+            "attribute_schema": genre_schema
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"重新初始化能力属性配置失败: {str(e)}", exc_info=True)
         raise
 
 

@@ -286,16 +286,6 @@ export default function Foreshadows() {
   // 打开编辑模态框
   const openEditModal = (foreshadow?: Foreshadow) => {
     setCurrentForeshadow(foreshadow || null);
-    if (foreshadow) {
-      // 确保数组类型字段不为null
-      form.setFieldsValue({
-        ...foreshadow,
-        tags: foreshadow.tags || [],
-        related_characters: foreshadow.related_characters || [],
-      });
-    } else {
-      form.resetFields();
-    }
     setEditModalVisible(true);
   };
 
@@ -696,6 +686,18 @@ export default function Foreshadows() {
         onOk={() => form.submit()}
         width={800}
         destroyOnHidden
+        afterOpenChange={(open) => {
+          if (open && currentForeshadow) {
+            // Modal 打开后设置表单值
+            form.setFieldsValue({
+              ...currentForeshadow,
+              tags: currentForeshadow.tags || [],
+              related_characters: currentForeshadow.related_characters || [],
+            });
+          } else if (open && !currentForeshadow) {
+            form.resetFields();
+          }
+        }}
       >
         <Form
           form={form}

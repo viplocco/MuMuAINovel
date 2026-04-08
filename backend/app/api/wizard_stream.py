@@ -197,7 +197,15 @@ async def world_building_generator(
         if not user_id:
             yield await SSEResponse.send_error("用户ID缺失，无法创建项目", 401)
             return
-        
+
+        # 根据类型初始化能力属性配置
+        attribute_schema_json = None
+        if genre:
+            from app.constants.attribute_definitions import ATTRIBUTE_DEFINITIONS_BY_GENRE, DEFAULT_ATTRIBUTES
+            import json as json_module
+            genre_schema = ATTRIBUTE_DEFINITIONS_BY_GENRE.get(genre, DEFAULT_ATTRIBUTES)
+            attribute_schema_json = json_module.dumps(genre_schema, ensure_ascii=False)
+
         project = Project(
             user_id=user_id,  # 添加user_id字段
             title=title,
@@ -215,7 +223,8 @@ async def world_building_generator(
             outline_mode=outline_mode,  # 设置大纲模式
             wizard_status="incomplete",
             wizard_step=1,
-            status="planning"
+            status="planning",
+            attribute_schema=attribute_schema_json  # 添加能力属性配置
         )
         db.add(project)
         await db.commit()
@@ -346,7 +355,60 @@ async def career_system_generator(
             "atmosphere": project.world_atmosphere or "未设定",
             "rules": project.world_rules or "未设定"
         }
-        
+
+        # 解析项目的属性配置
+        attribute_schema_info = ""
+        stage_attr_example = ""
+        numeric_attr_example = ""
+
+        if project.attribute_schema:
+            try:
+                schema = json.loads(project.attribute_schema)
+                attributes = schema.get("attributes", {})
+                display_order = schema.get("display_order", list(attributes.keys()))
+
+                stage_attrs = []
+                numeric_attrs = []
+                combo_attrs = []
+
+                for attr_name in display_order:
+                    config = attributes.get(attr_name, {})
+                    attr_type = config.get("type", "numeric")
+
+                    if attr_type == "stage":
+                        stages = config.get("stages", [])
+                        if stages:
+                            stage_attrs.append(f"{attr_name}（阶段列表：{', '.join(stages)}）")
+                            if not stage_attr_example:
+                                stage_attr_example = stages[0] if stages else "第一阶段"
+                    elif attr_type == "numeric":
+                        min_val = config.get("min", 0)
+                        max_val = config.get("max", 100)
+                        default_val = config.get("default", 50)
+                        numeric_attrs.append(f"{attr_name}（范围：{min_val}-{max_val}，默认：{default_val}）")
+                        if not numeric_attr_example:
+                            numeric_attr_example = attr_name
+                    elif attr_type == "combo_select":
+                        elements = list(config.get("elements", {}).keys())
+                        max_select = config.get("max_select", 9)
+                        if elements:
+                            combo_attrs.append(f"{attr_name}（可选元素：{', '.join(elements)}，最多选{max_select}种）")
+
+                if stage_attrs or numeric_attrs or combo_attrs:
+                    attribute_schema_info = f"""
+能力属性体系：
+- 阶段型属性：{'; '.join(stage_attrs) if stage_attrs else '无'}
+- 数值型属性：{'; '.join(numeric_attrs) if numeric_attrs else '无'}
+- 组合型属性：{'; '.join(combo_attrs) if combo_attrs else '无'}
+"""
+                    logger.info(f"项目属性配置：阶段型{len(stage_attrs)}个，数值型{len(numeric_attrs)}个，组合型{len(combo_attrs)}个")
+            except Exception as e:
+                logger.warning(f"解析attribute_schema失败: {e}")
+
+        # 构建动态属性示例
+        attr_example_name = numeric_attr_example or "属性名"
+        stage_example = stage_attr_example or "第一阶段"
+
         # 获取职业生成提示词模板（支持用户自定义）
         yield await tracker.preparing("准备AI提示词...")
         template = await PromptService.get_template_with_fallback("CAREER_SYSTEM_GENERATION", user_id, db)
@@ -359,7 +421,10 @@ async def career_system_generator(
             time_period=world_data.get('time_period', '未设定'),
             location=world_data.get('location', '未设定'),
             atmosphere=world_data.get('atmosphere', '未设定'),
-            rules=world_data.get('rules', '未设定')
+            rules=world_data.get('rules', '未设定'),
+            attribute_schema_info=attribute_schema_info,
+            attr_example_name=attr_example_name,
+            stage_example=stage_example
         )
         
         estimated_total = 5000
@@ -447,9 +512,18 @@ async def career_system_generator(
                     for idx, career_info in enumerate(career_data.get("main_careers", [])):
                         try:
                             stages_json = json.dumps(career_info.get("stages", []), ensure_ascii=False)
+
+                            # 兼容旧格式 attribute_bonuses
                             attribute_bonuses = career_info.get("attribute_bonuses")
                             attribute_bonuses_json = json.dumps(attribute_bonuses, ensure_ascii=False) if attribute_bonuses else None
-                            
+
+                            # 新格式：base_attributes 和 per_stage_bonus
+                            base_attributes = career_info.get("base_attributes")
+                            base_attributes_json = json.dumps(base_attributes, ensure_ascii=False) if base_attributes else None
+
+                            per_stage_bonus = career_info.get("per_stage_bonus")
+                            per_stage_bonus_json = json.dumps(per_stage_bonus, ensure_ascii=False) if per_stage_bonus else None
+
                             career = Career(
                                 project_id=project.id,
                                 name=career_info.get("name", f"未命名主职业{idx+1}"),
@@ -462,6 +536,8 @@ async def career_system_generator(
                                 special_abilities=career_info.get("special_abilities"),
                                 worldview_rules=career_info.get("worldview_rules"),
                                 attribute_bonuses=attribute_bonuses_json,
+                                base_attributes=base_attributes_json,
+                                per_stage_bonus=per_stage_bonus_json,
                                 source="ai"
                             )
                             db.add(career)
@@ -471,15 +547,24 @@ async def career_system_generator(
                         except Exception as e:
                             logger.error(f"  ❌ 创建主职业失败：{str(e)}")
                             continue
-                    
+
                     # 保存副职业
                     sub_careers_created = []
                     for idx, career_info in enumerate(career_data.get("sub_careers", [])):
                         try:
                             stages_json = json.dumps(career_info.get("stages", []), ensure_ascii=False)
+
+                            # 兼容旧格式 attribute_bonuses
                             attribute_bonuses = career_info.get("attribute_bonuses")
                             attribute_bonuses_json = json.dumps(attribute_bonuses, ensure_ascii=False) if attribute_bonuses else None
-                            
+
+                            # 新格式：base_attributes 和 per_stage_bonus
+                            base_attributes = career_info.get("base_attributes")
+                            base_attributes_json = json.dumps(base_attributes, ensure_ascii=False) if base_attributes else None
+
+                            per_stage_bonus = career_info.get("per_stage_bonus")
+                            per_stage_bonus_json = json.dumps(per_stage_bonus, ensure_ascii=False) if per_stage_bonus else None
+
                             career = Career(
                                 project_id=project.id,
                                 name=career_info.get("name", f"未命名副职业{idx+1}"),
@@ -492,6 +577,8 @@ async def career_system_generator(
                                 special_abilities=career_info.get("special_abilities"),
                                 worldview_rules=career_info.get("worldview_rules"),
                                 attribute_bonuses=attribute_bonuses_json,
+                                base_attributes=base_attributes_json,
+                                per_stage_bonus=per_stage_bonus_json,
                                 source="ai"
                             )
                             db.add(career)

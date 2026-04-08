@@ -44,6 +44,10 @@ class Character(Base):
     main_career_id = Column(String(36), ForeignKey("careers.id", ondelete="SET NULL"), comment="主职业ID")
     main_career_stage = Column(Integer, comment="主职业当前阶段")
     sub_careers = Column(Text, comment="副职业列表(JSON): [{\"career_id\": \"xxx\", \"stage\": 3}, ...]")
+
+    # 能力数值字段（根据项目的attribute_schema动态配置）
+    attributes = Column(Text, comment="角色能力数值(JSON): {境界: {type:stage, value:3, name:金丹}, 灵力: {type:numeric, value:850}}")
+    base_attributes = Column(Text, comment="初始能力值(JSON)，用于重置参考")
     
     # 其他
     avatar_url = Column(String(500), comment="头像URL")

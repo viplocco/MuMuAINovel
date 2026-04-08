@@ -1698,6 +1698,57 @@ class BookImportService:
         await _notify("💼 正在初始化AI服务...", 0.1)
         ai_service = await self._build_user_ai_service(db=db, user_id=user_id)
 
+        # 解析项目的属性配置
+        attribute_schema_info = ""
+        stage_attr_example = ""
+        numeric_attr_example = ""
+
+        if project.attribute_schema:
+            try:
+                schema = json.loads(project.attribute_schema)
+                attributes = schema.get("attributes", {})
+                display_order = schema.get("display_order", list(attributes.keys()))
+
+                stage_attrs = []
+                numeric_attrs = []
+                combo_attrs = []
+
+                for attr_name in display_order:
+                    config = attributes.get(attr_name, {})
+                    attr_type = config.get("type", "numeric")
+
+                    if attr_type == "stage":
+                        stages = config.get("stages", [])
+                        if stages:
+                            stage_attrs.append(f"{attr_name}（阶段列表：{', '.join(stages)}）")
+                            if not stage_attr_example:
+                                stage_attr_example = stages[0] if stages else "第一阶段"
+                    elif attr_type == "numeric":
+                        min_val = config.get("min", 0)
+                        max_val = config.get("max", 100)
+                        default_val = config.get("default", 50)
+                        numeric_attrs.append(f"{attr_name}（范围：{min_val}-{max_val}，默认：{default_val}）")
+                        if not numeric_attr_example:
+                            numeric_attr_example = attr_name
+                    elif attr_type == "combo_select":
+                        elements = list(config.get("elements", {}).keys())
+                        max_select = config.get("max_select", 9)
+                        if elements:
+                            combo_attrs.append(f"{attr_name}（可选元素：{', '.join(elements)}，最多选{max_select}种）")
+
+                if stage_attrs or numeric_attrs or combo_attrs:
+                    attribute_schema_info = f"""
+能力属性体系：
+- 阶段型属性：{'; '.join(stage_attrs) if stage_attrs else '无'}
+- 数值型属性：{'; '.join(numeric_attrs) if numeric_attrs else '无'}
+- 组合型属性：{'; '.join(combo_attrs) if combo_attrs else '无'}
+"""
+            except Exception as e:
+                logger.warning(f"解析attribute_schema失败: {e}")
+
+        attr_example_name = numeric_attr_example or "属性名"
+        stage_example = stage_attr_example or "第一阶段"
+
         await _notify("💼 正在准备职业体系提示词...", 0.2)
         template = await PromptService.get_template("CAREER_SYSTEM_GENERATION", user_id, db)
         prompt = PromptService.format_prompt(
@@ -1710,6 +1761,9 @@ class BookImportService:
             location=project.world_location or "未设定",
             atmosphere=project.world_atmosphere or "未设定",
             rules=project.world_rules or "未设定",
+            attribute_schema_info=attribute_schema_info,
+            attr_example_name=attr_example_name,
+            stage_example=stage_example,
         )
 
         await _notify("💼 AI正在生成职业体系...", 0.3)
@@ -1744,8 +1798,16 @@ class BookImportService:
             if not isinstance(max_stage, int) or max_stage <= 0:
                 max_stage = len(stages) if stages else (10 if career_type == "main" else 6)
 
+            # 兼容旧格式 attribute_bonuses
             attr_bonuses = item.get("attribute_bonuses")
             attr_bonuses_json = json.dumps(attr_bonuses, ensure_ascii=False) if attr_bonuses else None
+
+            # 新格式：base_attributes 和 per_stage_bonus
+            base_attributes = item.get("base_attributes")
+            base_attributes_json = json.dumps(base_attributes, ensure_ascii=False) if base_attributes else None
+
+            per_stage_bonus = item.get("per_stage_bonus")
+            per_stage_bonus_json = json.dumps(per_stage_bonus, ensure_ascii=False) if per_stage_bonus else None
 
             return Career(
                 project_id=project.id,
@@ -1759,6 +1821,8 @@ class BookImportService:
                 special_abilities=item.get("special_abilities"),
                 worldview_rules=item.get("worldview_rules"),
                 attribute_bonuses=attr_bonuses_json,
+                base_attributes=base_attributes_json,
+                per_stage_bonus=per_stage_bonus_json,
                 source="ai",
             )
 

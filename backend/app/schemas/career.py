@@ -23,6 +23,8 @@ class CareerBase(BaseModel):
     special_abilities: Optional[str] = Field(None, description="特殊能力描述")
     worldview_rules: Optional[str] = Field(None, description="世界观规则关联")
     attribute_bonuses: Optional[Dict[str, str]] = Field(None, description="属性加成")
+    base_attributes: Optional[str] = Field(None, description="职业基础能力配置(JSON)")
+    per_stage_bonus: Optional[str] = Field(None, description="每阶段能力加成(JSON)")
 
 
 class CareerCreate(CareerBase):
@@ -43,6 +45,8 @@ class CareerUpdate(BaseModel):
     special_abilities: Optional[str] = None
     worldview_rules: Optional[str] = None
     attribute_bonuses: Optional[Dict[str, str]] = None
+    base_attributes: Optional[str] = Field(None, description="职业基础能力配置(JSON)")
+    per_stage_bonus: Optional[str] = Field(None, description="每阶段能力加成(JSON)")
 
 
 class CareerResponse(BaseModel):
@@ -59,10 +63,12 @@ class CareerResponse(BaseModel):
     special_abilities: Optional[str] = None
     worldview_rules: Optional[str] = None
     attribute_bonuses: Optional[Dict[str, str]] = None
+    base_attributes: Optional[Dict[str, Any]] = Field(None, description="职业基础能力配置(JSON解析)")
+    per_stage_bonus: Optional[Dict[str, Any]] = Field(None, description="每阶段能力加成(JSON解析)")
     source: str
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 

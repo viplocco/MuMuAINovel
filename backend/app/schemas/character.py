@@ -37,17 +37,20 @@ class CharacterCreate(BaseModel):
     organization_members: Optional[str] = Field(None, description="组织成员(JSON)")
     traits: Optional[str] = Field(None, description="特征标签(JSON)")
     avatar_url: Optional[str] = Field(None, description="头像URL")
-    
+
     # 组织额外字段
     power_level: Optional[int] = Field(None, description="组织势力等级(0-100)")
     location: Optional[str] = Field(None, description="组织所在地")
     motto: Optional[str] = Field(None, description="组织格言/口号")
     color: Optional[str] = Field(None, description="组织代表颜色")
-    
+
     # 职业字段
     main_career_id: Optional[str] = Field(None, description="主职业ID")
     main_career_stage: Optional[int] = Field(None, description="主职业阶段")
     sub_careers: Optional[str] = Field(None, description="副职业列表JSON字符串")
+
+    # 能力值字段
+    attributes: Optional[str] = Field(None, description="角色能力数值(JSON)")
 
 
 class CharacterUpdate(BaseModel):
@@ -64,17 +67,20 @@ class CharacterUpdate(BaseModel):
     organization_purpose: Optional[str] = None
     organization_members: Optional[str] = None
     traits: Optional[str] = None
-    
+
     # 组织额外字段（会同步到Organization表）
     power_level: Optional[int] = Field(None, description="组织势力等级(0-100)")
     location: Optional[str] = Field(None, description="组织所在地")
     motto: Optional[str] = Field(None, description="组织格言/口号")
     color: Optional[str] = Field(None, description="组织代表颜色")
-    
+
     # 职业字段（会同步到CharacterCareer表）
     main_career_id: Optional[str] = Field(None, description="主职业ID")
     main_career_stage: Optional[int] = Field(None, description="主职业阶段")
     sub_careers: Optional[str] = Field(None, description="副职业列表JSON字符串")
+
+    # 能力值字段
+    attributes: Optional[str] = Field(None, description="角色能力数值(JSON)")
 
 
 class CharacterResponse(CharacterBase):
@@ -84,26 +90,29 @@ class CharacterResponse(CharacterBase):
     avatar_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    
+
     # 组织额外字段（从Organization表关联）
     power_level: Optional[int] = Field(None, description="组织势力等级(0-100)")
     location: Optional[str] = Field(None, description="组织所在地")
     motto: Optional[str] = Field(None, description="组织格言/口号")
     color: Optional[str] = Field(None, description="组织代表颜色")
-    
+
     # 职业信息字段
     main_career_id: Optional[str] = Field(None, description="主职业ID")
     main_career_stage: Optional[int] = Field(None, description="主职业阶段")
     sub_careers: Optional[List[Dict[str, Any]]] = Field(None, description="副职业列表")
-    
+
+    # 能力值字段
+    attributes: Optional[Dict[str, Any]] = Field(None, description="角色能力数值(JSON解析)")
+
     # 角色/组织存活状态
     status: Optional[str] = Field("active", description="状态：active/deceased/missing/retired/destroyed")
     status_changed_chapter: Optional[int] = Field(None, description="状态变更的章节号")
-    
+
     # 心理状态追踪字段
     current_state: Optional[str] = Field(None, description="角色当前心理状态")
     state_updated_chapter: Optional[int] = Field(None, description="心理状态最后更新的章节号")
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
