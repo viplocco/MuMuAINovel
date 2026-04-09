@@ -6,9 +6,8 @@ import {
   ThunderboltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
+import type { CollapseProps } from 'antd';
 import type { MemoryAnnotation } from './AnnotatedText';
-
-const { Panel } = Collapse;
 
 interface MemorySidebarProps {
   annotations: MemoryAnnotation[];
@@ -227,26 +226,24 @@ const MemorySidebar: React.FC<MemorySidebarProps> = ({
       <Divider style={{ margin: '16px 0' }} />
 
       {/* 分类展示 */}
-      <Collapse defaultActiveKey={['hook', 'foreshadow', 'plot_point']} ghost>
-        {Object.entries(groupedAnnotations).map(([type, items]) => {
-          if (items.length === 0) return null;
-
-          const config = TYPE_CONFIG[type as keyof typeof TYPE_CONFIG];
-
-          return (
-            <Panel
-              key={type}
-              header={
+      <Collapse
+        defaultActiveKey={['hook', 'foreshadow', 'plot_point']}
+        ghost
+        items={Object.entries(groupedAnnotations)
+          .filter(([, items]) => items.length > 0)
+          .map(([type, items]) => {
+            const config = TYPE_CONFIG[type as keyof typeof TYPE_CONFIG];
+            return {
+              key: type,
+              label: (
                 <span style={{ fontWeight: 600 }}>
                   {config.icon} {config.label} ({items.length})
                 </span>
-              }
-            >
-              {items.map((annotation) => renderMemoryCard(annotation))}
-            </Panel>
-          );
-        })}
-      </Collapse>
+              ),
+              children: items.map((annotation) => renderMemoryCard(annotation)),
+            };
+          })}
+      />
     </div>
   );
 };
