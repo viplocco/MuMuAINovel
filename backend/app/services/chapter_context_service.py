@@ -58,7 +58,8 @@ class OneToManyContext:
     # === P2-参考信息 ===
     relevant_memories: Optional[str] = None  # 始终启用（相关度>0.6）
     foreshadow_reminders: Optional[str] = None
-    
+    chapter_items: Optional[str] = None  # 本章涉及的物品信息
+
     # === 元信息 ===
     context_stats: Dict[str, Any] = field(default_factory=dict)
     
@@ -67,7 +68,7 @@ class OneToManyContext:
         total = 0
         for field_name in ['chapter_outline', 'recent_chapters_context', 'continuation_point',
                           'chapter_characters', 'chapter_careers',
-                          'relevant_memories', 'foreshadow_reminders',
+                          'relevant_memories', 'foreshadow_reminders', 'chapter_items',
                           'previous_chapter_summary']:
             value = getattr(self, field_name, None)
             if value:
@@ -111,7 +112,8 @@ class OneToOneContext:
     # === P2-参考信息 ===
     foreshadow_reminders: Optional[str] = None
     relevant_memories: Optional[str] = None  # 相关度>0.6
-    
+    chapter_items: Optional[str] = None  # 本章涉及的物品信息
+
     # === 元信息 ===
     context_stats: Dict[str, Any] = field(default_factory=dict)
     
@@ -120,7 +122,7 @@ class OneToOneContext:
         total = 0
         for field_name in ['chapter_outline', 'continuation_point', 'previous_chapter_summary',
                           'chapter_characters', 'chapter_careers', 'foreshadow_reminders',
-                          'relevant_memories']:
+                          'relevant_memories', 'chapter_items']:
             value = getattr(self, field_name, None)
             if value:
                 total += len(value)
@@ -132,32 +134,37 @@ class OneToOneContext:
 class OneToManyContextBuilder:
     """
     1-N模式上下文构建器
-    
+
     上下文构建策略：
     - 章节大纲：本章expansion_plan + 最近10章expansion_plan摘要
     - 衔接锚点：统一上一章末尾500字 + 摘要
     - 角色信息：完整版（含年龄、外貌、背景、关系、组织、职业）
     - 职业详情：独立的chapter_careers字段，含完整阶段体系
-    - 相关记忆：始终启用（相关度>0.6）
+    - 相关记忆：始终启用（相关度>阈值，阈值可配置）
     - 伏笔提醒：始终启用
     """
-    
-    # 配置常量
-    ENDING_LENGTH = 500          # 统一衔接长度500字
-    MEMORY_COUNT = 10            # 记忆条数
-    MEMORY_SIMILARITY_THRESHOLD = 0.6  # 记忆相关度阈值
-    RECENT_CHAPTERS_COUNT = 10   # 最近章节规划数量
-    
-    def __init__(self, memory_service=None, foreshadow_service=None):
+
+    def __init__(self, memory_service=None, foreshadow_service=None, item_service=None):
         """
         初始化构建器
-        
+
         Args:
             memory_service: 记忆服务实例（可选，用于检索相关记忆）
             foreshadow_service: 伏笔服务实例（可选，用于获取伏笔提醒）
+            item_service: 物品服务实例（可选，用于获取物品上下文）
         """
+        from app.config import settings
+
         self.memory_service = memory_service
         self.foreshadow_service = foreshadow_service
+        self.item_service = item_service
+
+        # 从配置读取阈值
+        self.ENDING_LENGTH = settings.chapter_ending_length
+        self.MEMORY_COUNT = settings.chapter_memory_count
+        self.MEMORY_SIMILARITY_THRESHOLD = settings.chapter_memory_similarity_threshold
+        self.RECENT_CHAPTERS_COUNT = settings.chapter_recent_count
+        self.GENRE_MEMORY_THRESHOLDS = settings.genre_memory_thresholds
     
     async def build(
         self,
@@ -247,9 +254,15 @@ class OneToManyContextBuilder:
         
         # === P2-参考信息（始终启用）===
         if self.memory_service:
+            # 根据小说类型动态调整阈值
+            genre = project.genre or ""
+            dynamic_threshold = self.GENRE_MEMORY_THRESHOLDS.get(genre, self.MEMORY_SIMILARITY_THRESHOLD)
+            logger.debug(f"  记忆检索阈值: {dynamic_threshold} (类型: {genre})")
+
             context.relevant_memories = await self._get_relevant_memories_enhanced(
                 user_id, project.id, chapter_number,
-                context.chapter_outline, db
+                context.chapter_outline, db,
+                similarity_threshold=dynamic_threshold
             )
             logger.info(f"  ✅ 相关记忆: {len(context.relevant_memories or '')}字符")
         
@@ -260,7 +273,24 @@ class OneToManyContextBuilder:
             )
             if context.foreshadow_reminders:
                 logger.info(f"  ✅ 伏笔提醒: {len(context.foreshadow_reminders)}字符")
-        
+
+        # === P2-物品上下文===
+        if self.item_service:
+            # 获取本章涉及的角色名称（用于物品关联）
+            character_names = []
+            if chapter.expansion_plan:
+                try:
+                    plan = json.loads(chapter.expansion_plan)
+                    character_names = plan.get('character_focus', [])
+                except:
+                    pass
+
+            context.chapter_items = await self.item_service.build_chapter_context(
+                db, project.id, chapter_number, character_names, max_items=15
+            )
+            if context.chapter_items:
+                logger.info(f"  ✅ 物品上下文: {len(context.chapter_items)}字符")
+
         # === 统计信息 ===
         context.context_stats = {
             "mode": "one-to-many",
@@ -272,6 +302,7 @@ class OneToManyContextBuilder:
             "recent_context_length": len(context.recent_chapters_context or ""),
             "memories_length": len(context.relevant_memories or ""),
             "foreshadow_length": len(context.foreshadow_reminders or ""),
+            "items_length": len(context.chapter_items or ""),
             "total_length": context.get_total_context_length()
         }
         
@@ -632,15 +663,19 @@ class OneToManyContextBuilder:
         project_id: str,
         chapter_number: int,
         chapter_outline: str,
-        db: AsyncSession
+        db: AsyncSession,
+        similarity_threshold: float = None
     ) -> Optional[str]:
-        """获取相关记忆（始终启用，相关度>0.6）"""
+        """获取相关记忆（相关度>阈值）"""
         if not self.memory_service:
             return None
-        
+
+        # 使用传入的阈值或默认阈值
+        threshold = similarity_threshold if similarity_threshold is not None else self.MEMORY_SIMILARITY_THRESHOLD
+
         try:
             query_text = chapter_outline[:500].replace('\n', ' ')
-            
+
             relevant_memories = await self.memory_service.search_memories(
                 user_id=user_id,
                 project_id=project_id,
@@ -648,24 +683,24 @@ class OneToManyContextBuilder:
                 limit=15,
                 min_importance=0.0
             )
-            
-            # 过滤相关度>0.6
+
+            # 过滤相关度>阈值
             filtered_memories = [
                 mem for mem in relevant_memories
-                if mem.get('similarity', 0) > self.MEMORY_SIMILARITY_THRESHOLD
+                if mem.get('similarity', 0) > threshold
             ]
-            
+
             if not filtered_memories:
                 return None
-            
+
             memory_lines = ["【相关记忆】"]
             for mem in filtered_memories[:self.MEMORY_COUNT]:
                 similarity = mem.get('similarity', 0)
                 content = mem.get('content', '')[:100]
                 memory_lines.append(f"- (相关度:{similarity:.2f}) {content}")
-            
+
             return "\n".join(memory_lines) if len(memory_lines) > 1 else None
-            
+
         except Exception as e:
             logger.error(f"❌ 获取相关记忆失败: {str(e)}")
             return None
@@ -966,26 +1001,36 @@ class OneToOneContextBuilder:
     P0核心信息：
     1. 从outline.structure的JSON中提取：summary, scenes, key_points, emotion, goal
     2. target_word_count
-    
+
     P1重要信息：
     1. 上一章完整内容的最后500字作为参考
     2. 根据structure中的characters获取角色信息（含职业）
-    
+
     P2参考信息：
     1. 伏笔提醒
-    2. 根据角色名检索相关记忆（相关度>0.6）
+    2. 根据角色名检索相关记忆（相关度>阈值）
     """
-    
-    def __init__(self, memory_service=None, foreshadow_service=None):
+
+    def __init__(self, memory_service=None, foreshadow_service=None, item_service=None):
         """
         初始化构建器
-        
+
         Args:
             memory_service: 记忆服务实例（可选）
             foreshadow_service: 伏笔服务实例（可选）
+            item_service: 物品服务实例（可选）
         """
+        from app.config import settings
+
         self.memory_service = memory_service
         self.foreshadow_service = foreshadow_service
+        self.item_service = item_service
+
+        # 从配置读取阈值
+        self.MEMORY_SIMILARITY_THRESHOLD = settings.chapter_memory_similarity_threshold
+        self.MEMORY_COUNT = settings.chapter_memory_count
+        self.ENDING_LENGTH = settings.chapter_ending_length
+        self.GENRE_MEMORY_THRESHOLDS = settings.genre_memory_thresholds
     
     async def build(
         self,
@@ -1135,13 +1180,13 @@ class OneToOneContextBuilder:
             else:
                 logger.info(f"  ⚠️ P2-伏笔提醒: 无")
         
-        # 2. 根据大纲内容检索相关记忆（相关度>0.4）
+        # 2. 根据大纲内容检索相关记忆
         if self.memory_service and context.chapter_outline:
             try:
                 # 使用大纲内容作为查询（截取前500字符以避免过长）
                 query_text = context.chapter_outline[:500].replace('\n', ' ')
                 logger.info(f"  🔍 记忆查询关键词: {query_text[:100]}...")
-                
+
                 relevant_memories = await self.memory_service.search_memories(
                     user_id=user_id,
                     project_id=project.id,
@@ -1149,33 +1194,48 @@ class OneToOneContextBuilder:
                     limit=15,
                     min_importance=0.0
                 )
-                
-                # 过滤相关度阈值为0.6
+
+                # 根据小说类型动态调整阈值
+                genre = project.genre or ""
+                dynamic_threshold = self.GENRE_MEMORY_THRESHOLDS.get(genre, self.MEMORY_SIMILARITY_THRESHOLD)
+                logger.debug(f"  记忆检索阈值: {dynamic_threshold} (类型: {genre})")
+
+                # 过滤相关度阈值
                 filtered_memories = [
                     mem for mem in relevant_memories
-                    if mem.get('similarity', 0) > 0.6
+                    if mem.get('similarity', 0) > dynamic_threshold
                 ]
-                
+
                 if filtered_memories:
                     memory_lines = ["【相关记忆】"]
-                    for mem in filtered_memories[:10]:  # 最多显示10条
+                    for mem in filtered_memories[:self.MEMORY_COUNT]:
                         similarity = mem.get('similarity', 0)
                         content = mem.get('content', '')[:100]
                         memory_lines.append(f"- (相关度:{similarity:.2f}) {content}")
-                    
+
                     context.relevant_memories = "\n".join(memory_lines)
-                    logger.info(f"  ✅ P2-相关记忆: {len(filtered_memories)}条 (相关度>0.6, 共搜索{len(relevant_memories)}条)")
+                    logger.info(f"  ✅ P2-相关记忆: {len(filtered_memories)}条 (相关度>{dynamic_threshold}, 共搜索{len(relevant_memories)}条)")
                 else:
                     context.relevant_memories = None
                     logger.info(f"  ⚠️ P2-相关记忆: 无符合条件的记忆 (共搜索到{len(relevant_memories)}条)")
-                    
+
             except Exception as e:
                 logger.error(f"  ❌ 检索相关记忆失败: {str(e)}")
                 context.relevant_memories = None
         else:
             context.relevant_memories = None
             logger.info(f"  ⚠️ P2-相关记忆: 无大纲内容或记忆服务不可用")
-        
+
+        # 3. 物品上下文
+        if self.item_service:
+            context.chapter_items = await self.item_service.build_chapter_context(
+                db, project.id, chapter_number, character_names, max_items=15
+            )
+            if context.chapter_items:
+                logger.info(f"  ✅ P2-物品上下文: {len(context.chapter_items)}字符")
+            else:
+                logger.info(f"  ⚠️ P2-物品上下文: 无")
+
         # === 统计信息 ===
         context.context_stats = {
             "mode": "one-to-one",
@@ -1188,6 +1248,7 @@ class OneToOneContextBuilder:
             "careers_length": len(context.chapter_careers or ""),
             "foreshadow_length": len(context.foreshadow_reminders or ""),
             "memories_length": len(context.relevant_memories or ""),
+            "items_length": len(context.chapter_items or ""),
             "total_length": context.get_total_context_length()
         }
         

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dropdown, Avatar, Space, Typography, message, Modal, Form, Input, Button, theme } from 'antd';
+import { Dropdown, Avatar, Space, Typography, Modal, Form, Input, Button, theme, App } from 'antd';
 import { UserOutlined, LogoutOutlined, TeamOutlined, CrownOutlined, LockOutlined } from '@ant-design/icons';
 import { authApi } from '../services/api';
 import type { User } from '../types';
@@ -17,6 +17,7 @@ interface UserMenuProps {
 
 export default function UserMenu({ showFullInfo = false, compact = false }: UserMenuProps) {
   const navigate = useNavigate();
+  const { message } = App.useApp();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [changePasswordForm] = Form.useForm();
@@ -32,8 +33,8 @@ export default function UserMenu({ showFullInfo = false, compact = false }: User
     try {
       const user = await authApi.getCurrentUser();
       setCurrentUser(user);
-    } catch (error) {
-      console.error('获取用户信息失败:', error);
+    } catch {
+      // 静默处理，用户可能未登录
     }
   };
 
@@ -42,8 +43,7 @@ export default function UserMenu({ showFullInfo = false, compact = false }: User
       await authApi.logout();
       message.success('已退出登录');
       window.location.href = '/login';
-    } catch (error) {
-      console.error('退出登录失败:', error);
+    } catch {
       message.error('退出登录失败');
     }
   };
@@ -64,7 +64,6 @@ export default function UserMenu({ showFullInfo = false, compact = false }: User
       setShowChangePassword(false);
       changePasswordForm.resetFields();
     } catch (error: unknown) {
-      console.error('修改密码失败:', error);
       const err = error as { response?: { data?: { detail?: string } } };
       message.error(err.response?.data?.detail || '修改密码失败');
     } finally {

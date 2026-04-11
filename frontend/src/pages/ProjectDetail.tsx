@@ -19,6 +19,7 @@ import {
   BulbOutlined,
   CloudOutlined,
   MoonOutlined,
+  GiftOutlined,
 } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useCharacterSync, useOutlineSync, useChapterSync } from '../store/hooks';
@@ -167,6 +168,11 @@ export default function ProjectDetail() {
           icon: <BulbOutlined />,
           label: <Link to={`/project/${projectId}/foreshadows`}>伏笔管理</Link>,
         },
+        {
+          key: 'items',
+          icon: <GiftOutlined />,
+          label: <Link to={`/project/${projectId}/items`}>物品管理</Link>,
+        },
       ],
     },
     {
@@ -239,6 +245,11 @@ export default function ProjectDetail() {
       label: <Link to={`/project/${projectId}/foreshadows`}>伏笔管理</Link>,
     },
     {
+      key: 'items',
+      icon: <GiftOutlined />,
+      label: <Link to={`/project/${projectId}/items`}>物品管理</Link>,
+    },
+    {
       key: 'writing-styles',
       icon: <EditOutlined />,
       label: <Link to={`/project/${projectId}/writing-styles`}>写作风格</Link>,
@@ -261,6 +272,7 @@ export default function ProjectDetail() {
     if (path.includes('/characters')) return 'characters';
     if (path.includes('/chapter-analysis')) return 'chapter-analysis';
     if (path.includes('/foreshadows')) return 'foreshadows';
+    if (path.includes('/items')) return 'items';
     if (path.includes('/chapters')) return 'chapters';
     if (path.includes('/writing-styles')) return 'writing-styles';
     if (path.includes('/prompt-workshop')) return 'prompt-workshop';

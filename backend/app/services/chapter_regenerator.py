@@ -31,7 +31,7 @@ class ChapterRegenerator:
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         根据反馈重新生成章节（流式）
-        
+
         Args:
             chapter: 原始章节对象
             analysis: 分析结果（可选）
@@ -40,22 +40,22 @@ class ChapterRegenerator:
             style_content: 写作风格
             user_id: 用户ID（用于获取自定义提示词）
             db: 数据库会话（用于查询自定义提示词）
-        
+
         Yields:
             包含类型和数据的字典: {'type': 'progress'/'chunk', 'data': ...}
         """
         try:
             logger.info(f"🔄 开始重新生成章节: 第{chapter.chapter_number}章")
-            
+
             # 1. 构建修改指令
             yield {'type': 'progress', 'progress': 5, 'message': '正在构建修改指令...'}
             modification_instructions = self._build_modification_instructions(
                 analysis=analysis,
                 regenerate_request=regenerate_request
             )
-            
+
             logger.info(f"📝 修改指令构建完成，长度: {len(modification_instructions)}字符")
-            
+
             # 2. 构建完整提示词
             yield {'type': 'progress', 'progress': 10, 'message': '正在构建生成提示词...'}
             full_prompt = await self._build_regeneration_prompt(
@@ -68,9 +68,9 @@ class ChapterRegenerator:
                 db=db
             )
 
-            logger.info(f"🎯 提示词构建完成，开始AI生成")
+            logger.info(f"🎯 提示词构建完成，长度: {len(full_prompt)}字符，开始AI生成")
             yield {'type': 'progress', 'progress': 15, 'message': '开始AI生成内容...'}
-            
+
             # 3. 构建系统提示词（注入写作风格）
             system_prompt_with_style = None
             if style_content:
@@ -81,28 +81,47 @@ class ChapterRegenerator:
 ⚠️ 请严格遵循上述写作风格要求进行重写，这是最重要的指令！
 确保在整个章节重写过程中始终保持风格的一致性。"""
                 logger.info(f"✅ 已将写作风格注入系统提示词（{len(style_content)}字符）")
-            
+
             # 4. 流式生成新内容，同时跟踪进度
             target_word_count = regenerate_request.target_word_count
             accumulated_length = 0
-            
-            async for chunk in self.ai_service.generate_text_stream(
-                prompt=full_prompt,
-                system_prompt=system_prompt_with_style,
-                temperature=0.7
-            ):
-                # 发送内容块
-                yield {'type': 'chunk', 'content': chunk}
-                
-                # 更新累积字数并计算进度（15%-95%）
-                accumulated_length += len(chunk)
-                # 进度从15%开始，到95%结束，为后处理预留5%
-                generation_progress = min(15 + (accumulated_length / target_word_count) * 80, 95)
-                yield {'type': 'progress', 'progress': int(generation_progress), 'word_count': accumulated_length}
-            
+            chunk_count = 0
+
+            logger.info(f"🚀 调用 AI 服务进行流式生成...")
+
+            try:
+                async for chunk in self.ai_service.generate_text_stream(
+                    prompt=full_prompt,
+                    system_prompt=system_prompt_with_style,
+                    temperature=0.7
+                ):
+                    chunk_count += 1
+                    accumulated_length += len(chunk)
+
+                    # 发送内容块
+                    yield {'type': 'chunk', 'content': chunk}
+
+                    # 更新累积字数并计算进度（15%-95%）
+                    generation_progress = min(15 + (accumulated_length / target_word_count) * 80, 95)
+                    yield {'type': 'progress', 'progress': int(generation_progress), 'word_count': accumulated_length}
+
+                    if chunk_count % 10 == 0:
+                        logger.debug(f"  已生成 {chunk_count} 个块，共 {accumulated_length} 字")
+
+                logger.info(f"✅ AI 生成完成，共 {chunk_count} 个块，{accumulated_length} 字")
+
+            except Exception as ai_error:
+                logger.error(f"❌ AI 服务调用失败: {type(ai_error).__name__}: {str(ai_error)}", exc_info=True)
+                yield {'type': 'progress', 'progress': 95, 'message': f'AI 服务异常: {str(ai_error)}'}
+                raise
+
+            if accumulated_length == 0:
+                logger.warning("⚠️ AI 服务未返回任何内容！")
+                yield {'type': 'progress', 'progress': 95, 'message': 'AI 服务未返回内容，请检查配置'}
+
             logger.info(f"✅ 章节重新生成完成，共生成 {accumulated_length} 字")
-            yield {'type': 'progress', 'progress': 100, 'message': '生成完成'}
-            
+            yield {'type': 'progress', 'progress': 100, 'message': '生成完成', 'word_count': accumulated_length}
+
         except Exception as e:
             logger.error(f"❌ 重新生成失败: {str(e)}", exc_info=True)
             raise

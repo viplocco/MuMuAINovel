@@ -38,12 +38,13 @@ class PlotAnalyzer:
         db: AsyncSession = None,
         max_retries: int = 3,
         existing_foreshadows: Optional[List[Dict[str, Any]]] = None,
+        existing_items: Optional[List[Dict[str, Any]]] = None,
         on_retry: Optional[OnRetryCallback] = None,
         characters_info: str = ""
     ) -> Optional[Dict[str, Any]]:
         """
         分析单章内容（带重试机制）
-        
+
         Args:
             chapter_number: 章节号
             title: 章节标题
@@ -53,17 +54,70 @@ class PlotAnalyzer:
             db: 数据库会话（用于查询自定义提示词）
             max_retries: 最大重试次数，默认3次
             existing_foreshadows: 已埋入的伏笔列表（用于回收匹配）
+            existing_items: 已有的物品列表（用于物品匹配）
             on_retry: 重试时的回调函数，参数为 (当前重试次数, 最大重试次数, 等待秒数, 错误原因)
             characters_info: 项目角色信息文本（用于角色名称匹配）
-        
+
         Returns:
             分析结果字典,失败返回None
         """
         logger.info(f"🔍 开始分析第{chapter_number}章: {title}")
-        
-        # 如果内容过长,截取前8000字(避免超token)
-        analysis_content = content[:8000] if len(content) > 8000 else content
-        
+
+        # === 智能内容截取策略（优化：均匀采样减少遗漏） ===
+        ANALYSIS_CONTENT_LIMIT = 12000  # 提高上限，减少内容遗漏
+
+        if len(content) <= ANALYSIS_CONTENT_LIMIT:
+            # 短章节：直接分析全部内容
+            analysis_content = content
+            logger.info(f"  📄 内容长度: {len(content)}字（完整分析）")
+        else:
+            # 长章节：均匀多段采样策略
+            # 开头30% + 中间均匀采样40%（分2-3段） + 结尾30%
+            # 这样能更均匀覆盖章节内容，减少遗漏物品的可能性
+            head_length = int(ANALYSIS_CONTENT_LIMIT * 0.3)   # 开头 3600字
+            tail_length = int(ANALYSIS_CONTENT_LIMIT * 0.3)   # 结尾 3600字
+            middle_total = ANALYSIS_CONTENT_LIMIT - head_length - tail_length  # 中间 4800字
+
+            content_head = content[:head_length]
+            content_tail = content[-tail_length:]
+
+            # 中间部分：均匀采样2-3段，避免遗漏关键物品事件
+            content_middle_length = len(content) - head_length - tail_length
+
+            if content_middle_length > 0:
+                # 将中间部分分成2段均匀采样
+                segment_count = 2
+                segment_length = middle_total // segment_count
+
+                # 计算采样间隔
+                gap = content_middle_length // (segment_count + 1)
+
+                middle_segments = []
+                for i in range(segment_count):
+                    # 从中间区域均匀选取采样点
+                    start_pos = head_length + gap * (i + 1) - segment_length // 2
+                    # 确保不超出边界
+                    start_pos = max(head_length, min(start_pos, len(content) - tail_length - segment_length))
+                    segment = content[start_pos:start_pos + segment_length]
+                    middle_segments.append(f"【中间部分{i+1}】\n{segment}")
+
+                content_middle_text = "\n\n".join(middle_segments)
+            else:
+                content_middle_text = ""
+
+            # 合并，添加分隔标记
+            analysis_content = f"""【开头部分】
+{content_head}
+
+{content_middle_text}
+
+【结尾部分】
+{content_tail}
+
+⚠️ 此章节较长（共{len(content)}字），已均匀分段采样进行分析（共{segment_count + 2}段）"""
+
+            logger.info(f"  📄 内容长度: {len(content)}字 → 均匀分段采样 {len(analysis_content)}字（{segment_count + 2}段）")
+
         # 获取自定义提示词模板
         try:
             if user_id and db:
@@ -74,10 +128,13 @@ class PlotAnalyzer:
         except Exception as e:
             logger.warning(f"⚠️ 获取提示词模板失败，使用默认模板: {str(e)}")
             template = PromptService.PLOT_ANALYSIS
-        
+
         # 格式化已有伏笔列表
         foreshadows_text = self._format_existing_foreshadows(existing_foreshadows)
-        
+
+        # 格式化已有物品列表
+        items_text = self._format_existing_items(existing_items)
+
         # 格式化提示词
         prompt = PromptService.format_prompt(
             template,
@@ -86,6 +143,7 @@ class PlotAnalyzer:
             word_count=word_count,
             content=analysis_content,
             existing_foreshadows=foreshadows_text,
+            existing_items=items_text,
             characters_info=characters_info if characters_info else "（暂无角色信息）"
         )
         
@@ -259,7 +317,60 @@ class PlotAnalyzer:
         # 操作指引
         lines.append("提示：如果章节内容回收了上述任一伏笔，请在 foreshadows 数组中")
         lines.append("添加 type='resolved' 的记录，并在 reference_foreshadow_id 填写对应ID。")
-        
+
+        return "\n".join(lines)
+
+    def _format_existing_items(self, items: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        格式化已有物品列表，用于注入到分析提示词中
+
+        Args:
+            items: 物品列表，每个包含 id, name, alias, status, owner_character_name 等
+
+        Returns:
+            格式化的文本
+        """
+        if not items:
+            return "（暂无已有物品）"
+
+        lines = []
+
+        # 按持有者分组
+        owned_items = [item for item in items if item.get('status') in ['owned', 'equipped']]
+        other_items = [item for item in items if item.get('status') not in ['owned', 'equipped']]
+
+        if owned_items:
+            lines.append("【当前被持有的物品】")
+            for item in owned_items[:15]:
+                item_id = item.get('id', 'unknown')
+                item_name = item.get('name', '未命名')
+                aliases = item.get('alias', [])
+                owner = item.get('owner_character_name', '未知')
+                quantity = item.get('quantity', 1)
+                status = item.get('status', 'owned')
+
+                alias_str = f"（别名：{', '.join(aliases[:2])}）" if aliases else ""
+                qty_str = f" x{quantity}" if quantity > 1 else ""
+
+                lines.append(f"- 【ID: {item_id}】{item_name}{alias_str}")
+                lines.append(f"   持有者：{owner}，数量：{quantity}，状态：{status}")
+                if item.get('special_effects'):
+                    lines.append(f"   特效：{item.get('special_effects')[:50]}")
+            lines.append("")
+
+        if other_items:
+            lines.append("【其他物品】")
+            for item in other_items[:5]:
+                item_id = item.get('id', 'unknown')
+                item_name = item.get('name', '未命名')
+                status = item.get('status', 'appeared')
+                lines.append(f"- 【ID: {item_id}】{item_name}（状态：{status}）")
+            lines.append("")
+
+        # 操作指引
+        lines.append("提示：如果章节涉及上述物品，请在 items 数组中填写对应的信息，")
+        lines.append("并使用完全相同的物品名称，在 reference_item_id 填写对应ID。")
+
         return "\n".join(lines)
     
     def _parse_analysis_response(self, response: str) -> Optional[Dict[str, Any]]:
@@ -472,7 +583,44 @@ class PlotAnalyzer:
                         'is_foreshadow': 0
                     }
                 })
-            
+
+            # 6. 提取物品变化
+            for i, item_event in enumerate(analysis.get('items', [])):
+                item_name = item_event.get('item_name', '未知物品')
+                event_type = item_event.get('event_type', 'appear')
+
+                keyword = item_event.get('keyword', '')
+                position, length = self._find_text_position(chapter_content, keyword)
+
+                logger.info(f"  物品位置: keyword='{keyword[:30]}...', pos={position}, len={length}")
+
+                memories.append({
+                    'type': 'item_event',
+                    'content': item_event.get('description', ''),
+                    'title': f"物品[{item_name}] - {event_type}",
+                    'metadata': {
+                        'chapter_id': chapter_id,
+                        'chapter_number': chapter_number,
+                        'importance_score': 0.6,
+                        'tags': ['物品', item_event.get('item_type', '其他'), event_type],
+                        'is_foreshadow': 0,
+                        'item_name': item_name,
+                        'item_type': item_event.get('item_type'),
+                        'event_type': event_type,
+                        'from_character': item_event.get('from_character'),
+                        'to_character': item_event.get('to_character'),
+                        'quantity_change': item_event.get('quantity_change'),
+                        'quantity_after': item_event.get('quantity_after'),
+                        'reference_item_id': item_event.get('reference_item_id'),
+                        'rarity': item_event.get('rarity'),
+                        'special_effects': item_event.get('special_effects'),
+                        'suggested_category': item_event.get('suggested_category'),
+                        'keyword': keyword,
+                        'text_position': position,
+                        'text_length': length
+                    }
+                })
+
             logger.info(f"📝 从分析中提取了{len(memories)}条记忆")
             return memories
             

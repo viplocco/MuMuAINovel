@@ -60,24 +60,42 @@ class OpenAIClient(BaseAIClient):
         tool_choice: Optional[str] = None,
     ) -> Dict[str, Any]:
         payload = self._build_payload(messages, model, temperature, max_tokens, tools, tool_choice)
-        
-        logger.debug(f"📤 OpenAI 请求 payload: {json.dumps(payload, ensure_ascii=False, indent=2)}")
-        
+
+        logger.info(f"📤 OpenAI 请求 - 模型: {model}, max_tokens: {max_tokens}, 温度: {temperature}")
+        logger.debug(f"📤 OpenAI 请求 payload: {json.dumps(payload, ensure_ascii=False, indent=2)[:1000]}...")
+
         data = await self._request_with_retry("POST", "/chat/completions", payload)
-        
+
         # 调试日志：输出原始响应
-        logger.debug(f"📥 OpenAI 原始响应: {json.dumps(data, ensure_ascii=False, indent=2)}")
+        logger.info(f"📥 OpenAI 原始响应键: {data.keys() if isinstance(data, dict) else type(data)}")
+
+        # 详细记录响应内容
+        if isinstance(data, dict):
+            usage = data.get('usage', {})
+            if usage:
+                logger.info(f"📥 Token使用 - prompt: {usage.get('prompt_tokens')}, completion: {usage.get('completion_tokens')}, total: {usage.get('total_tokens')}")
 
         choices = data.get("choices", [])
         if not choices or len(choices) == 0:
+            logger.error(f"❌ API 返回空 choices: {data}")
             raise ValueError("API 返回空 choices 或 choices 为空列表")
 
         choice = choices[0]
         message = choice.get("message", {})
+        finish_reason = choice.get("finish_reason")
+        content = message.get("content", "")
+
+        logger.info(f"📥 响应详情 - finish_reason: {finish_reason}, content长度: {len(content) if content else 0}")
+
+        # 如果content为空但finish_reason是length，记录警告
+        if not content and finish_reason == 'length':
+            logger.warning(f"⚠️ 智谱AI返回空内容但finish_reason为length，这可能是模型配置问题")
+            logger.warning(f"📥 完整choice: {choice}")
+
         return {
-            "content": message.get("content", ""),
+            "content": content,
             "tool_calls": message.get("tool_calls"),
-            "finish_reason": choice.get("finish_reason"),
+            "finish_reason": finish_reason,
         }
 
     async def chat_completion_stream(

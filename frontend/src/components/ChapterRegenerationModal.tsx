@@ -10,7 +10,7 @@ import {
   Alert,
   Divider,
   Tag,
-  message,
+  App,
   Collapse,
   Card,
   Radio
@@ -24,7 +24,6 @@ import { ssePost } from '../utils/sseClient';
 import { SSEProgressModal } from './SSEProgressModal';
 
 const { TextArea } = Input;
-const { Panel } = Collapse;
 
 interface Suggestion {
   category: string;
@@ -55,7 +54,7 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
   hasAnalysis
 }) => {
   const [form] = Form.useForm();
-  const [modal, contextHolder] = Modal.useModal();
+  const { modal, message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<'idle' | 'generating' | 'success' | 'error'>('idle');
@@ -158,6 +157,7 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
         requestData,
         {
           onProgress: (_msg: string, prog: number, _status: string, wordCount?: number) => {
+            console.log('📊 SSE Progress:', prog, 'word_count:', wordCount);
             // 后端发送的进度消息
             setProgress(prog);
             // 如果后端提供了word_count，使用它；否则使用累积的字数
@@ -169,21 +169,33 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
           onChunk: (content: string) => {
             // 累积内容块
             accumulatedContent += content;
+            console.log('📝 SSE Chunk received, total length:', accumulatedContent.length);
             // 仅作为备用字数统计
             currentWordCount = accumulatedContent.length;
             // 不再自己计算进度，完全依赖后端发送的progress消息
           },
           onResult: (data: { word_count?: number }) => {
             // 生成完成，确保使用最新的累积内容
+            const finalWordCount = data.word_count || currentWordCount;
+            const finalContent = accumulatedContent;
+
+            // 验证：如果没有生成内容，视为失败
+            if (!finalContent || finalContent.length === 0) {
+              console.error('SSE 生成内容为空');
+              setStatus('error');
+              setErrorMessage('生成失败：未产生任何内容，请检查 AI 服务是否正常');
+              message.error('重新生成失败：未产生任何内容');
+              return;
+            }
+
             setProgress(100);
             setStatus('success');
-            const finalWordCount = data.word_count || currentWordCount;
             setWordCount(finalWordCount);
             message.success('重新生成完成！');
-            
-            // 直接调用onSuccess打开对比界面，传递最终的累积内容
+
+            // 延迟调用 onSuccess 打开对比界面
             setTimeout(() => {
-              onSuccess(accumulatedContent, finalWordCount);
+              onSuccess(finalContent, finalWordCount);
             }, 500);
           },
           onComplete: () => {
@@ -235,9 +247,7 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
   };
 
   return (
-    <>
-      {contextHolder}
-      <Modal
+    <Modal
       title={`重新生成章节 - 第${chapterNumber}章：${chapterTitle}`}
       open={visible}
       onCancel={handleCancel}
@@ -352,51 +362,59 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
         )}
 
         {/* 高级选项 */}
-        <Collapse ghost>
-          <Panel header="高级选项" key="advanced">
-            {/* 重点优化方向 */}
-            <Form.Item
-              name="focus_areas"
-              label="重点优化方向"
-            >
-              <Checkbox.Group>
-                <Space direction="vertical">
-                  <Checkbox value="pacing">节奏把控</Checkbox>
-                  <Checkbox value="emotion">情感渲染</Checkbox>
-                  <Checkbox value="description">场景描写</Checkbox>
-                  <Checkbox value="dialogue">对话质量</Checkbox>
-                  <Checkbox value="conflict">冲突强度</Checkbox>
-                </Space>
-              </Checkbox.Group>
-            </Form.Item>
+        <Collapse
+          ghost
+          items={[
+            {
+              key: 'advanced',
+              label: '高级选项',
+              children: (
+                <>
+                  {/* 重点优化方向 */}
+                  <Form.Item
+                    name="focus_areas"
+                    label="重点优化方向"
+                  >
+                    <Checkbox.Group>
+                      <Space direction="vertical">
+                        <Checkbox value="pacing">节奏把控</Checkbox>
+                        <Checkbox value="emotion">情感渲染</Checkbox>
+                        <Checkbox value="description">场景描写</Checkbox>
+                        <Checkbox value="dialogue">对话质量</Checkbox>
+                        <Checkbox value="conflict">冲突强度</Checkbox>
+                      </Space>
+                    </Checkbox.Group>
+                  </Form.Item>
 
-            <Divider />
+                  <Divider />
 
-            {/* 保留元素 */}
-            <Form.Item label="保留元素">
-              <Space direction="vertical" style={{ width: '100%' }}>
-                <Form.Item name="preserve_structure" valuePropName="checked" noStyle>
-                  <Checkbox>保留整体结构和情节框架</Checkbox>
-                </Form.Item>
-                <Form.Item name="preserve_character_traits" valuePropName="checked" noStyle>
-                  <Checkbox>保持角色性格一致</Checkbox>
-                </Form.Item>
-              </Space>
-            </Form.Item>
+                  {/* 保留元素 */}
+                  <Form.Item label="保留元素">
+                    <Space direction="vertical" style={{ width: '100%' }}>
+                      <Form.Item name="preserve_structure" valuePropName="checked" noStyle>
+                        <Checkbox>保留整体结构和情节框架</Checkbox>
+                      </Form.Item>
+                      <Form.Item name="preserve_character_traits" valuePropName="checked" noStyle>
+                        <Checkbox>保持角色性格一致</Checkbox>
+                      </Form.Item>
+                    </Space>
+                  </Form.Item>
 
-            <Divider />
+                  <Divider />
 
-            {/* 生成参数 */}
-            <Form.Item
-              name="target_word_count"
-              label="目标字数"
-              tooltip="生成内容的目标字数，实际字数可能有±20%的浮动"
-            >
-              <InputNumber min={500} max={10000} step={500} style={{ width: '100%' }} />
-            </Form.Item>
-
-          </Panel>
-        </Collapse>
+                  {/* 生成参数 */}
+                  <Form.Item
+                    name="target_word_count"
+                    label="目标字数"
+                    tooltip="生成内容的目标字数，实际字数可能有±20%的浮动"
+                  >
+                    <InputNumber min={500} max={10000} step={500} style={{ width: '100%' }} />
+                  </Form.Item>
+                </>
+              )
+            }
+          ]}
+        />
       </Form>
 
       {/* 使用统一的进度显示组件 */}
@@ -406,8 +424,7 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
         message={`正在重新生成中... (已生成 ${wordCount} 字)`}
         title="重新生成章节"
       />
-      </Modal>
-    </>
+    </Modal>
   );
 };
 

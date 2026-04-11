@@ -445,18 +445,22 @@ async def _build_outline_continue_context(
     plot_stage: str,
     story_direction: str,
     requirements: str,
-    db: AsyncSession
+    db: AsyncSession,
+    user_id: str = None,
+    current_chapter_number: int = 0
 ) -> dict:
     """
-    构建大纲续写上下文（简化版）
-    
+    构建大纲续写上下文（增强版）
+
     包含内容：
     1. 项目基础信息：title, theme, genre, world_time_period, world_location,
        world_atmosphere, world_rules, narrative_perspective
     2. 最近10章的完整大纲structure（解析JSON转化为文本）
     3. 所有角色的全部信息
     4. 用户输入：chapter_count, plot_stage, story_direction, requirements
-    
+    5. 【新增】伏笔提醒：已埋入但未回收的伏笔
+    6. 【新增】相关记忆：关键故事记忆
+
     Args:
         project: 项目对象
         latest_outlines: 所有已有大纲列表
@@ -465,7 +469,9 @@ async def _build_outline_continue_context(
         plot_stage: 情节阶段
         story_direction: 故事发展方向
         requirements: 其他要求
-        
+        user_id: 用户ID（用于记忆查询）
+        current_chapter_number: 当前最大章节号（用于伏笔查询）
+
     Returns:
         包含上下文信息的字典
     """
@@ -473,11 +479,15 @@ async def _build_outline_continue_context(
         'project_info': '',
         'recent_outlines': '',
         'characters_info': '',
+        'foreshadow_reminders': '',  # 新增
+        'memory_context': '',        # 新增
         'user_input': '',
         'stats': {
             'total_outlines': len(latest_outlines),
             'recent_outlines_count': 0,
-            'characters_count': len(characters)
+            'characters_count': len(characters),
+            'foreshadow_count': 0,
+            'memory_count': 0
         }
     }
     
@@ -679,7 +689,7 @@ async def _build_outline_continue_context(
             logger.info(f"  ✅ 角色信息：{len(characters)}个角色")
         else:
             context['characters_info'] = "【角色信息】\n暂无角色信息"
-        
+
         # 4. 用户输入
         user_input_parts = [
             "【用户输入】",
@@ -689,14 +699,78 @@ async def _build_outline_continue_context(
         ]
         if requirements:
             user_input_parts.append(f"其他要求：{requirements}")
-        
+
         context['user_input'] = "\n".join(user_input_parts)
-        
+
+        # 5. 【新增】伏笔提醒：已埋入但未回收的伏笔
+        foreshadow_reminders = ""
+        try:
+            from app.services.foreshadow_service import foreshadow_service
+
+            # 获取未回收的伏笔（供AI规划参考）
+            pending_foreshadows = await foreshadow_service.get_pending_resolve_foreshadows(
+                db=db,
+                project_id=project.id,
+                current_chapter=current_chapter_number,
+                lookahead=20  # 查看未来20章的伏笔规划
+            )
+            if pending_foreshadows:
+                foreshadow_parts = ["【已埋入伏笔（需规划回收）】"]
+                for f in pending_foreshadows[:10]:
+                    plant_ch = f.plant_chapter_number or 0
+                    target_ch = f.target_resolve_chapter_number or 0
+                    foreshadow_parts.append(
+                        f"- {f.title}（埋入第{plant_ch}章，计划第{target_ch}章回收）"
+                    )
+                    if f.content:
+                        foreshadow_parts.append(f"  内容：{f.content[:80]}...")
+                foreshadow_reminders = "\n".join(foreshadow_parts)
+                context['stats']['foreshadow_count'] = len(pending_foreshadows)
+                logger.info(f"  ✅ 伏笔提醒：{len(pending_foreshadows)}个待回收伏笔")
+        except Exception as e:
+            logger.warning(f"获取伏笔提醒失败: {str(e)}")
+
+        context['foreshadow_reminders'] = foreshadow_reminders
+
+        # 6. 【新增】相关记忆：关键故事记忆
+        memory_context = ""
+        if user_id:
+            try:
+                from app.services.memory_service import memory_service
+
+                # 使用最近大纲作为查询基础
+                query_text = context['recent_outlines'][:500].replace('\n', ' ') if context['recent_outlines'] else ""
+
+                if query_text:
+                    relevant_memories = await memory_service.search_memories(
+                        user_id=user_id,
+                        project_id=project.id,
+                        query=query_text,
+                        limit=10,
+                        min_importance=0.5
+                    )
+
+                    if relevant_memories:
+                        memory_parts = ["【关键故事记忆】"]
+                        for mem in relevant_memories:
+                            content = mem.get('content', '')
+                            if content:
+                                memory_parts.append(f"- {content[:100]}")
+                        memory_context = "\n".join(memory_parts)
+                        context['stats']['memory_count'] = len(relevant_memories)
+                        logger.info(f"  ✅ 故事记忆：{len(relevant_memories)}条相关记忆")
+            except Exception as e:
+                logger.warning(f"获取故事记忆失败: {str(e)}")
+
+        context['memory_context'] = memory_context
+
         # 计算总长度
         total_length = sum([
             len(context['project_info']),
             len(context['recent_outlines']),
             len(context['characters_info']),
+            len(context['foreshadow_reminders']),
+            len(context['memory_context']),
             len(context['user_input'])
         ])
         context['stats']['total_length'] = total_length
@@ -1416,8 +1490,11 @@ async def continue_outline_generator(
                 .order_by(Outline.order_index)
             )
             latest_outlines = latest_result.scalars().all()
-            
-            # 🚀 使用新的简化上下文构建
+
+            # 获取当前最大章节号（用于伏笔查询）
+            current_max_chapter = latest_outlines[-1].order_index if latest_outlines else 0
+
+            # 🚀 使用增强的上下文构建（新增伏笔提醒和故事记忆）
             context = await _build_outline_continue_context(
                 project=project,
                 latest_outlines=latest_outlines,
@@ -1426,14 +1503,18 @@ async def continue_outline_generator(
                 plot_stage=data.get("plot_stage", "development"),
                 story_direction=data.get("story_direction", "自然延续"),
                 requirements=data.get("requirements", ""),
-                db=db
+                db=db,
+                user_id=user_id,  # 新增：用于记忆查询
+                current_chapter_number=current_max_chapter  # 新增：用于伏笔查询
             )
-            
+
             # 日志统计
             stats = context['stats']
             logger.info(f"📊 批次{batch_num + 1}大纲上下文: 总大纲{stats['total_outlines']}, "
                        f"最近{stats['recent_outlines_count']}章, "
                        f"角色{stats['characters_count']}个, "
+                       f"伏笔{stats.get('foreshadow_count', 0)}个, "
+                       f"记忆{stats.get('memory_count', 0)}条, "
                        f"长度{stats['total_length']}字符")
             
             # 设置用户信息以启用MCP
@@ -1447,7 +1528,7 @@ async def continue_outline_generator(
                 message=f"🤖 调用AI生成第{str(batch_num + 1)}批..."
             )
             
-            # 使用标准续写提示词模板（简化版）
+            # 使用标准续写提示词模板（增强版）
             template = await PromptService.get_template("OUTLINE_CONTINUE", user_id or "", db)
             prompt = PromptService.format_prompt(
                 template,
@@ -1463,6 +1544,9 @@ async def continue_outline_generator(
                 # 上下文信息
                 recent_outlines=context['recent_outlines'],
                 characters_info=context['characters_info'],
+                # 新增：伏笔提醒和故事记忆
+                foreshadow_reminders=context.get('foreshadow_reminders', ''),
+                memory_context=context.get('memory_context', ''),
                 # 续写参数
                 chapter_count=current_batch_size,
                 start_chapter=current_start_chapter,

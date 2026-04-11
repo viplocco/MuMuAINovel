@@ -1,7 +1,37 @@
 """大纲相关的Pydantic模型"""
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+
+def _flatten_nested_list(value: Any) -> List[str]:
+    """
+    扁平化可能包含嵌套列表的字段
+
+    AI有时返回嵌套数组如 [['event1'], 'event2']，
+    此方法将其扁平化为 ['event1', 'event2']
+
+    Args:
+        value: 可能包含嵌套列表的字段值
+
+    Returns:
+        扁平化的字符串列表
+    """
+    if value is None:
+        return []
+
+    if not isinstance(value, list):
+        return [str(value)]
+
+    result = []
+    for item in value:
+        if isinstance(item, list):
+            # 递归扁平化嵌套列表
+            result.extend(_flatten_nested_list(item))
+        else:
+            result.append(str(item))
+
+    return result
 
 
 class OutlineBase(BaseModel):
@@ -90,6 +120,20 @@ class ChapterPlanItem(BaseModel):
     conflict_type: str = Field(..., description="冲突类型")
     estimated_words: int = Field(3000, description="预计字数", ge=1000)
     scenes: Optional[list[str]] = Field(None, description="场景列表(可选)")
+
+    @field_validator('key_events', 'character_focus', mode='before')
+    @classmethod
+    def flatten_list_fields(cls, v):
+        """扁平化可能包含嵌套列表的字段"""
+        return _flatten_nested_list(v)
+
+    @field_validator('scenes', mode='before')
+    @classmethod
+    def flatten_scenes(cls, v):
+        """扁平化scenes字段（可选字段）"""
+        if v is None:
+            return None
+        return _flatten_nested_list(v)
 
 
 class OutlineExpansionRequest(BaseModel):

@@ -6,7 +6,6 @@ import {
   ThunderboltOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import type { CollapseProps } from 'antd';
 import type { MemoryAnnotation } from './AnnotatedText';
 
 interface MemorySidebarProps {

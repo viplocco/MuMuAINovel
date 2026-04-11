@@ -80,7 +80,27 @@ class Settings(BaseSettings):
     
     # MCP配置
     mcp_max_rounds: int = 3  # MCP工具调用最大轮数（全局统一控制）
-    
+
+    # === 章节生成上下文配置 ===
+    chapter_ending_length: int = 500           # 衔接锚点长度（字）
+    chapter_memory_count: int = 10             # 记忆条数限制
+    chapter_memory_similarity_threshold: float = 0.6  # 记忆相关度阈值
+    chapter_recent_count: int = 10             # 最近章节规划数量
+    chapter_analysis_content_limit: int = 8000 # 章节分析内容截断长度
+
+    # === 小说类型阈值映射 ===
+    genre_memory_thresholds: dict = {
+        "玄幻": 0.5,   # 玄幻需要更多世界观记忆
+        "奇幻": 0.5,   # 奇幻同样需要世界观
+        "科幻": 0.55,  # 科幻需要技术细节记忆
+        "悬疑": 0.7,   # 悬疑需要精准线索记忆
+        "推理": 0.7,   # 推理需要精准逻辑
+        "言情": 0.6,   # 默认值
+        "都市": 0.6,   # 默认值
+        "历史": 0.55,  # 历史需要背景知识
+        "武侠": 0.55,  # 武侠需要武功体系
+    }
+
     # LinuxDO OAuth2 配置
     LINUXDO_CLIENT_ID: Optional[str] = None
     LINUXDO_CLIENT_SECRET: Optional[str] = None

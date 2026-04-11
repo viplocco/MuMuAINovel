@@ -1172,3 +1172,137 @@ export const PROMPT_CATEGORIES: Record<string, string> = {
   game: '游戏/电竞',
   other: '其他',
 };
+
+// ==================== 物品管理类型定义 ====================
+
+export type ItemStatus = 'appeared' | 'owned' | 'equipped' | 'consumed' | 'destroyed' | 'lost' | 'sealed';
+export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'artifact';
+
+export interface Item {
+  id: string;
+  project_id: string;
+  name: string;
+  alias?: string[];
+  category_id?: string;
+  category_name?: string;
+  description?: string;
+  unit: string;
+  quantity: number;
+  initial_quantity?: number;
+  rarity?: ItemRarity;
+  quality?: string;
+  attributes?: Record<string, number>;
+  special_effects?: string;
+  lore?: string;
+  value?: number;
+  source_type?: string;
+  source_chapter_number?: number;
+  status: ItemStatus;
+  owner_character_id?: string;
+  owner_character_name?: string;
+  related_characters?: string[];
+  related_chapters?: number[];
+  tags?: string[];
+  notes?: string;
+  is_plot_critical: boolean;
+  created_at: string;
+  updated_at: string;
+  status_changed_at?: string;
+}
+
+export interface ItemCategory {
+  id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  parent_id?: string;
+  level: number;
+  path?: string;
+  order_index: number;
+  item_count: number;
+  children?: ItemCategory[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ItemTransfer {
+  id: string;
+  item_id: string;
+  transfer_type: string;
+  from_character_id?: string;
+  from_character_name?: string;
+  to_character_id?: string;
+  to_character_name?: string;
+  chapter_id?: string;
+  chapter_number?: number;
+  quantity: number;
+  description?: string;
+  occurred_at: string;
+}
+
+export interface ItemQuantityChange {
+  id: string;
+  item_id: string;
+  change_type: string;
+  quantity_before?: number;
+  quantity_change: number;
+  quantity_after?: number;
+  chapter_number?: number;
+  reason?: string;
+  involved_character_name?: string;
+  created_at: string;
+}
+
+export interface ItemCreate {
+  project_id: string;
+  name: string;
+  alias?: string[];
+  category_id?: string;
+  description?: string;
+  unit?: string;
+  quantity?: number;
+  rarity?: ItemRarity;
+  quality?: string;
+  attributes?: Record<string, number>;
+  special_effects?: string;
+  lore?: string;
+  value?: number;
+  source_chapter_number?: number;
+  status?: ItemStatus;
+  owner_character_id?: string;
+  owner_character_name?: string;
+  tags?: string[];
+  notes?: string;
+  is_plot_critical?: boolean;
+}
+
+export interface ItemUpdate {
+  name?: string;
+  alias?: string[];
+  category_id?: string;
+  description?: string;
+  quantity?: number;
+  rarity?: ItemRarity;
+  quality?: string;
+  attributes?: Record<string, number>;
+  special_effects?: string;
+  lore?: string;
+  value?: number;
+  status?: ItemStatus;
+  owner_character_id?: string;
+  owner_character_name?: string;
+  tags?: string[];
+  notes?: string;
+  is_plot_critical?: boolean;
+}
+
+export interface ItemListResponse {
+  total: number;
+  items: Item[];
+  stats?: {
+    total: number;
+    by_status: Record<string, number>;
+    by_rarity: Record<string, number>;
+    plot_critical_count: number;
+  };
+}

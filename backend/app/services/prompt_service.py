@@ -427,6 +427,14 @@ class PromptService:
 {characters_info}
 </characters>
 
+<foreshadow_context priority="P1">
+{foreshadow_reminders}
+</foreshadow_context>
+
+<memory_context priority="P2">
+{memory_context}
+</memory_context>
+
 <user_input priority="P0">
 【用户输入】
 续写章节数：{chapter_count}章
@@ -490,6 +498,8 @@ class PromptService:
 ✅ 情节阶段：遵循{plot_stage_instruction}的要求
 ✅ 风格一致：保持与已有章节相同风格和详细程度
 ✅ 大纲详细：充分解析最近10章大纲的structure字段信息
+✅ 伏笔规划：参考已埋入伏笔，合理规划回收时机
+✅ 记忆一致：确保关键情节与前文不矛盾
 
 【必须遵守】
 ✅ 数量精确：数组包含{chapter_count}个章节
@@ -503,6 +513,7 @@ class PromptService:
 ❌ 与前文矛盾或脱节
 ❌ 忽略已有角色发展
 ❌ 忽略最近大纲中的情节线索
+❌ 忽略已埋入的伏笔信息
 </constraints>"""
     
     # 章节生成 - 1-N模式（第1章）
@@ -544,6 +555,17 @@ class PromptService:
 {foreshadow_reminders}
 </foreshadow_reminders>
 
+<items priority="P2">
+【本章相关物品 - 参考】
+{chapter_items}
+
+⚠️ 物品使用须知：
+- 引用已有物品时，使用完全相同的名称（或别名）
+- 描述物品效果时需符合已有设定
+- 新物品出现需合理（如获得、发现、制作）
+- 关键物品的流转需符合剧情逻辑
+</items>
+
 <memory priority="P2">
 【相关记忆】
 {relevant_memories}
@@ -557,6 +579,8 @@ class PromptService:
 ✅ 组织相关情节须体现成员身份和职位层级
 ✅ 字数控制在目标范围内
 ✅ 如有伏笔提醒，请在本章中适当埋入或回收相应伏笔
+✅ 如有相关物品，引用时使用正确名称并遵循已有设定
+✅ 世界观一致性：所有设定和能力必须符合世界观规则
 
 【禁止事项】
 ❌ 输出章节标题、序号等元信息
@@ -564,6 +588,9 @@ class PromptService:
 ❌ 在结尾处使用开放式反问
 ❌ 添加作者注释或创作说明
 ❌ 角色行为超出其职业阶段的能力范围
+❌ 随意更改物品名称或违背已有物品设定
+❌ 违反世界观规则（如超出能力上限、违反物理法则）
+❌ 时间线混乱或地理设定冲突
 </constraints>
 
 <output>
@@ -608,6 +635,17 @@ class PromptService:
 {foreshadow_reminders}
 </foreshadow_reminders>
 
+<items priority="P2">
+【本章相关物品 - 参考】
+{chapter_items}
+
+⚠️ 物品使用须知：
+- 引用已有物品时，使用完全相同的名称（或别名）
+- 描述物品效果时需符合已有设定
+- 新物品出现需合理（如获得、发现、制作）
+- 关键物品的流转需符合剧情逻辑
+</items>
+
 <memory priority="P2">
 【相关记忆】
 {relevant_memories}
@@ -619,12 +657,17 @@ class PromptService:
 ✅ 保持角色性格、说话方式一致
 ✅ 字数需要严格控制在目标字数内
 ✅ 如有伏笔提醒，请在本章中适当埋入或回收相应伏笔
+✅ 如有相关物品，引用时使用正确名称并遵循已有设定
+✅ 世界观一致性：所有设定和能力必须符合世界观规则
 
 【禁止事项】
 ❌ 输出章节标题、序号等元信息
 ❌ 使用"总之"、"综上所述"等AI常见总结语
 ❌ 添加作者注释或创作说明
 ❌ 生成字数禁止超过目标字数
+❌ 随意更改物品名称或违背已有物品设定
+❌ 违反世界观规则（如超出能力上限、违反物理法则）
+❌ 时间线混乱或地理设定冲突
 </constraints>
 
 <output>
@@ -679,6 +722,17 @@ class PromptService:
 {foreshadow_reminders}
 </foreshadow_reminders>
 
+<items priority="P2">
+【本章相关物品 - 参考】
+{chapter_items}
+
+⚠️ 物品使用须知：
+- 引用已有物品时，使用完全相同的名称（或别名）
+- 描述物品效果时需符合已有设定
+- 新物品出现需合理（如获得、发现、制作）
+- 关键物品的流转需符合剧情逻辑
+</items>
+
 <memory priority="P2">
 【相关记忆】
 {relevant_memories}
@@ -691,6 +745,7 @@ class PromptService:
 ✅ 保持角色性格、说话方式一致
 ✅ 字数需要严格控制在目标字数内
 ✅ 如有伏笔提醒，请在本章中适当埋入或回收相应伏笔
+✅ 如有相关物品，引用时使用正确名称并遵循已有设定
 
 【禁止事项】
 ❌ 输出章节标题、序号等元信息
@@ -699,6 +754,7 @@ class PromptService:
 ❌ 添加作者注释或创作说明
 ❌ 重复上一章已发生的事件
 ❌ 生成字数禁止超过目标字数
+❌ 随意更改物品名称或违背已有物品设定
 </constraints>
 
 <output>
@@ -768,6 +824,17 @@ class PromptService:
 {foreshadow_reminders}
 </foreshadow_reminders>
 
+<items priority="P2">
+【本章相关物品 - 参考】
+{chapter_items}
+
+⚠️ 物品使用须知：
+- 引用已有物品时，使用完全相同的名称（或别名）
+- 描述物品效果时需符合已有设定
+- 新物品出现需合理（如获得、发现、制作）
+- 关键物品的流转需符合剧情逻辑
+</items>
+
 <memory priority="P2">
 【相关记忆 - 参考】
 {relevant_memories}
@@ -782,6 +849,8 @@ class PromptService:
 ✅ 组织相关情节须体现成员身份和职位层级
 ✅ 字数控制在目标范围内
 ✅ 如有伏笔提醒，请在本章中适当埋入或回收相应伏笔
+✅ 如有相关物品，引用时使用正确名称并遵循已有设定
+✅ 世界观一致性：所有设定和能力必须符合世界观规则
 
 【🔴 反重复特别指令】
 ✅ 检查本章开篇是否与"衔接锚点"内容重复
@@ -796,6 +865,9 @@ class PromptService:
 ❌ 重复叙述上一章已发生的事件（包括环境描写、心理活动）
 ❌ 在开篇使用"接上回"、"书接上文"等套话
 ❌ 角色行为超出其职业阶段的能力范围
+❌ 随意更改物品名称或违背已有物品设定
+❌ 违反世界观规则（如超出能力上限、违反物理法则）
+❌ 时间线混乱或地理设定冲突
 </constraints>
 
 <output>
@@ -1020,6 +1092,13 @@ class PromptService:
 {existing_foreshadows}
 </existing_foreshadows>
 
+<existing_items priority="P1">
+【已有物品列表 - 用于物品匹配】
+以下是本项目中已有的物品，分析时如发现章节涉及这些物品，请使用完全相同的名称并填写 reference_item_id：
+
+{existing_items}
+</existing_items>
+
 <characters priority="P1">
 【项目角色信息 - 用于角色状态分析】
 以下是项目中已有的角色列表，分析 character_states 和 relationship_changes 时请使用这些角色的准确名称：
@@ -1113,6 +1192,59 @@ class PromptService:
 - **💀 组织存续状态（重要）**：
   - is_destroyed: 组织是否被覆灭（true/false，默认false）
   - 仅当章节明确描述组织被彻底消灭、瓦解、灭亡时设为true
+
+**5c. 物品追踪 (Item Tracking) - 可选**
+仅当章节涉及物品相关内容时填写，追踪物品的出现、流转和状态变化：
+
+**⚠️ 重要规则：分开识别多个物品**
+当一句话中出现多个不同的物品时，必须将每个物品分开识别为独立的条目。
+- ❌ 错误示例："三十块下品灵石和五瓶劣质聚气丹" → 物品名称："下品灵石与聚气丹"，数量：35
+- ✅ 正确示例：
+  - 物品名称："下品灵石"，数量：30
+  - 物品名称："劣质聚气丹"，数量：5
+**每个物品必须是独立的个体，即使它们同时出现或属于同一批发放。**
+
+- **新出现物品**：首次登场的物品
+  - 物品名称、类型（武器/防具/丹药/材料/法宝/其他）
+  - 出现方式（获得/发现/制作等）
+  - 初始归属（哪个角色获得）
+- **物品流转**：物品持有权变化
+  - 物品名称（必须与已有物品列表中的名称一致）
+  - 从哪个角色转移到哪个角色
+  - 流转方式（赠予/交易/偷窃/战利品/继承等）
+- **物品状态**：物品状态变化
+  - 装备/卸下
+  - 消耗/销毁
+  - 丢失/封印
+- **数量变化**：消耗品数量变化
+  - 物品名称
+  - 使用/消耗数量
+  - 剩余数量
+- **reference_item_id**：匹配已有物品时填写（从已有物品列表中获取）
+
+每个物品事件需要：
+- **item_name**：物品名称（匹配已有物品时使用完全相同的名称）
+- **item_type**：物品类型（weapon/armor/consumable/material/artifact/other）
+- **event_type**：事件类型（appear/transfer/consume/destroy/equip/unequip/lose/seal/craft/find/buy/sell）
+- **from_character**：原持有者（转移时必填）
+- **to_character**：新持有者
+- **quantity_change**：数量变化（正数增加，负数减少）
+- **quantity_after**：变化后数量
+- **description**：详细描述物品变化过程
+- **keyword**：原文定位关键词（8-25字）
+- **reference_item_id**：匹配的已有物品ID（从已有物品列表获取，新物品为null）
+
+**⚠️ AI自动提取的物品属性（尽可能填写）**：
+- **rarity**：稀有度（common/uncommon/rare/epic/legendary/artifact），根据物品描述判断
+- **quality**：品质（如：上品、极品、残缺、完美等），原文提及则填写
+- **special_effects**：特殊效果描述（原文提及的能力、属性加成等）
+- **lore**：背景故事/来历（物品的传说、来历、历史背景）
+- **value**：价值（金币数，原文提及则填写）
+- **aliases**：别名/别称列表（物品的其他称呼，如"玄铁重剑"也可叫"那把剑"）
+- **attributes**：属性数值对象（如：{{"攻击力": 120, "防御力": 50}}，原文有数值则提取）
+- **is_plot_critical**：是否剧情关键物品（对主线剧情有重要影响的物品为true）
+- **unit**：计量单位（如：个、颗、把、张、枚、瓶等，默认"个"）
+- **suggested_category**：建议分类名称（从已有分类中选择最匹配的，如：法宝、丹药、武器）
 
 **6. 关键情节点 (Plot Points)**
 列出3-5个核心情节点：
@@ -1279,6 +1411,52 @@ class PromptService:
       "is_destroyed": false
     }}
   ],
+  "items": [
+    {{
+      "item_name": "玄铁剑",
+      "item_type": "weapon",
+      "event_type": "transfer",
+      "from_character": "张三",
+      "to_character": "李四",
+      "quantity_change": 0,
+      "quantity_after": 1,
+      "description": "张三将玄铁剑赠予李四作为谢礼",
+      "keyword": "张三将玄铁剑赠予李四",
+      "reference_item_id": null,
+      "rarity": "rare",
+      "quality": "上品",
+      "special_effects": "附带冰属性伤害，可提升持有者三成剑气威力",
+      "lore": "此剑由千年玄铁打造，曾属于一代剑圣",
+      "value": 5000,
+      "aliases": ["重剑", "那把黑剑"],
+      "attributes": {{"攻击力": 120, "冰属性": 30}},
+      "is_plot_critical": false,
+      "unit": "把",
+      "suggested_category": "法宝"
+    }},
+    {{
+      "item_name": "疗伤丹",
+      "item_type": "consumable",
+      "event_type": "consume",
+      "from_character": null,
+      "to_character": null,
+      "quantity_change": -3,
+      "quantity_after": 7,
+      "description": "李四服用了三颗疗伤丹",
+      "keyword": "取出三颗疗伤丹服下",
+      "reference_item_id": "已存在物品的ID",
+      "rarity": "common",
+      "quality": null,
+      "special_effects": null,
+      "lore": null,
+      "value": 100,
+      "aliases": ["小还丹"],
+      "attributes": null,
+      "is_plot_critical": false,
+      "unit": "颗",
+      "suggested_category": "丹药"
+    }}
+  ],
   "pacing": "varied",
   "dialogue_ratio": 0.4,
   "description_ratio": 0.3,
@@ -1308,6 +1486,8 @@ class PromptService:
 ✅ 存活状态谨慎：survival_status仅当章节有明确死亡/失踪/退场描写时填写，默认null
 ✅ 组织覆灭谨慎：is_destroyed仅当组织被彻底消灭时设true，组织受损不算覆灭
 ✅ 【伏笔ID追踪】回收伏笔时，必须从【已埋入伏笔列表】中查找匹配的ID填入 reference_foreshadow_id
+✅ 【物品追踪】匹配已有物品时，item_name必须与已有物品列表中的名称完全一致，并填写 reference_item_id
+✅ 【物品可选】items数组可选，仅当章节涉及物品时填写
 
 【评分约束 - 严格执行】
 ✅ 严格按评分标准打分，支持小数（如6.5、7.2、8.3）
@@ -1711,6 +1891,169 @@ class PromptService:
 }}
 
 只返回纯JSON，不要有其他文字。"""
+
+    # 物品分析提示词
+    ITEM_ANALYSIS = """<system>
+你是专业的小说物品分析师，擅长从章节内容中识别和追踪物品的出现、流转和状态变化。
+</system>
+
+<task>
+【分析任务】
+分析第{chapter_number}章「{title}」中的物品相关信息，识别物品的出现、流转、状态变化和数量变更。
+
+【分析重点】
+{analysis_requirements}
+</task>
+
+<input priority="P0">
+【章节内容】
+{content}
+</input>
+
+<existing_items priority="P1">
+【已有物品列表】
+以下是项目中已存在的物品，请在识别时尝试匹配（使用完全相同的名称）：
+{existing_items}
+
+**匹配规则**：
+- 如果识别的物品名称与已有物品名称或别名完全一致，填写reference_item_id
+- 新出现的物品不填写reference_item_id
+</existing_items>
+
+<categories_info priority="P2">
+【分类信息】
+以下是项目的物品分类体系，新物品建议选择合适的分类：
+{categories_info}
+</categories_info>
+
+<analysis_framework>
+请仔细阅读章节内容，识别以下物品相关信息：
+
+**⚠️ 重要规则：分开识别多个物品**
+当一句话中出现多个不同的物品时，必须将每个物品分开识别为独立的条目。
+- ❌ 错误示例："三十块下品灵石和五瓶劣质聚气丹" → 物品名称："下品灵石与聚气丹"，数量：35
+- ✅ 正确示例：
+  - 物品名称："下品灵石"，数量：30
+  - 物品名称："劣质聚气丹"，数量：5
+**每个物品必须是独立的个体，即使它们同时出现或属于同一批发放。**
+
+**1. 新出现物品**
+首次在本章节登场的物品：
+- 物品名称
+- 物品类型（weapon/armor/consumable/material/artifact/other）
+- 出现方式（appear/find/craft/buy/obtain）
+- 初始归属（哪个角色获得）
+- 数量信息
+- 物品描述（外观、功能）
+
+**2. 物品流转**
+已有物品的持有权发生变化：
+- 物品名称（必须与已有物品列表中的名称一致）
+- 原持有者 → 新持有者
+- 流转方式（transfer/give/trade/steal/loot/inherit）
+- 流转描述
+
+**3. 物品状态变化**
+物品状态发生改变：
+- 装备(equip)/卸下(unequip)
+- 消耗(consume)/使用(use)
+- 销毁(destroy)
+- 丢失(lose)
+- 封印(seal)
+
+**4. 数量变更**
+消耗品等可堆叠物品的数量变化：
+- 物品名称
+- 使用/消耗数量
+- 剩余数量
+
+**5. AI可提取的物品属性**
+尽可能从原文中提取以下属性：
+- rarity: 稀有度（common/uncommon/rare/epic/legendary/artifact）
+- quality: 品质（如：上品、极品、残缺、完美）
+- special_effects: 特殊效果描述
+- lore: 背景故事/来历
+- value: 价值（金币数）
+- aliases: 别名/别称列表
+- attributes: 属性数值（如：{{"攻击力": 120, "防御力": 50}}）
+- is_plot_critical: 是否剧情关键物品（对主线有重要影响）
+- unit: 计量单位（如：个、颗、把、张）
+- suggested_category: 建议分类名称
+</analysis_framework>
+
+<output priority="P0">
+【输出格式】
+返回纯JSON对象（无markdown标记）：
+
+{{
+  "items": [
+    {{
+      "item_name": "物品名称",
+      "item_type": "物品类型",
+      "event_type": "事件类型",
+      "reference_item_id": "匹配的已有物品ID（新物品为null）",
+      "from_character": "原持有者（转移时必填）",
+      "to_character": "新持有者",
+      "quantity_change": 数量变化（正数增加，负数减少）,
+      "quantity_after": 变化后数量,
+      "description": "详细描述物品变化过程",
+      "keyword": "原文定位关键词（8-25字）",
+      "rarity": "稀有度",
+      "quality": "品质",
+      "special_effects": "特殊效果描述",
+      "lore": "背景故事",
+      "value": 价值,
+      "aliases": ["别名1", "别名2"],
+      "attributes": {{}},
+      "is_plot_critical": 是否剧情关键,
+      "unit": "计量单位",
+      "suggested_category": "建议分类名称"
+    }}
+  ],
+  "summary": "本章节物品变化概述（50字以内）"
+}}
+
+【正确示例：多个物品分开识别】
+原文："庶务堂发放给林渊的本月修炼资源，包括三十块下品灵石和五瓶最劣质的聚气丹。"
+
+正确输出：
+{{
+  "items": [
+    {{
+      "item_name": "下品灵石",
+      "item_type": "material",
+      "event_type": "obtain",
+      "to_character": "林渊",
+      "quantity_change": 30,
+      "quantity_after": 30,
+      "description": "庶务堂发放给林渊的本月修炼资源",
+      "keyword": "三十块下品灵石",
+      "rarity": "common",
+      "unit": "块",
+      "suggested_category": "材料"
+    }},
+    {{
+      "item_name": "劣质聚气丹",
+      "item_type": "consumable",
+      "event_type": "obtain",
+      "to_character": "林渊",
+      "quantity_change": 5,
+      "quantity_after": 5,
+      "description": "庶务堂发放的最劣质聚气丹",
+      "keyword": "五瓶最劣质的聚气丹",
+      "rarity": "common",
+      "quality": "劣质",
+      "unit": "瓶",
+      "suggested_category": "丹药"
+    }}
+  ],
+  "summary": "林渊从庶务堂获得下品灵石30块和劣质聚气丹5瓶"
+}}
+
+如果本章节无物品相关内容，返回：
+{{"items": [], "summary": "本章节无物品相关内容"}}
+</output>"""
+
     # 世界观资料收集提示词（MCP增强用）
     MCP_WORLD_BUILDING_PLANNING = """你正在为小说《{title}》设计世界观。
 
@@ -2875,9 +3218,9 @@ class PromptService:
                 "name": "大纲续写",
                 "category": "大纲生成",
                 "description": "基于已有章节续写大纲",
-                "parameters": ["title", "theme", "genre", "narrative_perspective", "chapter_count", "time_period", 
-                             "location", "atmosphere", "rules", "characters_info", "current_chapter_count", 
-                             "all_chapters_brief", "recent_plot", "memory_context", "mcp_references", 
+                "parameters": ["title", "theme", "genre", "narrative_perspective", "chapter_count", "time_period",
+                             "location", "atmosphere", "rules", "characters_info", "current_chapter_count",
+                             "all_chapters_brief", "recent_plot", "memory_context", "foreshadow_reminders", "mcp_references",
                              "plot_stage_instruction", "start_chapter", "end_chapter", "story_direction", "requirements"]
             },
             "CHAPTER_GENERATION_ONE_TO_MANY": {
@@ -3060,6 +3403,12 @@ class PromptService:
                 "category": "灵感模式",
                 "description": "根据用户提供的部分信息智能补全完整的小说方案",
                 "parameters": ["existing"]
+            },
+            "ITEM_ANALYSIS": {
+                "name": "物品分析",
+                "category": "物品管理",
+                "description": "分析章节内容中的物品出现、流转和状态变化",
+                "parameters": ["chapter_number", "title", "content", "existing_items", "analysis_requirements", "categories_info"]
             }
         }
         

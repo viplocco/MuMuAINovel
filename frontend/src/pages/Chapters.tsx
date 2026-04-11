@@ -863,6 +863,8 @@ export default function Chapters() {
         editingId,
         (content) => {
           editorForm.setFieldsValue({ content });
+          // 同步更新字数统计
+          setContentWordCount(content.length);
 
           if (contentTextAreaRef.current) {
             const textArea = contentTextAreaRef.current.resizableTextArea?.textArea;
@@ -929,12 +931,14 @@ export default function Chapters() {
           <ul>
             <li>章节大纲和要求</li>
             <li>项目的世界观设定</li>
-            <li>相关角色信息</li>
-            <li><strong>前面已完成章节的内容（确保剧情连贯）</strong></li>
+            <li>相关角色信息（含职业阶段）</li>
+            <li>本章涉及的伏笔（埋入/回收提醒）</li>
+            <li>本章相关物品（持有物品、关键物品）</li>
+            <li>前面已完成章节的内容（确保剧情连贯）</li>
             {selectedStyle && (
-              <li><strong>写作风格：{selectedStyle.name}</strong></li>
+              <li>写作风格：{selectedStyle.name}</li>
             )}
-            <li><strong>目标字数：{targetWordCount}字</strong></li>
+            <li>目标字数：{targetWordCount}字</li>
           </ul>
 
           {previousChapters.length > 0 && (

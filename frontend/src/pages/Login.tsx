@@ -72,9 +72,8 @@ export default function Login() {
           setLocalAuthEnabled(config.local_auth_enabled);
           setEmailAuthEnabled(config.email_auth_enabled);
           setEmailRegisterEnabled(config.email_register_enabled);
-        } catch (error) {
-          console.error('获取认证配置失败:', error);
-          // 默认启用本地登录
+        } catch {
+          // 获取认证配置失败，使用默认值
           setLocalAuthEnabled(true);
         }
         setChecking(false);

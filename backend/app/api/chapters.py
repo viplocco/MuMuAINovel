@@ -54,6 +54,7 @@ from app.services.prompt_service import prompt_service, PromptService, WritingSt
 from app.services.plot_analyzer import PlotAnalyzer
 from app.services.memory_service import memory_service
 from app.services.foreshadow_service import foreshadow_service
+from app.services.item_service import item_service
 from app.services.chapter_regenerator import ChapterRegenerator
 from app.logger import get_logger
 from app.api.settings import get_user_ai_service
@@ -444,21 +445,30 @@ async def delete_chapter(
     return {"message": "章节删除成功"}
 
 
-async def check_prerequisites(db: AsyncSession, chapter: Chapter) -> tuple[bool, str, list[Chapter]]:
+async def check_prerequisites(
+    db: AsyncSession,
+    chapter: Chapter,
+    wait_for_analysis: bool = True,
+    max_wait_seconds: int = 300
+) -> tuple[bool, str, list[Chapter]]:
     """
-    检查章节前置条件
-    
+    检查章节前置条件（增强版：包含分析状态检查）
+
     Args:
         db: 数据库会话
         chapter: 当前章节
-        
+        wait_for_analysis: 是否等待上一章分析完成
+        max_wait_seconds: 最大等待秒数
+
     Returns:
         (可否生成, 错误信息, 前置章节列表)
     """
+    from app.models.analysis_task import AnalysisTask
+
     # 如果是第一章，无需检查前置
     if chapter.chapter_number == 1:
         return True, "", []
-    
+
     # 查询所有前置章节（序号小于当前章节的）
     result = await db.execute(
         select(Chapter)
@@ -467,18 +477,57 @@ async def check_prerequisites(db: AsyncSession, chapter: Chapter) -> tuple[bool,
         .order_by(Chapter.chapter_number)
     )
     previous_chapters = result.scalars().all()
-    
+
     # 检查是否所有前置章节都有内容
     incomplete_chapters = [
         ch for ch in previous_chapters
         if not ch.content or ch.content.strip() == ""
     ]
-    
+
     if incomplete_chapters:
         missing_numbers = [str(ch.chapter_number) for ch in incomplete_chapters]
         error_msg = f"需要先完成前置章节：第 {', '.join(missing_numbers)} 章"
         return False, error_msg, previous_chapters
-    
+
+    # ⭐ 新增：检查最近一章的分析状态
+    if previous_chapters and wait_for_analysis:
+        latest_prev_chapter = previous_chapters[-1]  # 序号最大的前一章
+
+        # 查询最近的分析任务
+        task_result = await db.execute(
+            select(AnalysisTask)
+            .where(AnalysisTask.chapter_id == latest_prev_chapter.id)
+            .order_by(AnalysisTask.created_at.desc())
+            .limit(1)
+        )
+        latest_task = task_result.scalar_one_or_none()
+
+        if latest_task and latest_task.status in ('pending', 'running'):
+            # 轮询等待分析完成
+            poll_interval = 5
+            elapsed = 0
+
+            logger.info(f"⏳ 前一章（第{latest_prev_chapter.chapter_number}章）分析中，等待完成...")
+
+            while elapsed < max_wait_seconds:
+                await db.refresh(latest_task)
+
+                if latest_task.status == 'completed':
+                    logger.info(f"✅ 前一章分析完成，可以继续生成")
+                    break
+                elif latest_task.status == 'failed':
+                    # 分析失败，但仍允许生成（降级处理）
+                    logger.warning(f"⚠️ 前一章分析失败，降级为不依赖分析状态继续生成")
+                    break
+
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+                logger.debug(f"⏳ 等待前一章分析完成... ({elapsed}/{max_wait_seconds}秒)")
+
+            if latest_task.status in ('pending', 'running'):
+                # 超时但仍允许生成（降级处理）
+                logger.warning(f"⚠️ 前一章分析超时（{max_wait_seconds}秒），降级为不等待状态继续生成")
+
     return True, "", previous_chapters
 
 
@@ -871,6 +920,12 @@ async def analyze_chapter_background(
             current_chapter_number=chapter.chapter_number  # 传入当前章节号以启用智能标记
         )
         logger.info(f"📋 后台分析 - 已获取{len(existing_foreshadows)}个已埋入伏笔用于匹配（含智能回收标记）")
+
+        # 获取已有物品列表（用于物品匹配）
+        existing_items = await item_service._get_existing_items_for_matching(
+            db_session, project_id
+        )
+        logger.info(f"📋 后台分析 - 已获取{len(existing_items)}个已有物品用于匹配")
         
         # 获取项目角色信息（根据大纲/展开规划筛选本章相关角色）
         filter_character_names = None
@@ -950,7 +1005,7 @@ async def analyze_chapter_background(
             except Exception as callback_error:
                 logger.warning(f"⚠️ 更新重试状态失败: {callback_error}")
         
-        # 3. 使用PlotAnalyzer分析章节（传入已有伏笔列表、角色信息和重试回调）
+        # 3. 使用PlotAnalyzer分析章节（传入已有伏笔列表、已有物品列表、角色信息和重试回调）
         analyzer = PlotAnalyzer(ai_service)
         analysis_result = await analyzer.analyze_chapter(
             chapter_number=chapter.chapter_number,
@@ -958,6 +1013,7 @@ async def analyze_chapter_background(
             content=chapter.content,
             word_count=chapter.word_count or len(chapter.content),
             existing_foreshadows=existing_foreshadows,
+            existing_items=existing_items,
             on_retry=on_retry_callback,
             characters_info=characters_info
         )
@@ -1252,7 +1308,68 @@ async def analyze_chapter_background(
                 logger.error(f"⚠️ 自动更新伏笔失败: {str(foreshadow_error)}", exc_info=True)
         else:
             logger.debug("📋 分析结果中无伏笔信息，跳过伏笔自动更新")
-        
+
+        # 🎁 同步物品信息（根据分析结果）
+        if analysis_result.get('items'):
+            try:
+                from app.schemas.item import ItemAnalysisResult
+
+                logger.info(f"🎁 开始根据分析结果同步物品信息...")
+
+                # 获取已有物品列表（用于匹配）
+                existing_items = await item_service._get_existing_items_for_matching(
+                    db_session, project_id
+                )
+                logger.info(f"📋 已获取{len(existing_items)}个已有物品用于匹配")
+
+                # 转换分析结果为Schema格式
+                analysis_items = []
+                for item_data in analysis_result.get('items', []):
+                    analysis_items.append(ItemAnalysisResult(
+                        item_name=item_data.get('item_name', ''),
+                        item_type=item_data.get('item_type'),
+                        event_type=item_data.get('event_type', 'appear'),
+                        reference_item_id=item_data.get('reference_item_id'),
+                        from_character=item_data.get('from_character'),
+                        to_character=item_data.get('to_character'),
+                        quantity_change=item_data.get('quantity_change'),
+                        quantity_after=item_data.get('quantity_after'),
+                        description=item_data.get('description'),
+                        keyword=item_data.get('keyword'),
+                        rarity=item_data.get('rarity'),
+                        special_effects=item_data.get('special_effects'),
+                        suggested_category=item_data.get('suggested_category')
+                    ))
+
+                # 同步物品
+                async with write_lock:
+                    item_sync_result = await item_service.sync_from_analysis(
+                        db=db_session,
+                        project_id=project_id,
+                        chapter_id=chapter_id,
+                        chapter_number=chapter.chapter_number,
+                        analysis_items=analysis_items,
+                        existing_items=existing_items
+                    )
+
+                if item_sync_result['created_count'] > 0 or item_sync_result['updated_count'] > 0:
+                    logger.info(
+                        f"✅ 物品同步完成: 新建{item_sync_result['created_count']}个, "
+                        f"更新{item_sync_result['updated_count']}个, "
+                        f"匹配{item_sync_result['matched_count']}个"
+                    )
+                    if item_sync_result['skipped_reasons']:
+                        for reason in item_sync_result['skipped_reasons'][:3]:
+                            logger.warning(f"  ⚠️ 跳过: {reason}")
+                else:
+                    logger.info("ℹ️ 本章节无物品变化")
+
+            except Exception as item_error:
+                # 物品同步失败不应影响整个分析流程
+                logger.error(f"⚠️ 同步物品失败: {str(item_error)}", exc_info=True)
+        else:
+            logger.debug("📋 分析结果中无物品信息，跳过物品同步")
+
         # 最终更新任务状态（写操作，需要锁）- 增加重试机制
         update_success = False
         for retry in range(3):
@@ -1459,7 +1576,8 @@ async def generate_chapter_content_stream(
                         logger.info(f"🔧 [1-1模式] 使用 OneToOneContextBuilder")
                         context_builder = OneToOneContextBuilder(
                             memory_service=memory_service,
-                            foreshadow_service=foreshadow_service
+                            foreshadow_service=foreshadow_service,
+                            item_service=item_service  # 确保注入物品服务
                         )
                         chapter_context = await context_builder.build(
                             chapter=current_chapter,
@@ -1484,7 +1602,8 @@ async def generate_chapter_content_stream(
                         logger.info(f"🔧 [1-N模式] 使用 OneToManyContextBuilder")
                         context_builder = OneToManyContextBuilder(
                             memory_service=memory_service,
-                            foreshadow_service=foreshadow_service
+                            foreshadow_service=foreshadow_service,
+                            item_service=item_service  # 确保注入物品服务
                         )
                         chapter_context = await context_builder.build(
                             chapter=current_chapter,
@@ -1541,6 +1660,7 @@ async def generate_chapter_content_stream(
                             characters_info=chapter_context.chapter_characters or '暂无角色信息',
                             chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                             foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
+                            chapter_items=chapter_context.chapter_items or '暂无相关物品信息',
                             relevant_memories=chapter_context.relevant_memories or '暂无相关记忆'
                         )
                         logger.debug(f"创建第{current_chapter.chapter_number}章提示词: {base_prompt}")
@@ -1559,6 +1679,7 @@ async def generate_chapter_content_stream(
                             characters_info=chapter_context.chapter_characters or '暂无角色信息',
                             chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                             foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
+                            chapter_items=chapter_context.chapter_items or '暂无相关物品信息',
                             relevant_memories=chapter_context.relevant_memories or '暂无相关记忆'
                         )
                         logger.debug(f"创建第一章提示词: {base_prompt}")
@@ -1567,12 +1688,12 @@ async def generate_chapter_content_stream(
                     if chapter_context.continuation_point:
                         # 有前置内容，使用 WITH_CONTEXT 模板
                         logger.info(f"📝 [1-n模式] 使用带上下文的模板（第{current_chapter.chapter_number}章）")
-                        
+
                         # 提取上一章摘要
                         previous_summary = "（无上一章摘要，请根据锚点续写）"
                         if chapter_context.previous_chapter_summary:
                             previous_summary = chapter_context.previous_chapter_summary
-                        
+
                         template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY_NEXT", current_user_id or "", db_session)
                         base_prompt = PromptService.format_prompt(
                             template,
@@ -1587,6 +1708,7 @@ async def generate_chapter_content_stream(
                             characters_info=chapter_context.chapter_characters or '暂无角色信息',
                             chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                             foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
+                            chapter_items=chapter_context.chapter_items or '暂无相关物品信息',
                             previous_chapter_summary=previous_summary,
                             recent_chapters_context=chapter_context.recent_chapters_context or '',
                             relevant_memories=chapter_context.relevant_memories or ''
@@ -1608,6 +1730,7 @@ async def generate_chapter_content_stream(
                             characters_info=chapter_context.chapter_characters or '暂无角色信息',
                             chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                             foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
+                            chapter_items=chapter_context.chapter_items or '暂无相关物品信息',
                             relevant_memories=chapter_context.relevant_memories or '暂无相关记忆'
                         )
                         logger.debug(f"创建第一章提示词: {base_prompt}")
@@ -1633,14 +1756,14 @@ async def generate_chapter_content_stream(
 ⚠️ 请严格遵循上述写作风格要求进行创作，这是最重要的指令！
 确保在整个章节创作过程中始终保持风格的一致性。"""
                     logger.info(f"✅ 已将写作风格注入系统提示词（{len(style_content)}字符）")
-                
+
                 # 🔢 计算 max_tokens 限制
-                # 中文字符约 1.5-2 个 token，使用 2.5 倍系数确保有足够空间完成段落
-                # 同时设置上限防止过长，下限确保基本可用
+                # 中文字符约 1.5-2 个 token，使用 3 倍系数确保有足够空间完成段落
+                # 上限提高到32000，下限确保基本可用
                 calculated_max_tokens = int(target_word_count * 3)
-                calculated_max_tokens = max(2000, min(calculated_max_tokens, 16000))  # 限制在 2000-16000 之间
+                calculated_max_tokens = max(2000, min(calculated_max_tokens, 32000))  # 限制在 2000-32000 之间
                 logger.info(f"📊 目标字数: {target_word_count}, 计算 max_tokens: {calculated_max_tokens}")
-                
+
                 # 准备生成参数
                 generate_kwargs = {
                     "prompt": prompt,
@@ -1648,22 +1771,13 @@ async def generate_chapter_content_stream(
                     "max_tokens": calculated_max_tokens,
                     "auto_mcp": True
                 }
-                
-                # DeepSeek 等兼容 API 不支持 tools 和 tool_choice 参数
-                if custom_model and custom_model.startswith("deepseek"):
-                    generate_kwargs["auto_mcp"] = False
-                    # DeepSeek 模型限制 max_tokens 上限为 4096
-                    if calculated_max_tokens > 4096:
-                        calculated_max_tokens = 4096
-                        generate_kwargs["max_tokens"] = calculated_max_tokens
-                    logger.info(f"  DeepSeek 模型，已禁用 MCP 工具和 tool_choice，max_tokens 限制为 {calculated_max_tokens}")
-                elif custom_model:
-                    generate_kwargs["tool_choice"] = "required"
-                
+
+                # 自定义模型处理
                 if custom_model:
                     logger.info(f"  使用自定义模型: {custom_model}")
                     generate_kwargs["model"] = custom_model
-                
+                    generate_kwargs["tool_choice"] = "required"
+
                 # === 生成阶段 ===
                 full_content = ""
                 chunk_count = 0
@@ -1780,6 +1894,7 @@ async def generate_chapter_content_stream(
                 yield await SSEResponse.send_event(
                     event='analysis_started',
                     data={
+                        'type': 'task_started',
                         'task_id': task_id,
                         'message': '章节分析已开始'
                     }
@@ -3040,7 +3155,8 @@ async def generate_single_chapter_for_batch(
         logger.info(f"🔧 批量生成 - [1-1模式] 使用 OneToOneContextBuilder")
         context_builder = OneToOneContextBuilder(
             memory_service=memory_service,
-            foreshadow_service=foreshadow_service
+            foreshadow_service=foreshadow_service,
+            item_service=item_service  # 确保注入物品服务
         )
         chapter_context = await context_builder.build(
             chapter=chapter,
@@ -3055,7 +3171,8 @@ async def generate_single_chapter_for_batch(
         logger.info(f"🔧 批量生成 - [1-N模式] 使用 OneToManyContextBuilder")
         context_builder = OneToManyContextBuilder(
             memory_service=memory_service,
-            foreshadow_service=foreshadow_service
+            foreshadow_service=foreshadow_service,
+            item_service=item_service  # 确保注入物品服务
         )
         chapter_context = await context_builder.build(
             chapter=chapter,
@@ -3072,6 +3189,7 @@ async def generate_single_chapter_for_batch(
     logger.info(f"  - 章节序号: {chapter.chapter_number}")
     logger.info(f"  - 衔接锚点长度: {len(chapter_context.continuation_point or '')} 字符")
     logger.info(f"  - 相关记忆: {chapter_context.context_stats.get('memory_count', 0)} 条")
+    logger.info(f"  - 物品上下文: {len(chapter_context.chapter_items or '')} 字符")
     logger.info(f"  - 总上下文长度: {chapter_context.context_stats.get('total_length', 0)} 字符")
     
     # 🚀 根据大纲模式选择提示词模板（批量生成）
@@ -3094,6 +3212,7 @@ async def generate_single_chapter_for_batch(
                 characters_info=chapter_context.chapter_characters or '暂无角色信息',
                 chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                 foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
+                chapter_items=chapter_context.chapter_items or '暂无相关物品信息',
                 relevant_memories=chapter_context.relevant_memories or '暂无相关记忆',
                 previous_chapter_summary=chapter_context.previous_chapter_summary or ''
             )
@@ -3112,6 +3231,7 @@ async def generate_single_chapter_for_batch(
                 characters_info=chapter_context.chapter_characters or '暂无角色信息',
                 chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                 foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
+                chapter_items=chapter_context.chapter_items or '暂无相关物品信息',
                 relevant_memories=chapter_context.relevant_memories or '暂无相关记忆'
             )
     else:
@@ -3120,12 +3240,12 @@ async def generate_single_chapter_for_batch(
             # 有前置内容，使用 WITH_CONTEXT 模板
             # 优先使用 context_builder 的摘要，其次使用传入的 previous_summary_context
             final_prev_summary = "（无上一章摘要，请根据锚点续写）"
-            
+
             if chapter_context.previous_chapter_summary:
                 final_prev_summary = chapter_context.previous_chapter_summary
             elif previous_summary_context:
                 final_prev_summary = previous_summary_context
-                    
+
             template = await PromptService.get_template("CHAPTER_GENERATION_ONE_TO_MANY_NEXT", user_id or "", db_session)
             base_prompt = PromptService.format_prompt(
                 template,
@@ -3140,6 +3260,7 @@ async def generate_single_chapter_for_batch(
                 characters_info=chapter_context.chapter_characters or '暂无角色信息',
                 chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                 foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
+                chapter_items=chapter_context.chapter_items or '暂无相关物品信息',
                 previous_chapter_summary=final_prev_summary,
                 recent_chapters_context=chapter_context.recent_chapters_context or '',
                 relevant_memories=chapter_context.relevant_memories or ''
@@ -3159,6 +3280,7 @@ async def generate_single_chapter_for_batch(
                 characters_info=chapter_context.chapter_characters or '暂无角色信息',
                 chapter_careers=chapter_context.chapter_careers or '暂无职业信息',
                 foreshadow_reminders=chapter_context.foreshadow_reminders or '暂无需要关注的伏笔',
+                chapter_items=chapter_context.chapter_items or '暂无相关物品信息',
                 relevant_memories=chapter_context.relevant_memories or '暂无相关记忆'
             )
     
@@ -3178,14 +3300,14 @@ async def generate_single_chapter_for_batch(
 ⚠️ 请严格遵循上述写作风格要求进行创作，这是最重要的指令！
 确保在整个章节创作过程中始终保持风格的一致性。"""
         logger.info(f"✅ 批量生成 - 已将写作风格注入系统提示词（{len(style_content)}字符）")
-    
+
     # 🔢 计算 max_tokens 限制（批量生成）
-    # 中文字符约 1.5-2 个 token，使用 2.5 倍系数确保有足够空间完成段落
-    # 同时设置上限防止过长，下限确保基本可用
+    # 中文字符约 1.5-2 个 token，使用 3 倍系数确保有足够空间完成段落
+    # 上限提高到32000，下限确保基本可用
     calculated_max_tokens = int(target_word_count * 3)
-    calculated_max_tokens = max(2000, min(calculated_max_tokens, 16000))  # 限制在 2000-16000 之间
+    calculated_max_tokens = max(2000, min(calculated_max_tokens, 32000))  # 限制在 2000-32000 之间
     logger.info(f"📊 批量生成 - 目标字数: {target_word_count}, 计算 max_tokens: {calculated_max_tokens}")
-    
+
     # 非流式生成内容
     full_content = ""
     # 准备生成参数
@@ -3193,21 +3315,13 @@ async def generate_single_chapter_for_batch(
         "prompt": prompt,
         "system_prompt": system_prompt_with_style,
         "tool_choice": "required",
+        "auto_mcp": True,
         "max_tokens": calculated_max_tokens  # 添加 max_tokens 限制
     }
     # 如果传入了自定义模型，使用指定的模型
     if custom_model:
         generate_kwargs["model"] = custom_model
-        # DeepSeek 模型需要特殊处理
-        if custom_model.startswith("deepseek"):
-            generate_kwargs.pop("tool_choice", None)  # 移除 tool_choice
-            generate_kwargs["auto_mcp"] = False
-            # DeepSeek 模型限制 max_tokens 上限为 4096
-            if calculated_max_tokens > 4096:
-                generate_kwargs["max_tokens"] = 4096
-            logger.info(f"  批量生成 DeepSeek 模型，已禁用 MCP 工具和 tool_choice，max_tokens 限制为 {generate_kwargs['max_tokens']}")
-        else:
-            logger.info(f"  批量生成使用自定义模型: {custom_model}")
+        logger.info(f"  批量生成使用自定义模型: {custom_model}")
     
     # 批量生成中的流式生成（非SSE，不需要修改进度显示）
     async for chunk in ai_service.generate_text_stream(**generate_kwargs):
@@ -3492,7 +3606,10 @@ async def regenerate_chapter_stream(
                 
                 yield await SSEResponse.send_event(
                     event='task_created',
-                    data={'task_id': task_id}
+                    data={
+                        'type': 'task_created',
+                        'task_id': task_id
+                    }
                 )
                 
                 # 初始化重新生成器

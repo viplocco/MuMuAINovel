@@ -19,6 +19,12 @@ from app.models.career_template import CareerTemplate
 from app.models.prompt_template import PromptTemplate
 from app.models.foreshadow import Foreshadow
 from app.models.prompt_workshop import PromptWorkshopItem, PromptSubmission, PromptWorkshopLike
+from app.models.item import Item
+from app.models.item_category import ItemCategory
+from app.models.item_transfer import ItemTransfer
+from app.models.item_status_change import ItemStatusChange
+from app.models.item_quantity_change import ItemQuantityChange
+from app.models.item_attribute_change import ItemAttributeChange
 
 __all__ = [
     "Project",
@@ -48,5 +54,11 @@ __all__ = [
     "Foreshadow",
     "PromptWorkshopItem",
     "PromptSubmission",
-    "PromptWorkshopLike"
+    "PromptWorkshopLike",
+    "Item",
+    "ItemCategory",
+    "ItemTransfer",
+    "ItemStatusChange",
+    "ItemQuantityChange",
+    "ItemAttributeChange",
 ]

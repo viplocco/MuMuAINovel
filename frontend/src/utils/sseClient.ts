@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export interface SSEMessage {
-  type: 'progress' | 'chunk' | 'result' | 'error' | 'done';
+  type: 'progress' | 'chunk' | 'result' | 'error' | 'done' | 'task_created' | 'task_started';
   message?: string;
   progress?: number;
   word_count?: number;
@@ -9,6 +9,7 @@ export interface SSEMessage {
   data?: any;
   error?: string;
   code?: number;
+  task_id?: string;
 }
 
 export interface SSEClientOptions {
@@ -214,6 +215,9 @@ export class SSEPostClient {
   }
 
   private async handleMessage(message: SSEMessage, resolve: (value: any) => void, reject: (reason?: any) => void) {
+    // 调试日志：显示收到的消息类型
+    console.log('📨 SSE Message received:', message.type, message);
+
     switch (message.type) {
       case 'progress':
         if (this.options.onProgress && message.progress !== undefined) {
@@ -229,13 +233,17 @@ export class SSEPostClient {
       case 'chunk':
         if (message.content) {
           this.accumulatedContent += message.content;
+          console.log('📝 SSE Chunk accumulated, total length:', this.accumulatedContent.length);
           if (this.options.onChunk) {
             this.options.onChunk(message.content);
           }
+        } else {
+          console.warn('⚠️ SSE Chunk message has no content:', message);
         }
         break;
 
       case 'result':
+        console.log('✅ SSE Result:', message.data);
         if (this.options.onResult && message.data) {
           this.options.onResult(message.data);
         }
@@ -243,6 +251,7 @@ export class SSEPostClient {
         break;
 
       case 'error':
+        console.error('❌ SSE Error:', message.error, message.code);
         if (this.options.onError) {
           this.options.onError(message.error || '未知错误', message.code);
         }
@@ -250,6 +259,7 @@ export class SSEPostClient {
         break;
 
       case 'done':
+        console.log('🏁 SSE Done. Accumulated content length:', this.accumulatedContent.length);
         if (this.options.onComplete) {
           this.options.onComplete();
         }
@@ -261,6 +271,15 @@ export class SSEPostClient {
           resolve(true);
         }
         break;
+
+      case 'task_created':
+      case 'task_started':
+        // 任务创建/启动事件，仅记录日志
+        console.log('🆔 SSE Task event:', message.type, 'task_id:', message.task_id);
+        break;
+
+      default:
+        console.log('📋 SSE Unknown message type:', message.type, message);
     }
   }
 

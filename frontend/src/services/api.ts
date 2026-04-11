@@ -1210,3 +1210,148 @@ export const foreshadowApi = {
       data
     ),
 };
+
+// 物品管理API
+export const itemApi = {
+  // 获取项目物品列表
+  getProjectItems: (projectId: string, params?: {
+    status?: string;
+    category_id?: string;
+    owner_id?: string;
+    rarity?: string;
+    search?: string;
+    is_plot_critical?: boolean;
+    page?: number;
+    limit?: number;
+  }) =>
+    api.get<unknown, import('../types').ItemListResponse>(
+      `/items/projects/${projectId}`,
+      { params }
+    ),
+
+  // 获取单个物品
+  getItem: (itemId: string) =>
+    api.get<unknown, import('../types').Item>(`/items/${itemId}`),
+
+  // 创建物品
+  createItem: (data: import('../types').ItemCreate) =>
+    api.post<unknown, import('../types').Item>('/items', data),
+
+  // 更新物品
+  updateItem: (itemId: string, data: import('../types').ItemUpdate) =>
+    api.put<unknown, import('../types').Item>(`/items/${itemId}`, data),
+
+  // 删除物品
+  deleteItem: (itemId: string) =>
+    api.delete<unknown, { success: boolean }>(`/items/${itemId}`),
+
+  // 物品流转
+  transferItem: (itemId: string, data: {
+    transfer_type: string;
+    from_character_id?: string;
+    from_character_name?: string;
+    to_character_id?: string;
+    to_character_name?: string;
+    chapter_id?: string;
+    chapter_number?: number;
+    quantity?: number;
+    description?: string;
+  }) =>
+    api.post<unknown, import('../types').ItemTransfer>(`/items/${itemId}/transfer`, data),
+
+  // 数量变更
+  changeQuantity: (itemId: string, data: {
+    change_type: string;
+    quantity_change: number;
+    chapter_number?: number;
+    reason?: string;
+    involved_character_name?: string;
+  }) =>
+    api.post<unknown, import('../types').ItemQuantityChange>(`/items/${itemId}/quantity`, data),
+
+  // 获取物品历史
+  getItemHistory: (itemId: string) =>
+    api.get<unknown, {
+      item: import('../types').Item;
+      transfers: import('../types').ItemTransfer[];
+      status_changes: any[];
+      quantity_changes: import('../types').ItemQuantityChange[];
+    }>(`/items/${itemId}/history`),
+
+  // 获取分类树
+  getCategoryTree: (projectId: string) =>
+    api.get<unknown, import('../types').ItemCategory[]>(`/items/categories/${projectId}`),
+
+  // 创建分类
+  createCategory: (data: {
+    project_id: string;
+    name: string;
+    description?: string;
+    parent_id?: string;
+    order_index?: number;
+  }) =>
+    api.post<unknown, import('../types').ItemCategory>('/items/categories', data),
+
+  // 更新分类
+  updateCategory: (categoryId: string, data: {
+    name?: string;
+    description?: string;
+    parent_id?: string;
+    order_index?: number;
+  }) =>
+    api.put<unknown, import('../types').ItemCategory>(`/items/categories/${categoryId}`, data),
+
+  // 删除分类
+  deleteCategory: (categoryId: string) =>
+    api.delete<unknown, { success: boolean }>(`/items/categories/${categoryId}`),
+
+  // 分析章节物品
+  analyzeChapterItems: (data: {
+    chapter_id: string;
+    analysis_requirements?: string;
+  }) =>
+    api.post<unknown, {
+      chapter_id: string;
+      chapter_number: number;
+      chapter_title: string;
+      analysis_result: {
+        items: any[];
+        summary: string;
+      };
+      sync_result?: {
+        created_count: number;
+        updated_count: number;
+        matched_count: number;
+        skipped_count: number;
+      };
+      created_items: any[];
+      updated_items: any[];
+    }>('/items/analyze', data, { timeout: 300000 }),  // 5分钟超时
+
+  // 修复不一致的物品数据（持有者不为空但状态为未归属）
+  fixInconsistentItems: (projectId?: string) =>
+    api.post<unknown, {
+      success: boolean;
+      fixed_count: number;
+      message: string;
+    }>('/items/fix-inconsistent', null, { params: { project_id: projectId } }),
+
+  // 获取章节相关物品
+  getChapterItems: (chapterId: string) =>
+    api.get<unknown, {
+      chapter_number: number;
+      items: Array<import('../types').Item & {
+        relation_type: string;
+        event_description: string;
+        transfer_type?: string;
+        change_type?: string;
+      }>;
+      total: number;
+      stats: {
+        appeared_count: number;
+        transfer_count: number;
+        quantity_change_count: number;
+        attribute_change_count: number;
+      };
+    }>(`/items/chapters/${chapterId}/items`),
+};

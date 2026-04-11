@@ -11,7 +11,8 @@ import {
   FontSizeOutlined,
   BgColorsOutlined,
   CloseOutlined,
-  ColumnHeightOutlined
+  ColumnHeightOutlined,
+  CopyOutlined
 } from '@ant-design/icons';
 import type { Chapter } from '../types';
 
@@ -70,6 +71,33 @@ const saveSettings = (settings: ReaderSettings) => {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   } catch (e) {
     console.warn('保存阅读器设置失败:', e);
+  }
+};
+
+// 复制章节内容
+const copyChapterContent = async (chapter: Chapter) => {
+  const header = `第${chapter.chapter_number}章：${chapter.title}\n\n`;
+  const content = chapter.content || '';
+  const fullText = header + content;
+
+  try {
+    await navigator.clipboard.writeText(fullText);
+    message.success('章节内容已复制到剪贴板');
+  } catch (_err) {
+    // 降级方案：使用传统复制方法
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = fullText;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      message.success('章节内容已复制到剪贴板');
+    } catch (_fallbackErr) {
+      message.error('复制失败，请手动复制');
+    }
   }
 };
 
@@ -272,10 +300,10 @@ export default function ChapterReader({
           {!isMobile && '关闭'}
         </Button>
         
-        <Typography.Title 
-          level={5} 
-          style={{ 
-            margin: 0, 
+        <Typography.Title
+          level={5}
+          style={{
+            margin: 0,
             color: currentTheme.text,
             maxWidth: isMobile ? '60%' : '70%',
             overflow: 'hidden',
@@ -286,14 +314,23 @@ export default function ChapterReader({
         >
           第{chapter.chapter_number}章：{chapter.title}
         </Typography.Title>
-        
-        <Button
-          type={showSettings ? 'primary' : 'text'}
-          icon={<SettingOutlined />}
-          onClick={() => setShowSettings(!showSettings)}
-          style={{ color: showSettings ? undefined : currentTheme.text }}
-          title="阅读设置"
-        />
+
+        <Space size="small">
+          <Button
+            type="text"
+            icon={<CopyOutlined />}
+            onClick={() => copyChapterContent(chapter)}
+            style={{ color: currentTheme.text }}
+            title="复制章节内容"
+          />
+          <Button
+            type={showSettings ? 'primary' : 'text'}
+            icon={<SettingOutlined />}
+            onClick={() => setShowSettings(!showSettings)}
+            style={{ color: showSettings ? undefined : currentTheme.text }}
+            title="阅读设置"
+          />
+        </Space>
       </div>
 
       {/* 设置面板 */}

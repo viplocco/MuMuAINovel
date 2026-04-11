@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Modal, Spin, Alert, Tabs, Card, Tag, List, Empty, Statistic, Row, Col, Button, theme } from 'antd';
+import { Modal, Spin, Alert, Tabs, Card, Tag, List, Empty, Statistic, Row, Col, Button, theme, Table } from 'antd';
 import {
   ThunderboltOutlined,
   BulbOutlined,
@@ -11,11 +11,13 @@ import {
   ClockCircleOutlined,
   CloseCircleOutlined,
   ReloadOutlined,
-  EditOutlined
+  EditOutlined,
+  GiftOutlined
 } from '@ant-design/icons';
 import type { AnalysisTask, ChapterAnalysisResponse } from '../types';
 import ChapterRegenerationModal from './ChapterRegenerationModal';
 import ChapterContentComparison from './ChapterContentComparison';
+import { itemApi } from '../services/api';
 
 // 判断是否为移动设备
 const isMobileDevice = () => window.innerWidth < 768;
@@ -38,6 +40,18 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
   const [chapterInfo, setChapterInfo] = useState<{ title: string; chapter_number: number; content: string } | null>(null);
   const [newGeneratedContent, setNewGeneratedContent] = useState('');
   const [newContentWordCount, setNewContentWordCount] = useState(0);
+
+  // 章节物品相关状态
+  const [chapterItems, setChapterItems] = useState<{
+    items: any[];
+    total: number;
+    stats: {
+      appeared_count: number;
+      transfer_count: number;
+      quantity_change_count: number;
+      attribute_change_count: number;
+    };
+  } | null>(null);
 
   useEffect(() => {
     if (visible && chapterId) {
@@ -129,8 +143,21 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
       }
       const data: ChapterAnalysisResponse = await response.json();
       setAnalysis(data);
+
+      // 同时获取章节物品
+      await fetchChapterItems();
     } catch (err) {
       setError((err as Error).message);
+    }
+  };
+
+  const fetchChapterItems = async () => {
+    try {
+      const result = await itemApi.getChapterItems(chapterId);
+      setChapterItems(result);
+    } catch (err) {
+      console.error('获取章节物品失败:', err);
+      setChapterItems(null);
     }
   };
 
@@ -490,6 +517,132 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
                     />
                   ) : (
                     <Empty description="暂无伏笔" />
+                  )}
+                </Card>
+              </div>
+            )
+          },
+          {
+            key: 'items',
+            label: `物品 (${chapterItems?.total || 0})`,
+            icon: <GiftOutlined />,
+            children: (
+              <div style={{ height: isMobile ? 'calc(80vh - 180px)' : 'calc(90vh - 220px)', overflowY: 'auto', paddingRight: '8px' }}>
+                <Card size={isMobile ? 'small' : 'default'}>
+                  {chapterItems && chapterItems.items.length > 0 ? (
+                    <>
+                      {/* 统计信息 */}
+                      <Row gutter={isMobile ? 8 : 16} style={{ marginBottom: 16 }}>
+                        <Col span={6}>
+                          <Statistic
+                            title="首次出现"
+                            value={chapterItems.stats?.appeared_count || 0}
+                            valueStyle={{ fontSize: 16 }}
+                          />
+                        </Col>
+                        <Col span={6}>
+                          <Statistic
+                            title="流转事件"
+                            value={chapterItems.stats?.transfer_count || 0}
+                            valueStyle={{ fontSize: 16 }}
+                          />
+                        </Col>
+                        <Col span={6}>
+                          <Statistic
+                            title="数量变更"
+                            value={chapterItems.stats?.quantity_change_count || 0}
+                            valueStyle={{ fontSize: 16 }}
+                          />
+                        </Col>
+                        <Col span={6}>
+                          <Statistic
+                            title="属性变更"
+                            value={chapterItems.stats?.attribute_change_count || 0}
+                            valueStyle={{ fontSize: 16 }}
+                          />
+                        </Col>
+                      </Row>
+
+                      {/* 物品列表 */}
+                      <Table
+                        size="small"
+                        dataSource={chapterItems.items}
+                        rowKey="id"
+                        pagination={chapterItems.items.length > 10 ? { pageSize: 10 } : false}
+                        columns={[
+                          {
+                            title: '物品名称',
+                            dataIndex: 'name',
+                            key: 'name',
+                            width: 150,
+                            render: (name: string, record: any) => (
+                              <span>
+                                {name}
+                                {record.is_plot_critical && (
+                                  <Tag color="red" style={{ marginLeft: 4 }}>关键</Tag>
+                                )}
+                              </span>
+                            )
+                          },
+                          {
+                            title: '关联类型',
+                            dataIndex: 'relation_type',
+                            key: 'relation_type',
+                            width: 100,
+                            render: (type: string) => {
+                              const colorMap: Record<string, string> = {
+                                '首次出现': 'green',
+                                '流转': 'blue',
+                                '数量变更': 'orange',
+                                '属性变更': 'purple',
+                                '多次事件': 'cyan'
+                              };
+                              return <Tag color={colorMap[type] || 'default'}>{type}</Tag>;
+                            }
+                          },
+                          {
+                            title: '事件描述',
+                            dataIndex: 'event_description',
+                            key: 'event_description',
+                            ellipsis: true
+                          },
+                          {
+                            title: '稀有度',
+                            dataIndex: 'rarity',
+                            key: 'rarity',
+                            width: 80,
+                            render: (rarity: string) => {
+                              const rarityMap: Record<string, { text: string; color: string }> = {
+                                common: { text: '普通', color: 'default' },
+                                uncommon: { text: '优秀', color: 'green' },
+                                rare: { text: '稀有', color: 'blue' },
+                                epic: { text: '史诗', color: 'purple' },
+                                legendary: { text: '传说', color: 'gold' },
+                                artifact: { text: '神器', color: 'red' },
+                              };
+                              const config = rarityMap[rarity];
+                              return config ? <Tag color={config.color}>{config.text}</Tag> : '-';
+                            }
+                          },
+                          {
+                            title: '持有者',
+                            dataIndex: 'owner_character_name',
+                            key: 'owner_character_name',
+                            width: 100,
+                            render: (name: string) => name || '-'
+                          },
+                          {
+                            title: '数量',
+                            dataIndex: 'quantity',
+                            key: 'quantity',
+                            width: 80,
+                            render: (qty: number, record: any) => `${qty} ${record.unit || '个'}`
+                          }
+                        ]}
+                      />
+                    </>
+                  ) : (
+                    <Empty description="本章未发现相关物品" />
                   )}
                 </Card>
               </div>

@@ -520,6 +520,37 @@ class PlotExpansionService:
         return context if context else "（无前后文）"
     
     
+    def _flatten_list_field(self, value: Any) -> List[str]:
+        """
+        扁平化列表字段，确保所有元素都是字符串
+
+        AI有时返回嵌套数组如 [['event1'], 'event2']，
+        此方法将其扁平化为 ['event1', 'event2']
+
+        Args:
+            value: 可能包含嵌套列表的字段值
+
+        Returns:
+            扁平化的字符串列表
+        """
+        if not value:
+            return []
+
+        if not isinstance(value, list):
+            # 如果不是列表，转为单元素列表
+            return [str(value)]
+
+        result = []
+        for item in value:
+            if isinstance(item, list):
+                # 递归扁平化嵌套列表
+                result.extend(self._flatten_list_field(item))
+            else:
+                # 非列表元素，转为字符串添加
+                result.append(str(item))
+
+        return result
+
     def _parse_expansion_response(
         self,
         ai_response: str,
@@ -529,18 +560,18 @@ class PlotExpansionService:
         try:
             # 使用统一的JSON清洗方法
             cleaned_text = self.ai_service._clean_json_response(ai_response)
-            
+
             # 解析JSON
             chapter_plans = json.loads(cleaned_text)
-            
+
             # 确保是列表
             if not isinstance(chapter_plans, list):
                 chapter_plans = [chapter_plans]
-            
+
             # 为每个章节规划添加outline_id和差异化标识
             for idx, plan in enumerate(chapter_plans):
                 plan["outline_id"] = outline_id
-                
+
                 # 🔧 确保有 ending_type 字段（用于差异化追踪）
                 if "ending_type" not in plan:
                     # 根据叙事目标推断结尾类型
@@ -555,14 +586,22 @@ class PlotExpansionService:
                         plan["ending_type"] = "情感收尾"
                     else:
                         plan["ending_type"] = f"自然过渡-{idx + 1}"
-                
-                # 🔧 确保 key_events 是列表且非空
-                if not plan.get("key_events"):
+
+                # 🔧 扁平化 key_events 确保所有元素都是字符串
+                plan["key_events"] = self._flatten_list_field(plan.get("key_events"))
+                if not plan["key_events"]:
                     plan["key_events"] = [f"章节{idx + 1}核心事件"]
-            
+
+                # 🔧 扁平化 character_focus 确保所有元素都是字符串
+                plan["character_focus"] = self._flatten_list_field(plan.get("character_focus"))
+
+                # 🔧 扁平化 scenes 确保所有元素都是字符串（如果存在）
+                if "scenes" in plan:
+                    plan["scenes"] = self._flatten_list_field(plan.get("scenes"))
+
             logger.info(f"✅ 成功解析 {len(chapter_plans)} 个章节规划（含差异化标识）")
             return chapter_plans
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"❌ 解析AI响应失败: {e}, 响应内容: {ai_response[:500]}")
             # 返回一个基础规划

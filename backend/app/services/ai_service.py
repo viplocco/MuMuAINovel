@@ -433,30 +433,20 @@ class AIService:
         """
         logger.debug(f"🔧 generate_text_stream: auto_mcp={auto_mcp}, tool_choice={tool_choice}")
 
-        # 检测 DeepSeek 模型并限制 max_tokens 和禁用工具
         effective_model = model or self.default_model
         effective_max_tokens = max_tokens or self.default_max_tokens
-        is_deepseek = effective_model and effective_model.startswith("deepseek")
-        if is_deepseek:
-            if effective_max_tokens and effective_max_tokens > 4096:
-                effective_max_tokens = 4096
-                logger.info(f"  🔧 DeepSeek 模型，限制 max_tokens 为 {effective_max_tokens}")
-            # DeepSeek 不支持 tool_choice 参数，且可能不支持 MCP 工具，禁用工具
-            if tool_choice and tool_choice != "none":
-                tool_choice = None
-                logger.debug(f"  🔧 DeepSeek 模型，禁用 tool_choice")
-            # 禁用 MCP 工具以避免 400 错误
-            auto_mcp = False
-            logger.info(f"  🔧 DeepSeek 模型，禁用 MCP 工具避免 400 错误")
+
+        # ⭐ 不再对任何模型进行特殊限制，所有模型平等对待
+        # 用户可通过配置自定义模型参数
 
         tools_to_use = None
 
-        # 加载MCP工具（非 DeepSeek 模型）
-        if auto_mcp and not is_deepseek:
+        # 加载MCP工具
+        if auto_mcp:
             tools_to_use = await self._prepare_mcp_tools(auto_mcp=auto_mcp)
             if tools_to_use:
                 logger.info(f"🔧 已获取 {len(tools_to_use)} 个MCP工具")
-        
+
         # 流式生成（Provider 层处理工具调用）
         prov = self._get_provider(provider)
         logger.debug(f"🔧 开始流式生成，provider={provider or self.api_provider}, tools_count={len(tools_to_use) if tools_to_use else 0}")

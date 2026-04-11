@@ -764,22 +764,23 @@ export default function Outline() {
           {loadedModels.length > 0 && (
             <Form.Item
               label="AI模型"
-              name="model"
               tooltip="选择用于生成的AI模型，不选则使用系统默认模型"
             >
-              <Select
-                placeholder={defaultModel ? `默认: ${loadedModels.find(m => m.value === defaultModel)?.label || defaultModel}` : "使用默认模型"}
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                options={loadedModels}
-                onChange={(value) => {
-                  console.log('用户在下拉框中选择了模型:', value);
-                  // 手动同步到Form
-                  generateForm.setFieldsValue({ model: value });
-                  console.log('已同步到Form，当前Form值:', generateForm.getFieldsValue());
-                }}
-              />
+              <Form.Item name="model" noStyle>
+                <Select
+                  placeholder={defaultModel ? `默认: ${loadedModels.find(m => m.value === defaultModel)?.label || defaultModel}` : "使用默认模型"}
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={loadedModels}
+                  onChange={(value) => {
+                    console.log('用户在下拉框中选择了模型:', value);
+                    // 手动同步到Form
+                    generateForm.setFieldsValue({ model: value });
+                    console.log('已同步到Form，当前Form值:', generateForm.getFieldsValue());
+                  }}
+                />
+              </Form.Item>
               <div style={{ color: token.colorTextTertiary, fontSize: 12, marginTop: 4 }}>
                 {defaultModel ? `当前默认模型: ${loadedModels.find(m => m.value === defaultModel)?.label || defaultModel}` : '未配置默认模型'}
               </div>

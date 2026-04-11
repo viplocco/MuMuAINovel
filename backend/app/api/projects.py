@@ -76,6 +76,13 @@ async def create_project(
         await db.refresh(db_project)
         logger.info(f"项目创建成功: project_id={db_project.id}, user_id={user_id}")
 
+        # 自动初始化物品分类
+        try:
+            from app.services.category_presets import init_project_categories
+            await init_project_categories(db, db_project.id, project.genre)
+        except Exception as cat_error:
+            logger.warning(f"初始化物品分类失败（不影响项目创建）: {cat_error}")
+
         return db_project
     except HTTPException:
         raise

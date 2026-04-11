@@ -15,6 +15,7 @@ import Chapters from './pages/Chapters';
 import ChapterReader from './pages/ChapterReader';
 import ChapterAnalysis from './pages/ChapterAnalysis';
 import Foreshadows from './pages/Foreshadows';
+import Items from './pages/Items';
 import WritingStyles from './pages/WritingStyles';
 import PromptWorkshop from './pages/PromptWorkshop';
 import Settings from './pages/Settings';
@@ -69,6 +70,7 @@ function App() {
             <Route path="chapters" element={<Chapters />} />
             <Route path="chapter-analysis" element={<ChapterAnalysis />} />
             <Route path="foreshadows" element={<Foreshadows />} />
+            <Route path="items" element={<Items />} />
             <Route path="writing-styles" element={<WritingStyles />} />
             <Route path="prompt-workshop" element={<PromptWorkshop />} />
             <Route path="sponsor" element={<Sponsor />} />
