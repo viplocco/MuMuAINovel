@@ -12,7 +12,8 @@ import {
   CloseCircleOutlined,
   ReloadOutlined,
   EditOutlined,
-  GiftOutlined
+  GiftOutlined,
+  RobotOutlined
 } from '@ant-design/icons';
 import type { AnalysisTask, ChapterAnalysisResponse } from '../types';
 import ChapterRegenerationModal from './ChapterRegenerationModal';
@@ -24,11 +25,12 @@ const isMobileDevice = () => window.innerWidth < 768;
 
 interface ChapterAnalysisProps {
   chapterId: string;
+  projectId: string;  // 新增：用于传递给重新生成弹窗获取写作风格
   visible: boolean;
   onClose: () => void;
 }
 
-export default function ChapterAnalysis({ chapterId, visible, onClose }: ChapterAnalysisProps) {
+export default function ChapterAnalysis({ chapterId, projectId, visible, onClose }: ChapterAnalysisProps) {
   const { token } = theme.useToken();
   const [task, setTask] = useState<AnalysisTask | null>(null);
   const [analysis, setAnalysis] = useState<ChapterAnalysisResponse | null>(null);
@@ -347,7 +349,7 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
   };
 
   // 将分析建议转换为重新生成组件需要的格式
-  // 包括：常规改进建议 + 字数超标的建议（从 consistency_issues 中提取）
+  // 包括：常规改进建议 + 字数超标的建议 + AI味指标（从 ai_flavor_indicators 中提取）
   const convertSuggestionsForRegeneration = () => {
     const result: Array<{ category: string; content: string; priority: string }> = [];
 
@@ -375,6 +377,43 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
       });
     }
 
+    // 3. 添加AI味指标作为建议（当评分>0且有指标时）
+    // 按严重度设置优先级：high->high, medium->medium, low->low
+    if (analysis?.analysis?.ai_flavor_score !== undefined &&
+        analysis.analysis.ai_flavor_score > 0 &&
+        analysis?.analysis?.ai_flavor_indicators) {
+      // 先添加高严重度
+      analysis.analysis.ai_flavor_indicators
+        .filter((indicator) => indicator.severity === 'high')
+        .forEach((indicator) => {
+          result.push({
+            category: 'AI味问题',
+            content: `原文「${indicator.content}」→ 建议：${indicator.suggestion}`,
+            priority: 'high'
+          });
+        });
+      // 再添加中等严重度
+      analysis.analysis.ai_flavor_indicators
+        .filter((indicator) => indicator.severity === 'medium')
+        .forEach((indicator) => {
+          result.push({
+            category: 'AI味问题',
+            content: `原文「${indicator.content}」→ 建议：${indicator.suggestion}`,
+            priority: 'medium'
+          });
+        });
+      // 最后添加低严重度
+      analysis.analysis.ai_flavor_indicators
+        .filter((indicator) => indicator.severity === 'low')
+        .forEach((indicator) => {
+          result.push({
+            category: 'AI味问题',
+            content: `原文「${indicator.content}」→ 建议：${indicator.suggestion}`,
+            priority: 'low'
+          });
+        });
+    }
+
     return result;
   };
 
@@ -396,15 +435,19 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
               <div style={{ height: isMobile ? 'calc(80vh - 180px)' : 'calc(90vh - 220px)', overflowY: 'auto', paddingRight: '8px' }}>
                 {/* 根据建议重新生成按钮 */}
                 {(analysis_data.suggestions?.length > 0 ||
-                  (analysis_data.consistency_issues?.some(i => i.type === 'word_count_overflow' && i.suggestion))) && (
+                  (analysis_data.consistency_issues?.some(i => i.type === 'word_count_overflow' && i.suggestion)) ||
+                  ((analysis_data.ai_flavor_indicators?.length ?? 0) > 0)) && (
                   <Alert
                     message="发现改进建议"
                     description={
                       <div>
                         <p style={{ marginBottom: 12 }}>
-                          AI已分析出 {analysis_data.suggestions?.length || 0} 条改进建议，
-                          {analysis_data.consistency_issues?.filter(i => i.type === 'word_count_overflow' && i.suggestion).length > 0 &&
-                            ` 以及 ${analysis_data.consistency_issues.filter(i => i.type === 'word_count_overflow' && i.suggestion).length} 条字数超标建议`}
+                          AI已分析出 {analysis_data.suggestions?.length || 0} 条改进建议
+                          {analysis_data.consistency_issues &&
+                            analysis_data.consistency_issues.filter(i => i.type === 'word_count_overflow' && i.suggestion).length > 0 &&
+                            `、${analysis_data.consistency_issues.filter(i => i.type === 'word_count_overflow' && i.suggestion).length} 条字数超标建议`}
+                          {analysis_data.ai_flavor_indicators && (analysis_data.ai_flavor_indicators?.length ?? 0) > 0 &&
+                            `、${analysis_data.ai_flavor_indicators.length} 条AI味问题`}
                           ，您可以根据这些建议重新生成章节内容。
                         </p>
                         <Button
@@ -502,7 +545,8 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
                 )}
 
                 {(analysis_data.suggestions?.length > 0 ||
-                  (analysis_data.consistency_issues?.some(i => i.type === 'word_count_overflow' && i.suggestion))) && (
+                  (analysis_data.consistency_issues?.some(i => i.type === 'word_count_overflow' && i.suggestion)) ||
+                  ((analysis_data.ai_flavor_indicators?.length ?? 0) > 0)) && (
                   <Card title={<><BulbOutlined /> 改进建议</>} size={isMobile ? 'small' : 'default'}>
                     <List
                       dataSource={[
@@ -515,22 +559,48 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
                         // 字数超标建议
                         ...(analysis_data.consistency_issues || [])
                           .filter(i => i.type === 'word_count_overflow' && i.suggestion)
-                          .map((issue, index) => ({
+                          .map((issue, idx) => ({
                             type: 'word_count_overflow',
                             content: issue.suggestion,
                             severity: issue.severity,
                             overflow_percent: issue.overflow_percent,
                             expected_value: issue.expected_value,
                             described_value: issue.described_value,
-                            index: (analysis_data.suggestions?.length || 0) + index + 1
+                            index: (analysis_data.suggestions?.length || 0) + idx + 1
+                          })),
+                        // AI味问题建议
+                        ...(analysis_data.ai_flavor_indicators || [])
+                          .sort((a, b) => {
+                            // 按严重度排序：high > medium > low
+                            const order = { high: 0, medium: 1, low: 2 };
+                            return order[a.severity] - order[b.severity];
+                          })
+                          .map((indicator, idx) => ({
+                            type: 'ai_flavor',
+                            content: `原文「${indicator.content}」→ 建议：${indicator.suggestion}`,
+                            severity: indicator.severity,
+                            indicator_type: indicator.type,
+                            position_hint: indicator.position_hint,
+                            index: (analysis_data.suggestions?.length || 0) +
+                                   (analysis_data.consistency_issues?.filter(i => i.type === 'word_count_overflow' && i.suggestion).length || 0) + idx + 1
                           }))
                       ]}
                       renderItem={(item) => (
                         <List.Item>
                           <Space>
                             {item.type === 'word_count_overflow' ? (
-                              <Tag color={item.severity === 'high' ? 'red' : item.severity === 'medium' ? 'orange' : 'blue'}>
-                                字数超标 {item.overflow_percent && `+${item.overflow_percent}%`}
+                              <Tag color={
+                                (item as { severity?: string }).severity === 'high' ? 'red' :
+                                (item as { severity?: string }).severity === 'medium' ? 'orange' : 'blue'
+                              }>
+                                字数超标 {(item as { overflow_percent?: number }).overflow_percent && `+${(item as { overflow_percent?: number }).overflow_percent}%`}
+                              </Tag>
+                            ) : item.type === 'ai_flavor' ? (
+                              <Tag color={
+                                (item as { severity?: string }).severity === 'high' ? 'red' :
+                                (item as { severity?: string }).severity === 'medium' ? 'orange' : 'blue'
+                              }>
+                                AI味问题
                               </Tag>
                             ) : (
                               <Tag color="green">建议</Tag>
@@ -973,6 +1043,98 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
             )
           },
           {
+            key: 'ai_flavor',
+            label: analysis_data.ai_flavor_score ? `AI味 (${analysis_data.ai_flavor_score.toFixed(1)})` : 'AI味',
+            icon: <RobotOutlined />,
+            children: (
+              <div style={{ height: isMobile ? 'calc(80vh - 180px)' : 'calc(90vh - 220px)', overflowY: 'auto', paddingRight: '8px' }}>
+                <Card size={isMobile ? 'small' : 'default'}>
+                  {analysis_data.ai_flavor_score !== undefined && analysis_data.ai_flavor_score > 0 ? (
+                    <div>
+                      {/* AI味评分 */}
+                      <Statistic
+                        title="AI味评分"
+                        value={analysis_data.ai_flavor_score.toFixed(1)}
+                        suffix="/ 10"
+                        valueStyle={{
+                          color: analysis_data.ai_flavor_score >= 7 ? '#ff4d4f' :
+                                 analysis_data.ai_flavor_score >= 4 ? '#faad14' : '#52c41a'
+                        }}
+                      />
+                      <div style={{ marginTop: 8, fontSize: 13, color: 'rgba(0, 0, 0, 0.45)' }}>
+                        {analysis_data.ai_flavor_score >= 7 ? '⚠️ AI痕迹明显，建议重点优化' :
+                         analysis_data.ai_flavor_score >= 4 ? '💡 有AI痕迹但不太明显，局部可优化' :
+                         '✅ 具有良好个人风格，行文自然'}
+                      </div>
+
+                      {/* 详细报告 */}
+                      {analysis_data.ai_flavor_report && (
+                        <Card type="inner" title="分析报告" size="small" style={{ marginTop: 16 }}>
+                          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13 }}>
+                            {analysis_data.ai_flavor_report}
+                          </pre>
+                        </Card>
+                      )}
+
+                      {/* AI味指标列表 */}
+                      {analysis_data.ai_flavor_indicators && analysis_data.ai_flavor_indicators.length > 0 && (
+                        <Card type="inner" title="具体问题" size="small" style={{ marginTop: 16 }}>
+                          <List
+                            dataSource={analysis_data.ai_flavor_indicators}
+                            renderItem={(indicator) => (
+                              <List.Item>
+                                <Space direction="vertical" style={{ width: '100%' }}>
+                                  <Space>
+                                    <Tag color={
+                                      indicator.type === 'uniform_sentences' ? 'blue' :
+                                      indicator.type === 'repetitive_patterns' ? 'purple' :
+                                      indicator.type === 'generic_expressions' ? 'cyan' :
+                                      indicator.type === 'lack_of_sensory_details' ? 'orange' :
+                                      indicator.type === 'abstract_descriptions' ? 'gold' :
+                                      'magenta'
+                                    }>
+                                      {indicator.type === 'uniform_sentences' ? '句式单一' :
+                                       indicator.type === 'repetitive_patterns' ? '重复模式' :
+                                       indicator.type === 'generic_expressions' ? '通用表达' :
+                                       indicator.type === 'lack_of_sensory_details' ? '感官缺失' :
+                                       indicator.type === 'abstract_descriptions' ? '抽象堆砌' :
+                                       '套路结构'}
+                                    </Tag>
+                                    <Tag color={
+                                      indicator.severity === 'high' ? 'red' :
+                                      indicator.severity === 'medium' ? 'orange' : 'blue'
+                                    }>
+                                      {indicator.severity === 'high' ? '高' :
+                                       indicator.severity === 'medium' ? '中' : '低'}
+                                    </Tag>
+                                    {indicator.position_hint && (
+                                      <Tag>{indicator.position_hint}</Tag>
+                                    )}
+                                  </Space>
+                                  <div style={{ fontSize: 13 }}>
+                                    <strong>原文示例：</strong>
+                                    <span style={{ color: '#ff4d4f', fontStyle: 'italic' }}>
+                                      「{indicator.content}」
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: 13, color: 'rgba(0, 0, 0, 0.45)' }}>
+                                    <strong>改进建议：</strong>{indicator.suggestion}
+                                  </div>
+                                </Space>
+                              </List.Item>
+                            )}
+                          />
+                        </Card>
+                      )}
+                    </div>
+                  ) : (
+                    <Empty description="暂无AI味分析数据" />
+                  )}
+                </Card>
+              </div>
+            )
+          },
+          {
             key: 'memories',
             label: `记忆 (${memories?.length || 0})`,
             icon: <FireOutlined />,
@@ -1104,6 +1266,7 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
       {chapterInfo && (
         <ChapterRegenerationModal
           visible={regenerationModalVisible}
+          projectId={projectId}
           onCancel={() => setRegenerationModalVisible(false)}
           onSuccess={(newContent: string, wordCount: number) => {
             // 保存新生成的内容
@@ -1123,7 +1286,14 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
             pacing_score: analysis.analysis.pacing_score,
             engagement_score: analysis.analysis.engagement_score,
             coherence_score: analysis.analysis.coherence_score,
-            overall_quality_score: analysis.analysis.overall_quality_score
+            overall_quality_score: analysis.analysis.overall_quality_score,
+            emotional_intensity: analysis.analysis.emotional_intensity,
+            conflict_level: analysis.analysis.conflict_level,
+            dialogue_ratio: analysis.analysis.dialogue_ratio,
+            description_ratio: analysis.analysis.description_ratio,
+            emotional_curve: analysis.analysis.emotional_curve,
+            suggestions: analysis.analysis.suggestions,
+            ai_flavor_score: analysis.analysis.ai_flavor_score
           } : undefined}
         />
       )}

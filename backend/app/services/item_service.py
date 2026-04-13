@@ -1748,26 +1748,44 @@ class ItemService:
                 else:
                     calculated_change = new_quantity - old_quantity
 
-                item.quantity = new_quantity
-
-                # 创建数量变更记录（无论是否变化都记录）
-                change_record = ItemQuantityChange(
-                    id=str(uuid.uuid4()),
-                    project_id=item.project_id,
-                    item_id=item_id,
-                    change_type='obtain' if calculated_change >= 0 else 'consume',
-                    quantity_before=old_quantity,
-                    quantity_change=calculated_change,
-                    quantity_after=new_quantity,
-                    chapter_id=chapter_id,
-                    chapter_number=chapter_number,
-                    reason=item_result.description or f"第{chapter_number}章分析更新",
-                    involved_character_name=item_result.to_character,
-                    source_type='analysis'
-                )
-                db.add(change_record)
+                # 【修复】只有数量真正变化时才更新和记录
                 if calculated_change != 0:
-                    changes_logged.append(f"数量: {old_quantity}→{new_quantity}")
+                    item.quantity = new_quantity
+
+                    # 【修复】检查是否已存在同一章节同一物品的记录，避免重复
+                    existing_change_query = select(ItemQuantityChange).where(
+                        ItemQuantityChange.item_id == item_id,
+                        ItemQuantityChange.chapter_id == chapter_id,
+                        ItemQuantityChange.source_type == 'analysis'
+                    )
+                    existing_result = await db.execute(existing_change_query)
+                    existing_change = existing_result.scalar_one_or_none()
+
+                    if not existing_change:
+                        # 创建新记录
+                        change_record = ItemQuantityChange(
+                            id=str(uuid.uuid4()),
+                            project_id=item.project_id,
+                            item_id=item_id,
+                            change_type='obtain' if calculated_change >= 0 else 'consume',
+                            quantity_before=old_quantity,
+                            quantity_change=calculated_change,
+                            quantity_after=new_quantity,
+                            chapter_id=chapter_id,
+                            chapter_number=chapter_number,
+                            reason=item_result.description or f"第{chapter_number}章分析更新",
+                            involved_character_name=item_result.to_character,
+                            source_type='analysis'
+                        )
+                        db.add(change_record)
+                        changes_logged.append(f"数量: {old_quantity}→{new_quantity}")
+                    else:
+                        # 更新已有记录（如果数量不同）
+                        if existing_change.quantity_after != new_quantity:
+                            existing_change.quantity_after = new_quantity
+                            existing_change.quantity_change = calculated_change
+                            existing_change.quantity_before = old_quantity
+                            changes_logged.append(f"数量修正: {old_quantity}→{new_quantity}")
 
             # === 3. 智能补全属性（仅当原字段为空时填充），并记录变更 ===
             if item_result.quality and not item.quality:
@@ -2260,9 +2278,38 @@ class ItemService:
 
                 if owner_items:
                     lines.append("【本章角色持有物品】")
+
+                    # 批量查询这些物品的最近流转记录
+                    item_ids = [item.id for item in owner_items]
+                    transfer_query = (
+                        select(ItemTransfer)
+                        .where(ItemTransfer.item_id.in_(item_ids))
+                        .order_by(desc(ItemTransfer.chapter_number))
+                    )
+                    transfer_result = await db.execute(transfer_query)
+                    transfers = transfer_result.scalars().all()
+
+                    # 按物品ID分组，取每个物品最近一次流转
+                    latest_transfer_map = {}
+                    for transfer in transfers:
+                        if transfer.item_id not in latest_transfer_map:
+                            latest_transfer_map[transfer.item_id] = transfer
+
                     for item in owner_items:
                         qty_str = f" x{item.quantity}" if item.quantity > 1 else ""
-                        lines.append(f"- {item.owner_character_name}: {item.name}{qty_str}")
+
+                        # 新增：显示流转来源
+                        latest_transfer = latest_transfer_map.get(item.id)
+                        if latest_transfer and latest_transfer.from_character_name:
+                            transfer_info = f"(第{latest_transfer.chapter_number}章从{latest_transfer.from_character_name}获得)"
+                        elif latest_transfer and latest_transfer.transfer_type in ['find', 'craft', 'obtain']:
+                            transfer_info = f"(第{latest_transfer.chapter_number}章{latest_transfer.transfer_type})"
+                        elif item.source_chapter_number:
+                            transfer_info = f"(第{item.source_chapter_number}章出现)"
+                        else:
+                            transfer_info = ""
+
+                        lines.append(f"- {item.owner_character_name}: {item.name}{qty_str} {transfer_info}")
                         if item.special_effects:
                             lines.append(f"  特效: {item.special_effects[:50]}")
 

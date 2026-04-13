@@ -479,6 +479,34 @@ class PlotAnalyzer:
                 logger.warning(f"⚠️ suggestions 不是数组，重置为空数组")
                 result['suggestions'] = []
 
+            # 确保AI味分析结果存在
+            if 'ai_flavor' not in result:
+                result['ai_flavor'] = {
+                    'score': 0.0,
+                    'score_justification': '',
+                    'indicators': [],
+                    'overall_report': ''
+                }
+            elif not isinstance(result['ai_flavor'], dict):
+                logger.warning(f"⚠️ ai_flavor 不是对象，重置为默认值")
+                result['ai_flavor'] = {
+                    'score': 0.0,
+                    'score_justification': '',
+                    'indicators': [],
+                    'overall_report': ''
+                }
+            else:
+                # 确保必要字段存在
+                ai_flavor = result['ai_flavor']
+                if 'score' not in ai_flavor or not isinstance(ai_flavor.get('score'), (int, float)):
+                    ai_flavor['score'] = 0.0
+                if 'indicators' not in ai_flavor or not isinstance(ai_flavor.get('indicators'), list):
+                    ai_flavor['indicators'] = []
+                if 'overall_report' not in ai_flavor:
+                    ai_flavor['overall_report'] = ''
+                if 'score_justification' not in ai_flavor:
+                    ai_flavor['score_justification'] = ''
+
             # 记录一致性检测结果
             consistency_count = len(result.get('consistency_issues', []))
             if consistency_count > 0:
@@ -488,6 +516,13 @@ class PlotAnalyzer:
             suggestions_count = len(result.get('suggestions', []))
             if suggestions_count > 0:
                 logger.info(f"  💡 发现 {suggestions_count} 条改进建议")
+
+            # 记录AI味分析结果
+            ai_flavor = result.get('ai_flavor', {})
+            ai_flavor_score = ai_flavor.get('score', 0.0)
+            ai_flavor_indicators = len(ai_flavor.get('indicators', []))
+            if ai_flavor_score > 0:
+                logger.info(f"  🤖 AI味评分: {ai_flavor_score}/10, 发现 {ai_flavor_indicators} 个指标")
 
             logger.info("✅ 成功解析分析结果")
             return result
@@ -534,9 +569,9 @@ class PlotAnalyzer:
             elif analysis.get('plot_points'):
                 plot_summaries = [p.get('content', '') for p in analysis.get('plot_points', [])[:3]]
                 chapter_summary = "；".join(plot_summaries)
-            # 或者使用内容前300字
+            # 或者使用内容前500字（放宽限制，充分概括情节）
             elif chapter_content:
-                chapter_summary = chapter_content[:300] + ("..." if len(chapter_content) > 300 else "")
+                chapter_summary = chapter_content[:500] + ("..." if len(chapter_content) > 500 else "")
             
             # 如果有摘要，添加到记忆中
             if chapter_summary:
@@ -713,6 +748,53 @@ class PlotAnalyzer:
                     }
                 })
 
+            # 7. 提取场景信息（已有 scenes 字段）
+            for scene in analysis.get('scenes', []):
+                location = scene.get('location', '')
+                if location:
+                    atmosphere = scene.get('atmosphere', '未描述')
+                    memories.append({
+                        'type': 'scene',
+                        'content': f"场景: {location}。氛围: {atmosphere}",
+                        'title': f"场景 - {location}",
+                        'metadata': {
+                            'chapter_id': chapter_id,
+                            'chapter_number': chapter_number,
+                            'importance_score': 0.5,
+                            'tags': ['场景', location],
+                            'is_foreshadow': 0,
+                            'location': location,
+                            'atmosphere': atmosphere
+                        }
+                    })
+
+            # 8. 提取重要对话（分析结果中 important_dialogues 字段）
+            for dialogue in analysis.get('important_dialogues', []):
+                if dialogue.get('significance'):
+                    speaker = dialogue.get('speaker', '未知')
+                    content = dialogue.get('content', '')
+                    keyword = dialogue.get('keyword', '')
+                    position, length = self._find_text_position(chapter_content, keyword)
+
+                    memories.append({
+                        'type': 'dialogue',
+                        'content': f"{speaker}: {content}",
+                        'title': f"重要对话 - {speaker}",
+                        'metadata': {
+                            'chapter_id': chapter_id,
+                            'chapter_number': chapter_number,
+                            'importance_score': 0.7,
+                            'tags': ['对话', speaker],
+                            'is_foreshadow': 0,
+                            'speaker': speaker,
+                            'context': dialogue.get('context', ''),
+                            'significance': dialogue.get('significance', ''),
+                            'keyword': keyword,
+                            'text_position': position,
+                            'text_length': length
+                        }
+                    })
+
             logger.info(f"📝 从分析中提取了{len(memories)}条记忆")
             return memories
             
@@ -811,6 +893,18 @@ class PlotAnalyzer:
                 lines.append(f"  类型: {', '.join(conflict.get('types', []))}")
                 lines.append(f"  强度: {conflict.get('level', 0)}/10")
                 lines.append(f"  进度: {int(conflict.get('resolution_progress', 0) * 100)}%\n")
+
+            # AI味分析
+            ai_flavor = analysis.get('ai_flavor', {})
+            if ai_flavor and ai_flavor.get('score', 0) > 0:
+                score = ai_flavor.get('score', 0)
+                level = "低" if score <= 3 else "中等" if score <= 6 else "高" if score <= 8.5 else "极高"
+                lines.append(f"【AI味分析】评分: {score}/10 ({level})")
+                indicators = ai_flavor.get('indicators', [])
+                if indicators:
+                    high_count = sum(1 for i in indicators if i.get('severity') == 'high')
+                    lines.append(f"  发现{len(indicators)}个问题点（{high_count}个高严重度）")
+                lines.append("")
 
             # 注意：改进建议已在前端单独显示，不在摘要中重复
 

@@ -414,8 +414,8 @@ export default function Items() {
       title: '物品名称',
       dataIndex: 'name',
       key: 'name',
-      width: 180,
-      fixed: 'left' as const,
+      width: 120,
+      ellipsis: true,
       render: (name: string, record: Item) => (
         <Space>
           <Text strong>{name}</Text>
@@ -427,17 +427,17 @@ export default function Items() {
       title: '分类',
       dataIndex: 'category_name',
       key: 'category_name',
-      width: 100,
+      width: 80,
       render: (name: string) => <Tag color={name ? "blue" : "default"}>{name || '其他'}</Tag>,
     },
     {
-      title: '描述/功能',
+      title: '描述',
       key: 'description',
-      width: 280,
+      width: 120,
       ellipsis: true,
       render: (_: any, record: Item) => {
         const desc = record.description || record.special_effects;
-        if (!desc) return <Text type="secondary">暂无描述</Text>;
+        if (!desc) return <Text type="secondary">暂无</Text>;
         return (
           <Tooltip title={desc} placement="topLeft">
             <Text type="secondary" style={{ fontSize: 13 }}>{desc}</Text>
@@ -449,7 +449,7 @@ export default function Items() {
       title: '稀有度',
       dataIndex: 'rarity',
       key: 'rarity',
-      width: 90,
+      width: 80,
       align: 'center' as const,
       render: (rarity: ItemRarity) =>
         rarity ? <Tag color={RARITY_CONFIG[rarity]?.color}>{RARITY_CONFIG[rarity]?.text || rarity}</Tag> : '-',
@@ -458,7 +458,7 @@ export default function Items() {
       title: '数量',
       dataIndex: 'quantity',
       key: 'quantity',
-      width: 80,
+      width: 60,
       align: 'center' as const,
       render: (qty: number, record: Item) => `${qty} ${record.unit}`,
     },
@@ -466,17 +466,17 @@ export default function Items() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 90,
+      width: 80,
       align: 'center' as const,
       render: (status: ItemStatus) => (
         <Tag color={STATUS_CONFIG[status]?.color}>{STATUS_CONFIG[status]?.text || status}</Tag>
       ),
     },
     {
-      title: '上下文优先级',
+      title: '优先级',
       dataIndex: 'context_priority',
       key: 'context_priority',
-      width: 110,
+      width: 80,
       align: 'center' as const,
       render: (priority: number) => {
         // 注意：priority 可能是 0（已销毁/消耗），不能用 !priority 判断
@@ -484,7 +484,7 @@ export default function Items() {
         const config = getPriorityConfig(priority);
         return (
           <Tooltip title={`优先级: ${priority.toFixed(2)}`}>
-            <Tag color={config.color}>{config.text} ({priority.toFixed(1)})</Tag>
+            <Tag color={config.color}>{config.text}</Tag>
           </Tooltip>
         );
       },
@@ -493,14 +493,14 @@ export default function Items() {
       title: '持有者',
       dataIndex: 'owner_character_name',
       key: 'owner_character_name',
-      width: 100,
+      width: 80,
+      ellipsis: true,
       render: (name: string) => name || '-',
     },
     {
       title: '操作',
       key: 'actions',
-      width: 180,
-      fixed: 'right' as const,
+      width: 160,
       render: (_: any, record: Item) => (
         <Space size="small">
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewDetail(record)}>
@@ -598,14 +598,14 @@ export default function Items() {
       </div>
 
       {/* 物品表格 - 自适应高度 */}
-      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0 }}>
         <Table
           columns={columns}
           dataSource={items}
           rowKey="id"
           loading={loading}
           size="small"
-          scroll={{ x: 1100 }}
+          tableLayout="fixed"
           sticky={{ offsetHeader: 0 }}
           pagination={false}
         />
@@ -951,14 +951,21 @@ export default function Items() {
               rowKey="id"
               pagination={
                 (historyData.transfers?.length || 0) > 5
-                  ? { pageSize: 5, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }
+                  ? {
+                      pageSize: 5,
+                      showSizeChanger: true,
+                      pageSizeOptions: ['5', '10', '20'],
+                      showQuickJumper: true,
+                      showTotal: (total) => `共 ${total} 条`,
+                      size: 'small',
+                    }
                   : false
               }
               columns={[
                 { title: '类型', dataIndex: 'transfer_type', width: 80, render: (v) => TRANSFER_TYPE_MAP[v] || v || '-' },
-                { title: '从', dataIndex: 'from_character_name', render: (v) => v || '-' },
-                { title: '到', dataIndex: 'to_character_name', render: (v) => v || '-' },
-                { title: '章节', dataIndex: 'chapter_number', width: 90, render: (v) => v ? `第${v}章` : '-' },
+                { title: '从', dataIndex: 'from_character_name', ellipsis: true, render: (v) => v || '-' },
+                { title: '到', dataIndex: 'to_character_name', ellipsis: true, render: (v) => v || '-' },
+                { title: '章节', dataIndex: 'chapter_number', width: 80, render: (v) => v ? `第${v}章` : '-' },
                 { title: '描述', dataIndex: 'description', ellipsis: true },
               ]}
             />
@@ -970,14 +977,21 @@ export default function Items() {
               rowKey="id"
               pagination={
                 (historyData.quantity_changes?.length || 0) > 5
-                  ? { pageSize: 5, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }
+                  ? {
+                      pageSize: 5,
+                      showSizeChanger: true,
+                      pageSizeOptions: ['5', '10', '20'],
+                      showQuickJumper: true,
+                      showTotal: (total) => `共 ${total} 条`,
+                      size: 'small',
+                    }
                   : false
               }
               columns={[
                 { title: '类型', dataIndex: 'change_type', width: 80, render: (v) => QUANTITY_CHANGE_TYPE_MAP[v] || v || '-' },
-                { title: '变化', dataIndex: 'quantity_change', width: 80, render: (v) => (v > 0 ? `+${v}` : v) },
-                { title: '剩余', dataIndex: 'quantity_after', width: 80 },
-                { title: '章节', dataIndex: 'chapter_number', width: 90, render: (v) => v ? `第${v}章` : '-' },
+                { title: '变化', dataIndex: 'quantity_change', width: 70, render: (v) => (v > 0 ? `+${v}` : v) },
+                { title: '剩余', dataIndex: 'quantity_after', width: 70 },
+                { title: '章节', dataIndex: 'chapter_number', width: 80, render: (v) => v ? `第${v}章` : '-' },
                 { title: '原因', dataIndex: 'reason', ellipsis: true },
               ]}
             />

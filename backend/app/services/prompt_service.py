@@ -1371,6 +1371,42 @@ class PromptService:
 - **estimated_value**：估计的明确数量（当描述值模糊时填写，便于后续追踪）
 - **overflow_percent**：字数超出百分比（字数类问题）
 - **reference_id**：关联的ID（如 item_id, career_id, foreshadow_id）
+
+**11. AI味检测（AI Flavor Analysis）- 🟡 新增**
+检测文本中是否存在典型AI生成痕迹，评估"AI味"程度：
+
+**检测维度**：
+- **句式单一（uniform_sentences）**：大量使用"于是"、"然后"、"接着"等程式化连接词；主谓宾结构过于统一
+- **重复模式（repetitive_patterns）**：相似句式反复出现；情感描写模板化（如"心中涌起一股..."）
+- **通用表达（generic_expressions）**：大量使用模糊、通用的形容词/副词（如"一股"、"某种"、"莫名"）；缺乏具体细节
+- **感官缺失（lack_of_sensory_details）**：视觉、听觉、触觉、嗅觉、味觉描写稀少；过度依赖抽象描述
+- **抽象堆砌（abstract_descriptions）**：过度使用"仿佛"、"宛如"、"似乎"等模糊比喻词
+- **套路结构（formulaic_structure）**：开篇结尾套路化；过渡生硬；冲突解决模板化
+
+**AI味评分方法**：
+评分基于各维度检测到的问题数量和严重度综合计算：
+- 每个维度检测问题数量（不限数量，有多少报多少）
+- 高严重度问题权重2.0，中严重度权重1.0，低严重度权重0.5
+- 计算公式参考：score = 基础分 + (问题加权总分 × 调整系数)
+- **评分参考**：
+  - 加权问题总数0-2：评分1.0-3.0（低AI味）
+  - 加权问题总数3-5：评分4.0-6.0（中等AI味）
+  - 加权问题总数6-10：评分7.0-8.5（高AI味）
+  - 加权问题总数>10：评分8.6-10.0（极高AI味）
+
+**每项AI味指标需要**：
+- **type**：问题类型（uniform_sentences/repetitive_patterns/generic_expressions/lack_of_sensory_details/abstract_descriptions/formulaic_structure）
+- **content**：原文中的具体示例（8-50字，必须引用原文）
+- **suggestion**：具体的改进建议（如何增加细节/变化句式等）
+- **severity**：严重程度（high/medium/low）
+- **position_hint**：问题大致位置（开头/中段/结尾）
+
+**AI味检测约束**：
+- 必须引用原文示例，不可泛泛描述
+- 建议必须具体可执行（如"将'心中涌起一股暖流'改为具体描写心跳加速、手心出汗等生理反应"）
+- **不限指标数量**：检测到多少问题就列出多少，每个维度可列出多条
+- **指标数量影响评分**：问题越多评分越高，而非评分决定指标数量
+- **多维度覆盖**：当检测到多个维度有问题时，每个维度至少列出1条代表性示例
 </analysis_framework>
 
 <output priority="P0">
@@ -1484,6 +1520,15 @@ class PromptService:
       "location": "地点",
       "atmosphere": "氛围",
       "duration": "时长估计"
+    }}
+  ],
+  "important_dialogues": [
+    {{
+      "speaker": "角色名",
+      "content": "对话内容摘要（20-50字）",
+      "context": "对话场景/背景",
+      "significance": "重要性说明（对剧情/关系的影响，决定是否提取为记忆）",
+      "keyword": "原文定位关键词（8-25字）"
     }}
   ],
   "organization_states": [
@@ -1611,7 +1656,56 @@ class PromptService:
       "severity": "medium",
       "suggestion": "建议精简次要场景描写和对话，适当压缩心理描写段落"
     }}
-  ]
+  ],
+  "ai_flavor": {{
+    "score": 5.8,
+    "score_justification": "检测到6个问题：2个高严重度(句式重复、抽象描写)+3个中严重度+1个低严重度，加权总分=(2×2+3×1+1×0.5)=7.5，对应评分区间4-6",
+    "indicators": [
+      {{
+        "type": "repetitive_patterns",
+        "content": "于是她转身离开，然后眼泪流了下来，接着...",
+        "suggestion": "变换连接词，使用动作衔接情感：'她沉默着走向门口，眼泪已在眼眶打转，脚步却没停'",
+        "severity": "medium",
+        "position_hint": "中段"
+      }},
+      {{
+        "type": "generic_expressions",
+        "content": "心中涌起一股难以名状的情绪",
+        "suggestion": "将抽象情绪转为具体描写：心跳加速、呼吸急促、手心出汗等生理反应",
+        "severity": "high",
+        "position_hint": "结尾"
+      }},
+      {{
+        "type": "lack_of_sensory_details",
+        "content": "房间里很安静，气氛有些压抑",
+        "suggestion": "增加感官细节：昏暗的光线、尘埃在空中漂浮、墙上的旧照片、门轴的吱呀声",
+        "severity": "medium",
+        "position_hint": "开头"
+      }},
+      {{
+        "type": "uniform_sentences",
+        "content": "他站起身来，走到窗前，看着外面的天空",
+        "suggestion": "变化句式结构：'窗外是一片灰蒙蒙的天空，他不由自主地站起身，缓步走向窗边'",
+        "severity": "low",
+        "position_hint": "中段"
+      }},
+      {{
+        "type": "abstract_descriptions",
+        "content": "仿佛整个世界都在这一刻静止了",
+        "suggestion": "具体化描写：'周围的一切仿佛被按下了暂停键——谈话声戛然而止，行人的脚步停住，就连飘落的树叶也悬在半空'",
+        "severity": "high",
+        "position_hint": "结尾"
+      }},
+      {{
+        "type": "formulaic_structure",
+        "content": "就这样，一切都结束了",
+        "suggestion": "避免套路结尾：改用具体场景收尾，如描写一个细节画面或角色的具体动作",
+        "severity": "medium",
+        "position_hint": "结尾"
+      }}
+    ],
+    "overall_report": "本章节AI味评分为5.8分，属于中等水平。共检测到6个问题点，涉及4个检测维度。主要问题集中在句式重复和抽象描写上，建议增加具体的感官细节和变换句式连接词，以降低AI感并增加个人风格。"
+  }}
 }}
 </output>
 

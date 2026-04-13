@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { List, Button, Modal, Form, Input, Select, Empty, Space, Badge, Tag, Card, InputNumber, Alert, Radio, Descriptions, Collapse, Popconfirm, Pagination, theme, Typography, App } from 'antd';
-import { EditOutlined, FileTextOutlined, ThunderboltOutlined, LockOutlined, DownloadOutlined, SettingOutlined, FundOutlined, SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, RocketOutlined, StopOutlined, InfoCircleOutlined, CaretRightOutlined, DeleteOutlined, BookOutlined, FormOutlined, PlusOutlined, ReadOutlined } from '@ant-design/icons';
+import { EditOutlined, FileTextOutlined, ThunderboltOutlined, LockOutlined, DownloadOutlined, SettingOutlined, FundOutlined, SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, RocketOutlined, StopOutlined, InfoCircleOutlined, CaretRightOutlined, DeleteOutlined, BookOutlined, FormOutlined, PlusOutlined, ReadOutlined, OrderedListOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useChapterSync } from '../store/hooks';
 import { projectApi, writingStyleApi, chapterApi } from '../services/api';
@@ -13,6 +13,7 @@ import { SSEProgressModal } from '../components/SSEProgressModal';
 import ChapterReader from '../components/ChapterReader';
 import PartialRegenerateToolbar from '../components/PartialRegenerateToolbar';
 import PartialRegenerateModal from '../components/PartialRegenerateModal';
+import SummaryEditorModal from '../components/SummaryEditorModal';
 
 const { TextArea } = Input;
 
@@ -63,7 +64,18 @@ export default function Chapters() {
   const contentTextAreaRef = useRef<TextAreaRef>(null);
   const [writingStyles, setWritingStyles] = useState<WritingStyle[]>([]);
   const [selectedStyleId, setSelectedStyleId] = useState<number | undefined>();
-  const [lastSelectedStyleId, setLastSelectedStyleId] = useState<number | undefined>(); // 上一次选中的写作风格
+  const [lastSelectedStyleId, setLastSelectedStyleId] = useState<number | undefined>(() => {
+    // 从 localStorage 读取上次选择的风格（持久化）
+    try {
+      const cached = localStorage.getItem('lastSelectedStyleId');
+      if (cached) {
+        return parseInt(cached, 10);
+      }
+    } catch (error) {
+      console.warn('读取上次风格缓存失败:', error);
+    }
+    return undefined;
+  });
   const [targetWordCount, setTargetWordCount] = useState<number>(getCachedWordCount);
   const [availableModels, setAvailableModels] = useState<Array<{ value: string, label: string }>>([]);
   const [selectedModel, setSelectedModel] = useState<string | undefined>();
@@ -99,6 +111,10 @@ export default function Chapters() {
   const [selectionStartPosition, setSelectionStartPosition] = useState(0);
   const [selectionEndPosition, setSelectionEndPosition] = useState(0);
   const [partialRegenerateModalVisible, setPartialRegenerateModalVisible] = useState(false);
+
+  // 摘要编辑状态
+  const [summaryModalVisible, setSummaryModalVisible] = useState(false);
+  const [summaryChapter, setSummaryChapter] = useState<Chapter | null>(null);
 
   // 单章节生成进度状态
   const [singleChapterProgress, setSingleChapterProgress] = useState(0);
@@ -473,11 +489,30 @@ export default function Chapters() {
       const response = await writingStyleApi.getProjectStyles(currentProject.id);
       setWritingStyles(response.styles);
 
-      // 设置默认风格为初始选中
-      const defaultStyle = response.styles.find(s => s.is_default);
-      if (defaultStyle) {
-        setSelectedStyleId(defaultStyle.id);
-        setLastSelectedStyleId(defaultStyle.id); // 初始化上一次选择
+      // 初始化风格选择逻辑：
+      // 1. 如果有上次选择的风格（从localStorage读取），继续使用它
+      // 2. 如果没有记录（初次打开），使用默认风格
+      if (lastSelectedStyleId) {
+        // 验证上次选择的风格是否在当前列表中
+        const lastStyleExists = response.styles.some(s => s.id === lastSelectedStyleId);
+        if (lastStyleExists) {
+          setSelectedStyleId(lastSelectedStyleId);
+        } else {
+          // 上次选择的风格已不存在，使用默认风格
+          const defaultStyle = response.styles.find(s => s.is_default);
+          if (defaultStyle) {
+            setSelectedStyleId(defaultStyle.id);
+            setLastSelectedStyleId(defaultStyle.id);
+            localStorage.setItem('lastSelectedStyleId', String(defaultStyle.id));
+          }
+        }
+      } else {
+        // 初次打开，使用默认风格（不保存到localStorage，等用户明确选择后再保存）
+        const defaultStyle = response.styles.find(s => s.is_default);
+        if (defaultStyle) {
+          setSelectedStyleId(defaultStyle.id);
+          setLastSelectedStyleId(defaultStyle.id);
+        }
       }
     } catch (error) {
       console.error('加载写作风格失败:', error);
@@ -820,8 +855,8 @@ export default function Chapters() {
       setEditingId(id);
       setTemporaryNarrativePerspective(undefined); // 重置人称选择
       setContentWordCount(chapter.content?.length || 0); // 初始化字数统计
-      // 如果没有选中写作风格，使用上一次的选中值
-      if (!selectedStyleId && lastSelectedStyleId) {
+      // 每次打开编辑弹窗时，恢复上次选择的风格（如果有记录）
+      if (lastSelectedStyleId) {
         setSelectedStyleId(lastSelectedStyleId);
       }
       setIsEditorOpen(true);
@@ -925,16 +960,19 @@ export default function Chapters() {
       title: 'AI创作章节内容',
       width: 700,
       centered: true,
+      closable: true,
       content: (
         <div style={{ marginTop: 16 }}>
           <p>AI将根据以下信息创作本章内容：</p>
           <ul>
             <li>章节大纲和要求</li>
             <li>项目的世界观设定</li>
-            <li>相关角色信息（含职业阶段）</li>
+            <li>相关角色信息（含年龄、外貌、背景、关系、职业阶段）</li>
             <li>本章涉及的伏笔（埋入/回收提醒）</li>
-            <li>本章相关物品（持有物品、关键物品）</li>
-            <li>前面已完成章节的内容（确保剧情连贯）</li>
+            <li>本章相关物品（持有状态、流转历史）</li>
+            <li>最近章节摘要（确保剧情连贯）</li>
+            <li>上一章末尾衔接内容</li>
+            <li>相关记忆（情节事件、角色动态、场景、对话等）</li>
             {selectedStyle && (
               <li>写作风格：{selectedStyle.name}</li>
             )}
@@ -1059,6 +1097,12 @@ export default function Chapters() {
   const handleShowAnalysis = (chapterId: string) => {
     setAnalysisChapterId(chapterId);
     setAnalysisVisible(true);
+  };
+
+  // 显示摘要编辑弹窗
+  const handleShowSummary = (chapter: Chapter) => {
+    setSummaryChapter(chapter);
+    setSummaryModalVisible(true);
   };
 
   // 一键按章节顺序分析未分析章节
@@ -2061,6 +2105,14 @@ export default function Chapters() {
                   })(),
                   <Button
                     type="text"
+                    icon={<OrderedListOutlined />}
+                    onClick={() => handleShowSummary(item)}
+                    title="查看/编辑章节摘要"
+                  >
+                    摘要
+                  </Button>,
+                  <Button
+                    type="text"
                     icon={<SettingOutlined />}
                     onClick={() => handleOpenModal(item.id)}
                   >
@@ -2144,6 +2196,13 @@ export default function Chapters() {
                           />
                         );
                       })()}
+                      <Button
+                        type="text"
+                        icon={<OrderedListOutlined />}
+                        onClick={() => handleShowSummary(item)}
+                        size="small"
+                        title="摘要"
+                      />
                       <Button
                         type="text"
                         icon={<SettingOutlined />}
@@ -2244,6 +2303,14 @@ export default function Chapters() {
                             </Button>
                           );
                         })(),
+                        <Button
+                          type="text"
+                          icon={<OrderedListOutlined />}
+                          onClick={() => handleShowSummary(item)}
+                          title="查看/编辑章节摘要"
+                        >
+                          摘要
+                        </Button>,
                         <Button
                           type="text"
                           icon={<SettingOutlined />}
@@ -2368,6 +2435,13 @@ export default function Chapters() {
                                 />
                               );
                             })()}
+                            <Button
+                              type="text"
+                              icon={<OrderedListOutlined />}
+                              onClick={() => handleShowSummary(item)}
+                              size="small"
+                              title="摘要"
+                            />
                             <Button
                               type="text"
                               icon={<SettingOutlined />}
@@ -2574,7 +2648,9 @@ export default function Chapters() {
                 value={selectedStyleId}
                 onChange={(value) => {
                   setSelectedStyleId(value);
-                  setLastSelectedStyleId(value); // 保存上一次的选择
+                  setLastSelectedStyleId(value);
+                  // 保存到 localStorage（持久化用户选择）
+                  localStorage.setItem('lastSelectedStyleId', String(value));
                 }}
                 disabled={isGenerating}
                 status={!selectedStyleId ? 'error' : undefined}
@@ -2724,6 +2800,7 @@ export default function Chapters() {
       {analysisChapterId && (
         <ChapterAnalysis
           chapterId={analysisChapterId}
+          projectId={currentProject?.id || ''}
           visible={analysisVisible}
           onClose={() => {
             setAnalysisVisible(false);
@@ -2748,6 +2825,23 @@ export default function Chapters() {
             }, 500);
 
             setAnalysisChapterId(null);
+          }}
+        />
+      )}
+
+      {/* 摘要编辑弹窗 */}
+      {currentProject && (
+        <SummaryEditorModal
+          projectId={currentProject.id}
+          chapter={summaryChapter}
+          visible={summaryModalVisible}
+          onClose={() => {
+            setSummaryModalVisible(false);
+            setSummaryChapter(null);
+          }}
+          onSummaryUpdated={() => {
+            // 刷新章节列表以显示最新内容
+            refreshChapters();
           }}
         />
       )}

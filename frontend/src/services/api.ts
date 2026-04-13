@@ -1379,3 +1379,32 @@ export const itemApi = {
       };
     }>(`/items/projects/${projectId}/recalculate-priority`),
 };
+
+// 章节摘要管理 API
+export const summaryApi = {
+  // 获取单个章节摘要
+  getChapterSummary: (projectId: string, chapterId: string) =>
+    api.get<unknown, import('../types').SummaryResponse>(
+      `/summaries/projects/${projectId}/chapters/${chapterId}`
+    ),
+
+  // 获取项目的所有章节摘要
+  getProjectSummaries: (projectId: string, limit?: number) =>
+    api.get<unknown, import('../types').ProjectSummariesResponse>(
+      `/summaries/projects/${projectId}`,
+      { params: { limit: limit || 20 } }
+    ),
+
+  // 重新生成章节摘要
+  regenerateSummary: (projectId: string, chapterId: string) =>
+    api.post<unknown, import('../types').SummaryRegenerateResponse>(
+      `/summaries/projects/${projectId}/chapters/${chapterId}/regenerate`
+    ),
+
+  // 手动更新章节摘要
+  updateSummary: (projectId: string, chapterId: string, data: import('../types').SummaryUpdateRequest) =>
+    api.put<unknown, import('../types').SummaryRegenerateResponse>(
+      `/summaries/projects/${projectId}/chapters/${chapterId}`,
+      data
+    ),
+};

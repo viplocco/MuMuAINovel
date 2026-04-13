@@ -738,7 +738,21 @@ export interface AnalysisData {
   consistency_issues?: ConsistencyIssue[];
   dialogue_ratio: number;
   description_ratio: number;
+  // AI味分析结果
+  ai_flavor_score?: number;
+  ai_flavor_indicators?: AIFlavorIndicator[];
+  ai_flavor_report?: string;
   created_at: string;
+}
+
+// AI味指标类型
+export interface AIFlavorIndicator {
+  type: 'uniform_sentences' | 'repetitive_patterns' | 'generic_expressions' |
+        'lack_of_sensory_details' | 'abstract_descriptions' | 'formulaic_structure';
+  content: string;
+  suggestion: string;
+  severity: 'high' | 'medium' | 'low';
+  position_hint?: string;
 }
 
 // 记忆片段
@@ -1362,4 +1376,49 @@ export interface ItemListResponse {
     by_rarity: Record<string, number>;
     plot_critical_count: number;
   };
+}
+
+// ==================== 章节摘要类型定义 ====================
+
+export interface ChapterSummary {
+  chapter_id: string;
+  chapter_number: number;
+  title: string;
+  summary?: string;
+}
+
+export interface SummaryUpdateRequest {
+  summary: string;
+}
+
+export interface SummaryResponse {
+  success: boolean;
+  chapter_id: string;
+  chapter_number: number;
+  title: string;
+  summary?: string;
+  has_content: boolean;  // 章节是否有正文
+  has_analysis: boolean;  // 章节是否有分析记录
+  summary_source: 'none' | 'planning' | 'analysis' | 'manual';  // 摘要来源
+  message?: string;
+}
+
+export interface SummaryRegenerateResponse {
+  success: boolean;
+  message: string;
+  chapter_id: string;
+  chapter_number: number;
+  title: string;
+  summary?: string;
+  stats?: {
+    chapter_updated: boolean;
+    memory_created: boolean;
+    summary_length: number;
+  };
+}
+
+export interface ProjectSummariesResponse {
+  success: boolean;
+  summaries: ChapterSummary[];
+  total: number;
 }

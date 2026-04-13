@@ -173,7 +173,20 @@ class PlotAnalysis(Base):
     word_count = Column(Integer, comment="章节字数")
     dialogue_ratio = Column(Float, comment="对话占比 0.0-1.0")
     description_ratio = Column(Float, comment="描写占比 0.0-1.0")
-    
+
+    # AI味分析结果
+    ai_flavor_score = Column(Float, comment="AI味评分 0.0-10.0（越高越像AI生成）")
+    ai_flavor_indicators = Column(JSON, comment="""AI味指标列表: [
+        {
+            "type": "uniform_sentences|repetitive_patterns|generic_expressions|lack_of_sensory_details|abstract_descriptions|formulaic_structure",
+            "content": "原文示例",
+            "suggestion": "改进建议",
+            "severity": "high|medium|low",
+            "position_hint": "开头|中段|结尾"
+        }
+    ]""")
+    ai_flavor_report = Column(Text, comment="AI味分析详细报告")
+
     created_at = Column(DateTime, server_default=func.now(), comment="分析时间")
     
     def __repr__(self):
@@ -208,5 +221,8 @@ class PlotAnalysis(Base):
             "consistency_issues": self.consistency_issues or [],
             "dialogue_ratio": self.dialogue_ratio or 0.0,
             "description_ratio": self.description_ratio or 0.0,
+            "ai_flavor_score": self.ai_flavor_score or 0.0,
+            "ai_flavor_indicators": self.ai_flavor_indicators or [],
+            "ai_flavor_report": self.ai_flavor_report or "",
             "created_at": self.created_at.isoformat() if self.created_at else None
         }

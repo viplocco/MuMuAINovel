@@ -10,6 +10,7 @@ from app.models.project import Project
 from app.services.memory_service import memory_service
 from app.services.plot_analyzer import get_plot_analyzer
 from app.services.foreshadow_service import foreshadow_service
+from app.services.summary_sync_service import summary_sync_service
 from app.services.ai_service import create_user_ai_service
 from app.models.settings import Settings
 from app.logger import get_logger
@@ -181,7 +182,7 @@ async def analyze_chapter(
         # 【新增】自动更新伏笔状态
         foreshadow_stats = {"planted_count": 0, "resolved_count": 0, "created_count": 0}
         analysis_foreshadows = analysis_result.get('foreshadows', [])
-        
+
         if analysis_foreshadows:
             try:
                 foreshadow_stats = await foreshadow_service.auto_update_from_analysis(
@@ -194,15 +195,32 @@ async def analyze_chapter(
                 logger.info(f"📊 伏笔自动更新: 埋入{foreshadow_stats['planted_count']}个, 回收{foreshadow_stats['resolved_count']}个")
             except Exception as fs_error:
                 logger.error(f"⚠️ 伏笔自动更新失败（不影响分析结果）: {str(fs_error)}")
-        
+
+        # 【新增】自动同步章节摘要
+        summary_stats = {"chapter_updated": False, "memory_created": False, "summary_length": 0}
+        try:
+            summary_stats = await summary_sync_service.sync_summary_from_analysis(
+                db=db,
+                project_id=project_id,
+                chapter_id=chapter_id,
+                chapter_number=chapter.chapter_number,
+                analysis_result=analysis_result,
+                user_id=user_id
+            )
+            if summary_stats.get('chapter_updated'):
+                logger.info(f"📝 章节摘要已同步: {summary_stats.get('summary_length', 0)}字")
+        except Exception as summary_error:
+            logger.error(f"⚠️ 章节摘要同步失败（不影响分析结果）: {str(summary_error)}")
+
         logger.info(f"✅ 章节分析完成: 保存{saved_count}条记忆")
-        
+
         return {
             "success": True,
             "message": f"分析完成,提取了{saved_count}条记忆",
             "analysis": plot_analysis.to_dict(),
             "memories_count": saved_count,
-            "foreshadow_stats": foreshadow_stats
+            "foreshadow_stats": foreshadow_stats,
+            "summary_stats": summary_stats
         }
         
     except HTTPException:

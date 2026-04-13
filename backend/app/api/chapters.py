@@ -1395,7 +1395,11 @@ async def analyze_chapter_background(
                     suggestions=analysis_result.get('suggestions', []),
                     consistency_issues=analysis_result.get('consistency_issues', []),
                     dialogue_ratio=analysis_result.get('dialogue_ratio', 0),
-                    description_ratio=analysis_result.get('description_ratio', 0)
+                    description_ratio=analysis_result.get('description_ratio', 0),
+                    # AI味分析结果
+                    ai_flavor_score=analysis_result.get('ai_flavor', {}).get('score', 0.0),
+                    ai_flavor_indicators=analysis_result.get('ai_flavor', {}).get('indicators', []),
+                    ai_flavor_report=analysis_result.get('ai_flavor', {}).get('overall_report', '')
                 )
                 db_session.add(plot_analysis)
 

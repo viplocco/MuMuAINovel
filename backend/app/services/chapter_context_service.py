@@ -32,7 +32,8 @@ class OneToManyContext:
     
     # === P0-核心信息 ===
     chapter_outline: str = ""           # 本章大纲（从expansion_plan构建）
-    recent_chapters_context: Optional[str] = None  # 最近10章expansion_plan摘要
+    recent_chapters_context: Optional[str] = None  # 最近10章摘要（优先summary）
+    recent_chapters_content: Optional[str] = None  # 前N章正文（上一章完整+前2章5000字）
     continuation_point: Optional[str] = None  # 衔接锚点（统一500字）
     previous_chapter_summary: Optional[str] = None  # 上一章剧情摘要
     previous_chapter_events: Optional[List[str]] = None  # 上一章关键事件
@@ -66,8 +67,8 @@ class OneToManyContext:
     def get_total_context_length(self) -> int:
         """计算总上下文长度"""
         total = 0
-        for field_name in ['chapter_outline', 'recent_chapters_context', 'continuation_point',
-                          'chapter_characters', 'chapter_careers',
+        for field_name in ['chapter_outline', 'recent_chapters_context', 'recent_chapters_content',
+                          'continuation_point', 'chapter_characters', 'chapter_careers',
                           'relevant_memories', 'foreshadow_reminders', 'chapter_items',
                           'previous_chapter_summary']:
             value = getattr(self, field_name, None)
@@ -240,7 +241,15 @@ class OneToManyContextBuilder:
             context.previous_chapter_summary = ending_info.get('summary')
             context.previous_chapter_events = ending_info.get('key_events')
             logger.info(f"  ✅ 衔接锚点: {len(context.continuation_point or '')}字符")
-        
+
+            # === 新增：前N章正文引用 ===
+            if chapter_number > 1:
+                context.recent_chapters_content = await self._build_recent_chapters_content(
+                    chapter, project.id, db, max_chapters=3, max_content_length=5000
+                )
+                if context.recent_chapters_content:
+                    logger.info(f"  ✅ 前N章正文: {len(context.recent_chapters_content)}字符")
+
         # === P1-重要信息 ===
         # 角色信息（完整版：含年龄、外貌、背景、关系、组织、职业）+ 独立职业详情
         characters_info, careers_info = await self._build_chapter_characters_1n(
@@ -297,6 +306,7 @@ class OneToManyContextBuilder:
             "chapter_number": chapter_number,
             "has_continuation": context.continuation_point is not None,
             "continuation_length": len(context.continuation_point or ""),
+            "recent_content_length": len(context.recent_chapters_content or ""),
             "characters_length": len(context.chapter_characters),
             "careers_length": len(context.chapter_careers or ""),
             "recent_context_length": len(context.recent_chapters_context or ""),
@@ -614,26 +624,32 @@ class OneToManyContextBuilder:
         project_id: str,
         db: AsyncSession
     ) -> Optional[str]:
-        """构建最近10章的expansion_plan摘要"""
+        """构建最近10章摘要（优先使用生成后摘要）"""
         try:
             result = await db.execute(
-                select(Chapter.chapter_number, Chapter.title, Chapter.expansion_plan, Chapter.summary)
+                select(Chapter.chapter_number, Chapter.title, Chapter.summary, Chapter.expansion_plan)
                 .where(Chapter.project_id == project_id)
                 .where(Chapter.chapter_number < chapter.chapter_number)
                 .order_by(Chapter.chapter_number.desc())
                 .limit(self.RECENT_CHAPTERS_COUNT)
             )
             recent_chapters = result.all()
-            
+
             if not recent_chapters:
                 return None
-            
+
             # 按章节号正序排列
             recent_chapters = sorted(recent_chapters, key=lambda x: x[0])
-            
-            lines = ["【最近章节规划】"]
-            for ch_num, ch_title, expansion_plan, summary in recent_chapters:
-                if expansion_plan:
+
+            lines = ["【最近章节摘要】"]
+            for ch_num, ch_title, summary, expansion_plan in recent_chapters:
+                # 优先使用生成后摘要（更准确反映实际内容）
+                if summary:
+                    # 摘要可能较长，截取前200字用于上下文
+                    summary_preview = summary[:200] + ("..." if len(summary) > 200 else "")
+                    lines.append(f"第{ch_num}章《{ch_title}》：{summary_preview}")
+                elif expansion_plan:
+                    # 降级使用规划摘要
                     try:
                         plan = json.loads(expansion_plan)
                         plot_summary = plan.get('plot_summary', '')
@@ -644,14 +660,11 @@ class OneToManyContextBuilder:
                             line += f"（关键事件：{events_str}）"
                         lines.append(line)
                     except json.JSONDecodeError:
-                        if summary:
-                            lines.append(f"第{ch_num}章《{ch_title}》：{summary[:100]}")
-                elif summary:
-                    lines.append(f"第{ch_num}章《{ch_title}》：{summary[:100]}")
-            
+                        pass
+
             if len(lines) <= 1:
                 return None
-            
+
             return "\n".join(lines)
         except Exception as e:
             logger.error(f"❌ 构建最近章节上下文失败: {str(e)}")
@@ -676,10 +689,13 @@ class OneToManyContextBuilder:
         try:
             query_text = chapter_outline[:500].replace('\n', ' ')
 
+            # 包含所有已使用的记忆类型
             relevant_memories = await self.memory_service.search_memories(
                 user_id=user_id,
                 project_id=project_id,
                 query=query_text,
+                memory_types=['plot_point', 'character_event', 'hook', 'foreshadow',
+                              'chapter_summary', 'item_event', 'scene', 'dialogue'],
                 limit=15,
                 min_importance=0.0
             )
@@ -696,15 +712,83 @@ class OneToManyContextBuilder:
             memory_lines = ["【相关记忆】"]
             for mem in filtered_memories[:self.MEMORY_COUNT]:
                 similarity = mem.get('similarity', 0)
-                content = mem.get('content', '')[:100]
-                memory_lines.append(f"- (相关度:{similarity:.2f}) {content}")
+                # 从 metadata 获取记忆类型，用于区分显示
+                mem_type = mem.get('metadata', {}).get('memory_type', '')
+                content = mem.get('content', '')[:200]  # 放宽为200字
+                # 显示记忆类型标签
+                type_label = f"[{mem_type}] " if mem_type else ""
+                memory_lines.append(f"- {type_label}(相关度:{similarity:.2f}) {content}")
 
             return "\n".join(memory_lines) if len(memory_lines) > 1 else None
 
         except Exception as e:
             logger.error(f"❌ 获取相关记忆失败: {str(e)}")
             return None
-    
+
+    async def _build_recent_chapters_content(
+        self,
+        chapter: Chapter,
+        project_id: str,
+        db: AsyncSession,
+        max_chapters: int = 3,
+        max_content_length: int = 5000
+    ) -> Optional[str]:
+        """
+        获取前N章的完整正文内容（用于连贯性参考）
+
+        Args:
+            chapter: 当前章节
+            project_id: 项目ID
+            db: 数据库会话
+            max_chapters: 最大章节数（默认3章）
+            max_content_length: 每章最大截取长度（上一章除外）
+
+        Returns:
+            格式化的前N章正文内容
+        """
+        if chapter.chapter_number <= 1:
+            return None
+
+        try:
+            result = await db.execute(
+                select(Chapter)
+                .where(Chapter.project_id == project_id)
+                .where(Chapter.chapter_number < chapter.chapter_number)
+                .where(Chapter.content != None)
+                .where(Chapter.content != "")
+                .order_by(Chapter.chapter_number.desc())
+                .limit(max_chapters)
+            )
+            recent_chapters = result.scalars().all()
+
+            if not recent_chapters:
+                return None
+
+            # 按章节号正序排列
+            recent_chapters = sorted(recent_chapters, key=lambda x: x.chapter_number)
+
+            lines = ["【前几章正文参考】"]
+            for i, ch in enumerate(recent_chapters):
+                # 上一章（最近的一章）完整引用，其余章节截取
+                is_previous_chapter = (i == len(recent_chapters) - 1)
+                if is_previous_chapter:
+                    # 上一章完整引用
+                    content_preview = ch.content
+                    lines.append(f"\n=== 第{ch.chapter_number}章《{ch.title}》（完整引用） ===")
+                else:
+                    # 前2章截取最多5000字
+                    content_preview = ch.content[:max_content_length]
+                    lines.append(f"\n=== 第{ch.chapter_number}章《{ch.title}》（截取{max_content_length}字） ===")
+
+                lines.append(content_preview)
+                if not is_previous_chapter and len(ch.content) > max_content_length:
+                    lines.append(f"... (原文共{len(ch.content)}字)")
+
+            return "\n".join(lines)
+        except Exception as e:
+            logger.error(f"❌ 获取前几章正文失败: {str(e)}")
+            return None
+
     async def _get_last_ending_enhanced(
         self,
         chapter: Chapter,
