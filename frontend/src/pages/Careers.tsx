@@ -97,10 +97,38 @@ export default function Careers() {
     const handleOpenModal = (career?: Career) => {
         if (career) {
             setEditingCareer(career);
-            form.setFieldsValue({
-                ...career,
-                stages: career.stages.map(s => `${s.level}. ${s.name}${s.description ? ` - ${s.description}` : ''}`).join('\n')
-            });
+
+            // 构建表单初始值，正确处理嵌套字段
+            const formValues: Record<string, unknown> = {
+                name: career.name,
+                type: career.type,
+                description: career.description,
+                category: career.category,
+                stages: career.stages.map(s => `${s.level}. ${s.name}${s.description ? ` - ${s.description}` : ''}`).join('\n'),
+                requirements: career.requirements,
+                special_abilities: career.special_abilities,
+                worldview_rules: career.worldview_rules,
+            };
+
+            // 正确初始化 base_attributes 嵌套字段
+            if (career.base_attributes) {
+                formValues.base_attributes = career.base_attributes;
+            }
+
+            // 正确初始化 per_stage_bonus 嵌套字段
+            // 表单使用 ['per_stage_bonus', attrName, 'per_stage'] 路径
+            // 所以需要将 { attrName: { per_stage: value } } 格式的数据正确设置
+            if (career.per_stage_bonus) {
+                const perStageBonus: Record<string, { per_stage: number }> = {};
+                for (const [attrName, bonus] of Object.entries(career.per_stage_bonus)) {
+                    if (typeof bonus === 'object' && 'per_stage' in bonus) {
+                        perStageBonus[attrName] = { per_stage: bonus.per_stage };
+                    }
+                }
+                formValues.per_stage_bonus = perStageBonus;
+            }
+
+            form.setFieldsValue(formValues);
         } else {
             setEditingCareer(null);
             form.resetFields();
@@ -143,13 +171,28 @@ export default function Careers() {
                     };
                 });
 
-            const data = {
-                ...values,
+            // 构建提交数据
+            // 注意：如果用户没有修改能力值配置，不发送这些字段以保留数据库原有值
+            const data: Record<string, unknown> = {
+                name: values.name,
+                type: values.type,
+                description: values.description,
+                category: values.category,
                 stages,
                 max_stage: stages.length,
-                base_attributes: values.base_attributes ? JSON.stringify(values.base_attributes) : null,
-                per_stage_bonus: values.per_stage_bonus ? JSON.stringify(values.per_stage_bonus) : null
+                requirements: values.requirements,
+                special_abilities: values.special_abilities,
+                worldview_rules: values.worldview_rules,
             };
+
+            // 只有当能力值配置有实际内容时才发送，避免用 null 覆盖已有数据
+            if (values.base_attributes && Object.keys(values.base_attributes).length > 0) {
+                data.base_attributes = JSON.stringify(values.base_attributes);
+            }
+
+            if (values.per_stage_bonus && Object.keys(values.per_stage_bonus).length > 0) {
+                data.per_stage_bonus = JSON.stringify(values.per_stage_bonus);
+            }
 
             if (editingCareer) {
                 await api.put(`/careers/${editingCareer.id}`, data);
@@ -375,7 +418,14 @@ export default function Careers() {
                     setIsModalOpen(false);
                     form.resetFields();
                 }}
-                footer={null}
+                footer={
+                    <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                        <Button onClick={() => setIsModalOpen(false)}>取消</Button>
+                        <Button type="primary" onClick={() => form.submit()}>
+                            {editingCareer ? '保存' : '创建'}
+                        </Button>
+                    </Space>
+                }
                 width={800}
                 centered
                 styles={{
@@ -494,15 +544,6 @@ export default function Careers() {
                             }]}
                         />
                     )}
-
-                    <Form.Item>
-                        <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-                            <Button onClick={() => setIsModalOpen(false)}>取消</Button>
-                            <Button type="primary" htmlType="submit">
-                                {editingCareer ? '更新' : '创建'}
-                            </Button>
-                        </Space>
-                    </Form.Item>
                 </Form>
             </Modal>
 

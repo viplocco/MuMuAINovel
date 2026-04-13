@@ -42,6 +42,46 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/projects", tags=["项目管理"])
 
 
+@router.get("/genres", summary="获取预定义小说类型列表")
+async def get_genre_list():
+    """
+    获取系统预定义的小说类型列表
+
+    返回所有支持的类型及其描述，用于灵感模式和手动创建项目时的类型选择。
+    类型列表与物品分类、角色属性体系保持一致。
+
+    Returns:
+        list: 类型列表，包含名称和描述
+    """
+    from app.constants.attribute_definitions import get_all_genres
+
+    # 类型描述映射
+    genre_descriptions = {
+        "修仙": "修仙问道、境界突破、飞升成仙",
+        "玄幻": "异世大陆、血脉觉醒、战力等级",
+        "仙侠": "仙侠世界、剑道修行、斩妖除魔",
+        "奇幻": "魔法世界、种族共存、奇幻冒险",
+        "灵异": "鬼怪悬疑、阴阳两界、驱魔抓鬼",
+        "武侠": "江湖恩怨、武功秘籍、侠义精神",
+        "历史": "历史背景、权谋争斗、朝代更迭",
+        "都市": "都市生活、职场情感、现代背景",
+        "现代": "现代社会、现实题材、生活故事",
+        "言情": "爱情主线、情感纠葛、浪漫故事",
+        "游戏": "游戏世界、电竞竞技、网游小说",
+        "悬疑": "悬疑推理、案件侦破、谜团解开",
+        "科幻": "科技未来、太空探索、科幻设定",
+        "末世": "末日生存、丧尸危机、废土世界",
+    }
+
+    genres = get_all_genres()
+    result = [
+        {"name": genre, "description": genre_descriptions.get(genre, "")}
+        for genre in genres
+    ]
+
+    return result
+
+
 @router.post("", response_model=ProjectResponse, summary="创建项目")
 async def create_project(
     project: ProjectCreate,

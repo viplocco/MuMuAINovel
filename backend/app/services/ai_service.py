@@ -131,19 +131,16 @@ class AIService:
     def clear_mcp_cache(self):
         """
         清理MCP工具缓存
-        
+
         当禁用MCP时调用此方法，确保后续AI调用不会使用缓存的工具。
         同时更新 _tools_loaded 状态，使下次调用时重新检查。
         """
         if self._cached_tools is not None:
-            logger.info(f"🔧 清理MCP工具缓存，移除 {len(self._cached_tools)} 个工具")
+            logger.debug(f"清理MCP工具缓存，移除 {len(self._cached_tools)} 个工具")
             self._cached_tools = None
-        else:
-            logger.debug(f"🔧 MCP工具缓存已经是空，无需清理")
-        
+
         # 更新加载状态，确保下次调用会重新检查
         self._tools_loaded = False
-        logger.debug(f"🔧 MCP工具状态已重置: enable_mcp={self._enable_mcp}, _tools_loaded=False")
     
     def _get_provider(self, provider: Optional[str] = None) -> BaseAIProvider:
         """获取对应的 Provider"""
@@ -212,9 +209,9 @@ class AIService:
             self._tools_loaded = True
             
             if self._cached_tools:
-                logger.info(f"🔧 已加载 {len(self._cached_tools)} 个MCP工具")
+                logger.debug(f"已加载 {len(self._cached_tools)} 个MCP工具")
             else:
-                logger.debug(f"📭 用户 {self.user_id} 没有可用的MCP工具")
+                logger.debug(f"用户 {self.user_id} 没有可用的MCP工具")
             
             return self._cached_tools
             
@@ -260,7 +257,7 @@ class AIService:
         prompt = original_prompt
         
         for round_num in range(max_rounds):
-            logger.info(f"🔧 工具调用 - 第{round_num+1}/{max_rounds}轮，{len(tool_calls)}个工具")
+            logger.debug(f"工具调用 - 第{round_num+1}/{max_rounds}轮，{len(tool_calls)}个工具")
             
             try:
                 # 批量执行工具调用
@@ -360,14 +357,12 @@ class AIService:
         if is_deepseek:
             if effective_max_tokens and effective_max_tokens > 4096:
                 effective_max_tokens = 4096
-                logger.info(f"  🔧 DeepSeek 模型，限制 max_tokens 为 {effective_max_tokens}")
+                logger.debug(f"DeepSeek 模型，限制 max_tokens 为 {effective_max_tokens}")
             # DeepSeek 不支持 tool_choice 参数，且可能不支持 MCP 工具，禁用工具
             if tool_choice and tool_choice != "none":
                 tool_choice = None
-                logger.debug(f"  🔧 DeepSeek 模型，禁用 tool_choice")
             # 禁用 MCP 工具以避免 400 错误
             auto_mcp = False
-            logger.info(f"  🔧 DeepSeek 模型，禁用 MCP 工具避免 400 错误")
 
         # 自动加载MCP工具（非 DeepSeek 模型）
         if auto_mcp and tools is None and not is_deepseek:
@@ -411,12 +406,19 @@ class AIService:
         tool_choice: Optional[str] = None,
         auto_mcp: bool = True,
         mcp_max_rounds: Optional[int] = None,
+        auto_continue: bool = True,  # 是否自动续写（当 finish_reason == "length" 时）
+        max_continue_rounds: int = 5,  # 最大续写次数
     ) -> AsyncGenerator[str, None]:
         """
-        流式生成文本（自动支持MCP工具）
-        
+        流式生成文本（自动支持MCP工具 + 自动续写）
+
         工具调用在 Provider 层通过流式方式处理，支持真正的流式工具调用。
-        
+
+        自动续写功能：
+        - 当 finish_reason == "length" 时，自动继续请求
+        - 将已生成内容作为前缀，请求继续生成
+        - 最多续写 max_continue_rounds 次
+
         Args:
             prompt: 用户提示词
             provider: AI提供商
@@ -427,40 +429,78 @@ class AIService:
             tool_choice: 工具选择策略（"auto"/"none"/"required"）
             auto_mcp: 是否自动加载MCP工具
             mcp_max_rounds: 最大工具调用轮数（None使用默认值3）
-            
+            auto_continue: 是否自动续写（默认True）
+            max_continue_rounds: 最大续写次数（默认5）
+
         Yields:
             生成的文本块
         """
-        logger.debug(f"🔧 generate_text_stream: auto_mcp={auto_mcp}, tool_choice={tool_choice}")
-
         effective_model = model or self.default_model
         effective_max_tokens = max_tokens or self.default_max_tokens
 
-        # ⭐ 不再对任何模型进行特殊限制，所有模型平等对待
-        # 用户可通过配置自定义模型参数
+        # 检测 DeepSeek 模型并限制 max_tokens 和禁用工具（流式调用同样需要）
+        is_deepseek = effective_model and effective_model.startswith("deepseek")
+        if is_deepseek:
+            if effective_max_tokens and effective_max_tokens > 4096:
+                effective_max_tokens = 4096
+                logger.debug(f"DeepSeek 流式调用，限制 max_tokens 为 {effective_max_tokens}")
+            # DeepSeek 不支持 tool_choice 参数
+            if tool_choice and tool_choice != "none":
+                tool_choice = None
+            # 禁用 MCP 工具以避免 400 错误
+            auto_mcp = False
 
         tools_to_use = None
 
-        # 加载MCP工具
+        # 加载MCP工具（非 DeepSeek 模型）
         if auto_mcp:
             tools_to_use = await self._prepare_mcp_tools(auto_mcp=auto_mcp)
             if tools_to_use:
-                logger.info(f"🔧 已获取 {len(tools_to_use)} 个MCP工具")
+                logger.debug(f"已获取 {len(tools_to_use)} 个MCP工具")
 
         # 流式生成（Provider 层处理工具调用）
         prov = self._get_provider(provider)
-        logger.debug(f"🔧 开始流式生成，provider={provider or self.api_provider}, tools_count={len(tools_to_use) if tools_to_use else 0}")
-        async for chunk in prov.generate_stream(
-            prompt=prompt,
-            model=effective_model,
-            temperature=temperature or self.default_temperature,
-            max_tokens=effective_max_tokens,
-            system_prompt=system_prompt or self.default_system_prompt,
-            tools=tools_to_use,
-            tool_choice=tool_choice,
-            user_id=self.user_id,
-        ):
-            yield chunk
+
+        # 累积内容和续写逻辑
+        accumulated_content = ""
+        continue_count = 0
+        current_prompt = prompt
+
+        while True:
+            finish_reason = None
+            async for chunk in prov.generate_stream(
+                prompt=current_prompt,
+                model=effective_model,
+                temperature=temperature or self.default_temperature,
+                max_tokens=effective_max_tokens,
+                system_prompt=system_prompt or self.default_system_prompt,
+                tools=tools_to_use,
+                tool_choice=tool_choice,
+                user_id=self.user_id,
+            ):
+                # 检查是否是结束信号
+                if isinstance(chunk, dict) and chunk.get("done"):
+                    finish_reason = chunk.get("finish_reason")
+                    logger.debug(f"流式生成结束, finish_reason: {finish_reason}, 已累积: {len(accumulated_content)}字")
+                    break
+                elif isinstance(chunk, str):
+                    accumulated_content += chunk
+                    yield chunk
+                elif isinstance(chunk, dict) and chunk.get("content"):
+                    accumulated_content += chunk["content"]
+                    yield chunk["content"]
+
+            # 检查是否需要续写
+            if auto_continue and finish_reason == "length" and continue_count < max_continue_rounds:
+                continue_count += 1
+                logger.info(f"🔄 内容被截断(length)，自动续写 第{continue_count}次，已累积: {len(accumulated_content)}字")
+                # 构建续写提示词
+                current_prompt = f"请继续完成之前的内容，从以下位置继续写（不要重复已有内容）：\n\n【已生成内容的结尾部分】\n{accumulated_content[-500:]}\n\n【续写要求】\n请直接继续写，不要重新开始，保持风格和内容的连贯性。"
+            else:
+                # 不需要续写或达到最大续写次数
+                if finish_reason == "length" and continue_count >= max_continue_rounds:
+                    logger.warning(f"⚠️ 达到最大续写次数({max_continue_rounds})，内容可能不完整")
+                break
 
     async def call_with_json_retry(
         self,

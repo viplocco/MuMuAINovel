@@ -15,6 +15,45 @@ from app.logger import get_logger
 logger = get_logger(__name__)
 
 
+def get_strategy_instruction(strategy: str) -> str:
+    """
+    将策略代码转换为具体的策略说明
+
+    Args:
+        strategy: 策略代码 (auto/balanced/climax/detail)
+
+    Returns:
+        策略说明文字
+    """
+    strategy_map = {
+        "auto": """【AI自动判断】
+请根据大纲内容的特点，自动选择最合适的展开策略：
+- 若大纲包含激烈冲突、高潮情节 → 采用"高潮重点"策略，在关键节点增加篇幅
+- 若大纲内容细腻、需要深入刻画 → 采用"细节丰富"策略，注重场景描写和心理刻画
+- 若大纲内容平稳、线性推进 → 采用"均衡分配"策略，章节篇幅均匀
+请在展开时自动应用所选策略，并在输出中体现策略特点。""",
+
+        "balanced": """【均衡分配策略】
+- 各章节篇幅均匀，节奏平稳
+- 每章内容量相近，不刻意偏重某一章
+- 适合平稳推进、线性发展的情节""",
+
+        "climax": """【高潮重点策略】
+- 在关键节点（冲突爆发、转折点）增加篇幅和细节
+- 高潮章节内容更丰富，字数可适当增加
+- 过渡章节相对简洁，为高潮铺垫
+- 适合冲突激烈、情感波动大的情节""",
+
+        "detail": """【细节丰富策略】
+- 注重场景描写、心理刻画、对话细节
+- 每章都要深入挖掘，不追求快节奏
+- 充分展现环境氛围和角色内心
+- 适合细腻叙事、慢节奏的风格"""
+    }
+
+    return strategy_map.get(strategy, strategy_map["auto"])
+
+
 class PlotExpansionService:
     """大纲剧情展开服务"""
     
@@ -107,7 +146,10 @@ class PlotExpansionService:
         
         # 获取大纲上下文（前后大纲）
         context_info = await self._get_outline_context(outline, project.id, db)
-        
+
+        # 获取策略说明文字
+        strategy_instruction = get_strategy_instruction(expansion_strategy)
+
         # 获取自定义提示词模板
         template = await PromptService.get_template("OUTLINE_EXPAND_SINGLE", project.user_id, db)
         # 格式化提示词
@@ -125,7 +167,7 @@ class PlotExpansionService:
             outline_title=outline.title,
             outline_content=outline.content,
             context_info=context_info,
-            strategy_instruction=expansion_strategy,
+            strategy_instruction=strategy_instruction,
             target_chapter_count=target_chapter_count,
             scene_instruction="",  # 暂时为空
             scene_field=""  # 暂时为空
@@ -181,7 +223,10 @@ class PlotExpansionService:
         
         # 获取大纲上下文
         context_info = await self._get_outline_context(outline, project.id, db)
-        
+
+        # 获取策略说明文字
+        strategy_instruction = get_strategy_instruction(expansion_strategy)
+
         all_chapter_plans = []
         
         # 🔧 收集所有已使用的关键事件，用于防止重复
@@ -252,7 +297,7 @@ class PlotExpansionService:
                 outline_content=outline.content,
                 context_info=context_info,
                 previous_context=previous_context,
-                strategy_instruction=expansion_strategy,
+                strategy_instruction=strategy_instruction,
                 start_index=current_start_index,
                 end_index=current_start_index + current_batch_size - 1,
                 target_chapter_count=current_batch_size,

@@ -105,6 +105,7 @@ class OpenAIProvider(BaseAIProvider):
             return
         
         # 无工具时普通流式生成
+        finish_reason = None
         async for chunk in self.client.chat_completion_stream(
             messages=messages,
             model=model,
@@ -113,7 +114,13 @@ class OpenAIProvider(BaseAIProvider):
         ):
             # 确保只 yield 字符串内容，避免 yield 字典导致类型错误
             if isinstance(chunk, dict):
-                if chunk.get("content"):
+                # 检查是否是结束信号
+                if chunk.get("done"):
+                    finish_reason = chunk.get("finish_reason")
+                    logger.debug(f"流式生成结束, finish_reason: {finish_reason}")
+                    # 发送结束信号，包含 finish_reason
+                    yield {"done": True, "finish_reason": finish_reason}
+                elif chunk.get("content"):
                     yield chunk["content"]
             else:
                 yield chunk

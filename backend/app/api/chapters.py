@@ -75,6 +75,51 @@ async def get_db_write_lock(user_id: str) -> Lock:
     return db_write_locks[user_id]
 
 
+def clean_chapter_content(content: str) -> str:
+    """
+    清理章节正文中的多余分隔符符号
+
+    AI生成的内容有时会包含分隔符（如 ***、---、___ 等），
+    这些符号在小说正文中不应出现，需要清理。
+
+    Args:
+        content: 原始章节内容
+
+    Returns:
+        清理后的章节内容
+    """
+    import re
+
+    if not content:
+        return content
+
+    # 清理常见的分隔符模式（三个或以上的相同符号组成的独立行）
+    # 包括：***、---、___、~~~、=== 等
+    patterns = [
+        r'\n\*{3,}\n',      # *** 或更多星号（独立行）
+        r'\n-{3,}\n',       # --- 或更多减号（独立行）
+        r'\n_{3,}\n',       # ___ 或更多下划线（独立行）
+        r'\n~{3,}\n',       # ~~~ 或更多波浪号（独立行）
+        r'\n={3,}\n',       # === 或更多等号（独立行）
+        r'\n\*{3,}$',       # 行末的分隔符
+        r'^\*{3,}\n',       # 行首的分隔符
+        r'\n-{3,}$',        # 行末的减号分隔符
+        r'^-{3,}\n',        # 行首的减号分隔符
+    ]
+
+    cleaned = content
+    for pattern in patterns:
+        cleaned = re.sub(pattern, '\n', cleaned)
+
+    # 清理连续多余的空行（超过2个空行压缩为2个）
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+
+    # 清理行首行尾空白
+    cleaned = cleaned.strip()
+
+    return cleaned
+
+
 @router.post("", response_model=ChapterResponse, summary="创建章节")
 async def create_chapter(
     chapter: ChapterCreate,
@@ -531,6 +576,90 @@ async def check_prerequisites(
     return True, "", previous_chapters
 
 
+async def build_character_careers_for_consistency(
+    db: AsyncSession,
+    project_id: str,
+    characters: list[Character]
+) -> list[dict]:
+    """
+    构建角色职业等级数据，用于一致性检测
+
+    Args:
+        db: 数据库会话
+        project_id: 项目ID
+        characters: 角色列表
+
+    Returns:
+        角色职业等级列表，每个包含：
+        - character_name: 角色名
+        - character_status: 角色存活状态
+        - career_name: 职业名
+        - current_stage: 当前阶段号
+        - stage_name: 阶段名称
+        - max_stage: 最大阶段
+        - career_id: 职业ID
+    """
+    if not characters:
+        return []
+
+    # 获取所有职业信息
+    careers_result = await db.execute(
+        select(Career).where(Career.project_id == project_id)
+    )
+    careers_map = {c.id: c for c in careers_result.scalars().all()}
+
+    # 获取所有角色的职业关联
+    character_ids = [c.id for c in characters]
+    character_careers_result = await db.execute(
+        select(CharacterCareer).where(CharacterCareer.character_id.in_(character_ids))
+    )
+    character_careers = character_careers_result.scalars().all()
+
+    # 构建角色职业数据
+    result = []
+
+    # 按角色ID分组职业
+    char_careers_map: dict[str, list] = {cid: [] for cid in character_ids}
+    for cc in character_careers:
+        char_careers_map[cc.character_id].append(cc)
+
+    for character in characters:
+        # 角色存活状态
+        char_status = character.status or 'active'
+
+        # 角色的职业列表
+        careers = char_careers_map.get(character.id, [])
+
+        for cc in careers:
+            career = careers_map.get(cc.career_id)
+            if not career:
+                continue
+
+            # 解析阶段名称
+            stage_name = ''
+            try:
+                stages = json.loads(career.stages) if career.stages else []
+                for stage in stages:
+                    if stage.get('level') == cc.current_stage:
+                        stage_name = stage.get('name', '')
+                        break
+            except (json.JSONDecodeError, Exception):
+                pass
+
+            result.append({
+                'character_name': character.name,
+                'character_status': char_status,
+                'career_name': career.name,
+                'current_stage': cc.current_stage,
+                'stage_name': stage_name,
+                'max_stage': career.max_stage,
+                'career_id': cc.id,
+            })
+
+    logger.info(f"📋 构建 {len(result)} 条角色职业数据用于一致性检测")
+    return result
+
+
 async def build_characters_info_with_careers(
     db: AsyncSession,
     project_id: str,
@@ -840,6 +969,131 @@ async def check_can_generate(
     }
 
 
+async def analyze_chapter_items_specialized(
+    chapter: Chapter,
+    project_id: str,
+    db_session: AsyncSession,
+    ai_service: AIService
+) -> dict:
+    """
+    专门分析章节中的物品信息（使用 ITEM_ANALYSIS 提示词）
+
+    Args:
+        chapter: 章节对象
+        project_id: 项目ID
+        db_session: 数据库会话
+        ai_service: AI服务实例
+
+    Returns:
+        dict: 物品分析结果，包含 items 列表和 summary
+    """
+    from app.services.json_helper import clean_json_response, parse_json
+
+    logger.info(f"🎁 开始专门物品分析: 第{chapter.chapter_number}章")
+
+    try:
+        # 1. 获取已有物品列表（用于匹配）
+        existing_items = await item_service._get_existing_items_for_matching(
+            db_session, project_id
+        )
+
+        # 格式化已有物品信息
+        existing_items_text = ""
+        if existing_items:
+            for item in existing_items:
+                existing_items_text += f"- ID: {item.get('id')}, 名称: {item.get('name')}"
+                if item.get('alias'):
+                    existing_items_text += f", 别名: {','.join(item.get('alias', []))}"
+                if item.get('owner_character_name'):
+                    existing_items_text += f", 持有者: {item.get('owner_character_name')}"
+                existing_items_text += f", 状态: {item.get('status')}\n"
+        else:
+            existing_items_text = "（暂无已有物品）"
+
+        # 2. 获取项目信息（用于分类初始化时确定题材）
+        project_result = await db_session.execute(
+            select(Project).where(Project.id == project_id)
+        )
+        project = project_result.scalar_one_or_none()
+        project_genre = project.genre if project else None
+
+        # 3. 获取分类信息
+        categories_tree = await item_service.get_category_tree(db_session, project_id, project_genre)
+
+        # 扁平化分类树，提取所有分类名称
+        def flatten_categories(tree, result=None):
+            if result is None:
+                result = []
+            for cat in tree:
+                result.append(cat)
+                if cat.get('children'):
+                    flatten_categories(cat.get('children', []), result)
+            return result
+
+        all_categories = flatten_categories(categories_tree)
+
+        categories_text = ""
+        if all_categories:
+            for cat in all_categories:
+                categories_text += f"- {cat.get('name', '')}"
+                if cat.get('parent_id'):
+                    categories_text += f"（子分类）"
+                categories_text += "\n"
+        else:
+            categories_text = "（暂无分类）"
+
+        # 4. 构建分析提示词
+        # 限制内容长度以加快响应
+        content_limit = 6000
+        chapter_content = chapter.content[:content_limit]
+        if len(chapter.content) > content_limit:
+            chapter_content += "\n...[内容已截断]..."
+
+        prompt = PromptService.ITEM_ANALYSIS.format(
+            chapter_number=chapter.chapter_number,
+            title=chapter.title or f"第{chapter.chapter_number}章",
+            content=chapter_content,
+            existing_items=existing_items_text[:2000] if existing_items_text else "（暂无已有物品）",
+            analysis_requirements="全面分析本章节中的所有物品相关信息",
+            categories_info=categories_text[:1000] if categories_text else "（暂无分类）"
+        )
+
+        # 5. 执行AI分析
+        logger.info(f"📄 物品分析提示词长度: {len(prompt)} 字符")
+
+        analysis_response = await ai_service.generate_text(
+            prompt=prompt,
+            temperature=0.3,
+            max_tokens=8000
+        )
+
+        # 6. 解析分析结果
+        analysis_content = analysis_response.get('content', '') if isinstance(analysis_response, dict) else ''
+
+        if not analysis_content or not analysis_content.strip():
+            logger.warning(f"⚠️ 物品分析返回空响应")
+            return {"items": [], "summary": "物品分析返回空响应"}
+
+        # 清理并解析JSON
+        cleaned_content = clean_json_response(analysis_content)
+        analysis_result = parse_json(cleaned_content)
+
+        if analysis_result is None:
+            try:
+                analysis_result = json.loads(cleaned_content)
+            except json.JSONDecodeError:
+                logger.error(f"❌ 物品分析JSON解析失败")
+                return {"items": [], "summary": "JSON解析失败"}
+
+        logger.info(f"✅ 物品分析完成: 识别到 {len(analysis_result.get('items', []))} 个物品事件")
+
+        return analysis_result
+
+    except Exception as e:
+        logger.error(f"❌ 专门物品分析失败: {str(e)}", exc_info=True)
+        return {"items": [], "summary": f"分析失败: {str(e)}"}
+
+
 async def analyze_chapter_background(
     chapter_id: str,
     user_id: str,
@@ -983,6 +1237,14 @@ async def analyze_chapter_background(
             filter_character_names=filter_character_names
         )
         logger.info(f"📋 后台分析 - 已获取{len(project_characters)}个角色信息用于分析")
+
+        # 获取角色职业等级数据（用于一致性检测）
+        character_careers = await build_character_careers_for_consistency(
+            db=db_session,
+            project_id=project_id,
+            characters=project_characters
+        )
+        logger.info(f"📋 后台分析 - 已获取{len(character_careers)}条角色职业数据用于一致性检测")
         
         # 定义重试回调函数，用于在重试时更新任务状态
         async def on_retry_callback(attempt: int, max_retries: int, wait_time: int, error_reason: str):
@@ -1005,7 +1267,7 @@ async def analyze_chapter_background(
             except Exception as callback_error:
                 logger.warning(f"⚠️ 更新重试状态失败: {callback_error}")
         
-        # 3. 使用PlotAnalyzer分析章节（传入已有伏笔列表、已有物品列表、角色信息和重试回调）
+        # 3. 使用PlotAnalyzer分析章节（传入已有伏笔列表、已有物品列表、角色职业数据和角色信息）
         analyzer = PlotAnalyzer(ai_service)
         analysis_result = await analyzer.analyze_chapter(
             chapter_number=chapter.chapter_number,
@@ -1014,8 +1276,10 @@ async def analyze_chapter_background(
             word_count=chapter.word_count or len(chapter.content),
             existing_foreshadows=existing_foreshadows,
             existing_items=existing_items,
+            character_careers=character_careers,
             on_retry=on_retry_callback,
-            characters_info=characters_info
+            characters_info=characters_info,
+            target_word_count=3000  # 默认目标字数，用于字数一致性检测
         )
         
         if not analysis_result:
@@ -1030,7 +1294,37 @@ async def analyze_chapter_background(
         async with write_lock:
             task.progress = 60
             await db_session.commit()
-        
+
+        # 3.5 专门的物品分析（使用 ITEM_ANALYSIS 提示词）
+        # 在保存分析结果之前进行，以便物品结果能合并到 analysis_result 中
+        try:
+            logger.info(f"🎁 开始专门的物品分析...")
+
+            # 调用专门的物品分析函数
+            item_analysis_result = await analyze_chapter_items_specialized(
+                chapter=chapter,
+                project_id=project_id,
+                db_session=db_session,
+                ai_service=ai_service
+            )
+
+            # 将物品分析结果合并到综合分析结果中
+            # 这样记忆提取和保存会包含物品信息
+            if item_analysis_result and item_analysis_result.get('items'):
+                # 用专门的物品分析结果替换综合分析中的物品信息
+                analysis_result['items'] = item_analysis_result.get('items', [])
+                logger.info(f"🎁 物品分析结果已合并到综合分析结果: {len(analysis_result.get('items', []))} 个物品")
+            else:
+                logger.info("ℹ️ 物品分析结果为空或无物品")
+
+        except Exception as item_analysis_error:
+            # 物品分析失败不应影响整个分析流程
+            logger.error(f"⚠️ 专门物品分析失败: {str(item_analysis_error)}", exc_info=True)
+
+        async with write_lock:
+            task.progress = 65
+            await db_session.commit()
+
         # 4. 保存分析结果到数据库（写操作，需要锁）
         async with write_lock:
             existing_analysis_result = await db_session.execute(
@@ -1063,8 +1357,14 @@ async def analyze_chapter_background(
                 existing_analysis.coherence_score = float(analysis_result.get('scores', {}).get('coherence', 0) or 0)
                 existing_analysis.analysis_report = analyzer.generate_analysis_summary(analysis_result)
                 existing_analysis.suggestions = analysis_result.get('suggestions', [])
+                existing_analysis.consistency_issues = analysis_result.get('consistency_issues', [])
                 existing_analysis.dialogue_ratio = analysis_result.get('dialogue_ratio', 0)
                 existing_analysis.description_ratio = analysis_result.get('description_ratio', 0)
+
+                # 记录一致性检测结果
+                consistency_count = len(existing_analysis.consistency_issues or [])
+                if consistency_count > 0:
+                    logger.info(f"  🔍 保存 {consistency_count} 个一致性问题")
             else:
                 # 创建新记录
                 logger.info(f"  创建新的分析记录")
@@ -1093,10 +1393,16 @@ async def analyze_chapter_background(
                     coherence_score=float(analysis_result.get('scores', {}).get('coherence', 0) or 0),
                     analysis_report=analyzer.generate_analysis_summary(analysis_result),
                     suggestions=analysis_result.get('suggestions', []),
+                    consistency_issues=analysis_result.get('consistency_issues', []),
                     dialogue_ratio=analysis_result.get('dialogue_ratio', 0),
                     description_ratio=analysis_result.get('description_ratio', 0)
                 )
                 db_session.add(plot_analysis)
+
+                # 记录一致性检测结果
+                consistency_count = len(analysis_result.get('consistency_issues', []))
+                if consistency_count > 0:
+                    logger.info(f"  🔍 保存 {consistency_count} 个一致性问题")
             
             await db_session.commit()
             
@@ -1309,12 +1615,12 @@ async def analyze_chapter_background(
         else:
             logger.debug("📋 分析结果中无伏笔信息，跳过伏笔自动更新")
 
-        # 🎁 同步物品信息（根据分析结果）
+        # 🎁 同步物品信息（使用前面已合并到 analysis_result 的物品数据）
         if analysis_result.get('items'):
             try:
                 from app.schemas.item import ItemAnalysisResult
 
-                logger.info(f"🎁 开始根据分析结果同步物品信息...")
+                logger.info(f"🎁 开始根据物品分析结果同步物品信息...")
 
                 # 获取已有物品列表（用于匹配）
                 existing_items = await item_service._get_existing_items_for_matching(
@@ -1322,7 +1628,7 @@ async def analyze_chapter_background(
                 )
                 logger.info(f"📋 已获取{len(existing_items)}个已有物品用于匹配")
 
-                # 转换分析结果为Schema格式
+                # 转换分析结果为Schema格式（使用完整的字段）
                 analysis_items = []
                 for item_data in analysis_result.get('items', []):
                     analysis_items.append(ItemAnalysisResult(
@@ -1337,7 +1643,14 @@ async def analyze_chapter_background(
                         description=item_data.get('description'),
                         keyword=item_data.get('keyword'),
                         rarity=item_data.get('rarity'),
+                        quality=item_data.get('quality'),
                         special_effects=item_data.get('special_effects'),
+                        lore=item_data.get('lore'),
+                        value=item_data.get('value'),
+                        aliases=item_data.get('aliases'),
+                        attributes=item_data.get('attributes'),
+                        is_plot_critical=item_data.get('is_plot_critical'),
+                        unit=item_data.get('unit'),
                         suggested_category=item_data.get('suggested_category')
                     ))
 
@@ -1366,7 +1679,7 @@ async def analyze_chapter_background(
 
             except Exception as item_error:
                 # 物品同步失败不应影响整个分析流程
-                logger.error(f"⚠️ 同步物品失败: {str(item_error)}", exc_info=True)
+                logger.error(f"⚠️ 物品同步失败: {str(item_error)}", exc_info=True)
         else:
             logger.debug("📋 分析结果中无物品信息，跳过物品同步")
 
@@ -1810,14 +2123,17 @@ async def generate_chapter_content_stream(
                 
                 # === 保存阶段 ===
                 yield await tracker.saving("正在保存章节...", 0.3)
-                
+
+                # 清理章节内容中的多余分隔符
+                cleaned_content = clean_chapter_content(full_content)
+
                 # 更新章节内容到数据库
                 old_word_count = current_chapter.word_count or 0
-                current_chapter.content = full_content
-                new_word_count = len(full_content)
+                current_chapter.content = cleaned_content
+                new_word_count = len(cleaned_content)
                 current_chapter.word_count = new_word_count
                 current_chapter.status = "completed"
-                
+
                 # 更新项目字数
                 project.current_words = project.current_words - old_word_count + new_word_count
                 
@@ -2482,7 +2798,12 @@ async def get_chapter_annotations(
         }
         
         annotations.append(annotation)
-    
+
+    # 获取一致性检测结果
+    consistency_issues = []
+    if analysis and analysis.consistency_issues:
+        consistency_issues = analysis.consistency_issues
+
     return {
         "chapter_id": chapter_id,
         "chapter_number": chapter.chapter_number,
@@ -2490,12 +2811,14 @@ async def get_chapter_annotations(
         "word_count": chapter.word_count or 0,
         "annotations": annotations,
         "has_analysis": analysis is not None,
+        "consistency_issues": consistency_issues,
         "summary": {
             "total_annotations": len(annotations),
             "hooks": len([a for a in annotations if a["type"] == "hook"]),
             "foreshadows": len([a for a in annotations if a["type"] == "foreshadow"]),
             "plot_points": len([a for a in annotations if a["type"] == "plot_point"]),
-            "character_events": len([a for a in annotations if a["type"] == "character_event"])
+            "character_events": len([a for a in annotations if a["type"] == "character_event"]),
+            "consistency_issues": len(consistency_issues)
         }
     }
 
@@ -3666,28 +3989,31 @@ async def regenerate_chapter_stream(
                 
                 # === 保存阶段 ===
                 yield await tracker.saving("保存重新生成的内容...", 0.5)
-                
+
+                # 清理章节内容中的多余分隔符
+                cleaned_content = clean_chapter_content(full_content)
+
                 # 更新任务状态
                 regen_task.status = 'completed'
-                regen_task.regenerated_content = full_content
-                regen_task.regenerated_word_count = len(full_content)
+                regen_task.regenerated_content = cleaned_content
+                regen_task.regenerated_word_count = len(cleaned_content)
                 regen_task.completed_at = datetime.now()
-                
+
                 # 计算差异统计
-                diff_stats = regenerator.calculate_content_diff(chapter.content, full_content)
+                diff_stats = regenerator.calculate_content_diff(chapter.content, cleaned_content)
                 
                 await db_session.commit()
                 db_committed = True
                 
                 yield await tracker.saving("保存完成", 0.9)
-                
+
                 # === 完成阶段 ===
                 yield await tracker.complete("重新生成完成！")
-                
+
                 # 发送结果数据
                 yield await tracker.result({
                     'task_id': task_id,
-                    'word_count': len(full_content),
+                    'word_count': len(cleaned_content),
                     'version_number': regen_task.version_number,
                     'auto_applied': regenerate_request.auto_apply,
                     'diff_stats': diff_stats
@@ -4062,9 +4388,12 @@ async def partial_regenerate_stream(
                     )
                 
                 await asyncio.sleep(0)
-            
-            # 清理输出（移除可能的前后缀）
+
+            # 清理输出（移除可能的前后缀和多余分隔符）
             full_content = full_content.strip()
+
+            # 清理章节内容中的多余分隔符
+            full_content = clean_chapter_content(full_content)
             
             # 移除常见的AI输出前缀
             prefixes_to_remove = [
@@ -4157,8 +4486,11 @@ async def apply_partial_regenerate(
     # 构建新内容
     old_word_count = chapter.word_count or 0
     new_content = chapter.content[:start_position] + new_text + chapter.content[end_position:]
+
+    # 清理章节内容中的多余分隔符
+    new_content = clean_chapter_content(new_content)
     new_word_count = len(new_content)
-    
+
     # 更新章节
     chapter.content = new_content
     chapter.word_count = new_word_count

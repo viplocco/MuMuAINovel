@@ -137,8 +137,6 @@ async def _get_auth_runtime_settings() -> dict:
         "smtp_from_name": settings.SMTP_FROM_NAME,
     }
 
-    logger.info(f"[DEBUG] 初始 SMTP 配置: host={runtime['smtp_host']}, username={runtime['smtp_username']}")
-
     async with await _get_global_session() as session:
         result = await session.execute(
             select(SettingsModel)
@@ -148,10 +146,6 @@ async def _get_auth_runtime_settings() -> dict:
             .limit(1)
         )
         admin_settings = result.scalar_one_or_none()
-
-        logger.info(f"[DEBUG] admin_settings 存在: {admin_settings is not None}")
-        if admin_settings:
-            logger.info(f"[DEBUG] admin_settings SMTP: host={admin_settings.smtp_host!r}, username={admin_settings.smtp_username!r}")
 
         if admin_settings:
             runtime.update({
@@ -887,9 +881,7 @@ async def send_email_verification_code(request: EmailSendCodeRequest):
         if not existing_user:
             raise HTTPException(status_code=404, detail="该邮箱尚未注册")
 
-    logger.info(f"[DEBUG] runtime SMTP检查: host={runtime.get('smtp_host')!r}, username={runtime.get('smtp_username')!r}, password={'***' if runtime.get('smtp_password') else None!r}")
     if not runtime["smtp_host"] or not runtime["smtp_username"] or not runtime["smtp_password"]:
-        logger.error(f"[DEBUG] SMTP配置不完整: host={runtime.get('smtp_host')!r}, username={runtime.get('smtp_username')!r}")
         raise HTTPException(status_code=400, detail="系统 SMTP 未配置完整，暂无法发送验证码")
 
     now = get_china_now()

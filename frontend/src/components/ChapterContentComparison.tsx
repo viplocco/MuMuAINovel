@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Button, Card, Statistic, Row, Col, message, theme } from 'antd';
+import { Modal, Button, Card, Statistic, Row, Col, App, theme } from 'antd';
 import { CheckOutlined, CloseOutlined, SwapOutlined } from '@ant-design/icons';
 import ReactDiffViewer from 'react-diff-viewer-continued';
 
@@ -27,6 +27,7 @@ const ChapterContentComparison: React.FC<ChapterContentComparisonProps> = ({
   onDiscard
 }) => {
   const { token } = theme.useToken();
+  const { message } = App.useApp();
   const [applying, setApplying] = useState(false);
   const [viewMode, setViewMode] = useState<'split' | 'unified'>('split');
   const [modal, contextHolder] = Modal.useModal();

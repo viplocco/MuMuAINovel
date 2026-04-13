@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, List, Button, Space, Empty, Tag, Spin, Alert, Switch, Drawer, message, theme } from 'antd';
+import { Card, List, Button, Space, Empty, Tag, Spin, Alert, Switch, Drawer, message, theme, Collapse } from 'antd';
 import {
   EyeOutlined,
   EyeInvisibleOutlined,
@@ -8,11 +8,13 @@ import {
   RightOutlined,
   UnorderedListOutlined,
   FundOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { useParams } from 'react-router-dom';
 import api from '../services/api';
 import AnnotatedText, { type MemoryAnnotation } from '../components/AnnotatedText';
 import MemorySidebar from '../components/MemorySidebar';
+import type { ConsistencyIssue } from '../types';
 
 interface ChapterItem {
   id: string;
@@ -30,6 +32,7 @@ interface AnnotationsData {
   word_count: number;
   annotations: MemoryAnnotation[];
   has_analysis: boolean;
+  consistency_issues?: ConsistencyIssue[];
   summary: {
     total_annotations: number;
     hooks: number;
@@ -458,6 +461,88 @@ const ChapterAnalysis: React.FC = () => {
                 </div>
               )}
             </Card>
+
+            {/* 一致性问题展示 */}
+            {annotationsData && annotationsData.consistency_issues && annotationsData.consistency_issues.length > 0 && (
+              <Card size="small" style={{ marginBottom: isMobile ? 8 : 16 }}>
+                <Alert
+                  message={`发现 ${annotationsData.consistency_issues.length} 个一致性问题`}
+                  type="warning"
+                  showIcon
+                  icon={<WarningOutlined />}
+                  style={{ marginBottom: 12 }}
+                />
+                <Collapse
+                  size="small"
+                  items={annotationsData.consistency_issues.map((issue, index) => ({
+                    key: index.toString(),
+                    label: (
+                      <Space>
+                        <Tag color={issue.severity === 'high' ? 'red' : issue.severity === 'medium' ? 'orange' : 'blue'}>
+                          {issue.severity === 'high' ? '严重' : issue.severity === 'medium' ? '中等' : '轻微'}
+                        </Tag>
+                        <span style={{ fontWeight: 500 }}>
+                          {issue.type === 'character_death' && '💀 死亡角色再现'}
+                          {issue.type === 'character_location' && '📍 角色位置冲突'}
+                          {issue.type === 'ability_overflow' && '⚡ 能力超出设定'}
+                          {issue.type === 'item_quantity' && '📦 物品数量矛盾'}
+                          {issue.type === 'currency_quantity' && '💰 货币数量矛盾'}
+                          {issue.type === 'cultivation_level' && '📈 修为等级矛盾'}
+                          {issue.type === 'foreshadow_missed' && '🌟 伏笔遗漏'}
+                          {issue.type === 'foreshadow_orphan' && '🔗 孤儿伏笔'}
+                          {issue.type === 'word_count_overflow' && '📝 字数超标'}
+                        </span>
+                        {issue.overflow_percent && (
+                          <Tag color="purple">+{issue.overflow_percent}%</Tag>
+                        )}
+                      </Space>
+                    ),
+                    children: (
+                      <div>
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>问题描述：</strong>
+                          <div style={{ marginTop: 4, color: token.colorTextSecondary }}>{issue.issue}</div>
+                        </div>
+                        {issue.expected_value && issue.described_value && (
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>数值对比：</strong>
+                            <Space>
+                              <span>预期：{issue.expected_value}</span>
+                              <span>
+                                描述：{issue.described_value}
+                                {issue.estimated_value && typeof issue.described_value === 'string' && (
+                                  <Tag color="purple" style={{ marginLeft: 4 }}>
+                                    估计 ≈ {issue.estimated_value}
+                                  </Tag>
+                                )}
+                              </span>
+                            </Space>
+                          </div>
+                        )}
+                        {issue.overflow_percent && (
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>字数统计：</strong>
+                            <Space>
+                              <span>目标：{issue.expected_value}字</span>
+                              <span>实际：{issue.described_value}字</span>
+                              <Tag color={issue.overflow_percent > 100 ? 'red' : issue.overflow_percent > 50 ? 'orange' : 'blue'}>
+                                超出 {issue.overflow_percent}%
+                              </Tag>
+                            </Space>
+                          </div>
+                        )}
+                        {issue.suggestion && (
+                          <div>
+                            <strong>修改建议：</strong>
+                            <div style={{ marginTop: 4, color: token.colorSuccess }}>{issue.suggestion}</div>
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  }))}
+                />
+              </Card>
+            )}
 
             {/* 内容区域 */}
             <div style={{

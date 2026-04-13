@@ -25,10 +25,38 @@ import { SSEProgressModal } from './SSEProgressModal';
 
 const { TextArea } = Input;
 
+// localStorage 缓存键名（与 Chapters.tsx 共用）
+const WORD_COUNT_CACHE_KEY = 'chapter_default_word_count';
+const DEFAULT_WORD_COUNT = 3000;
+
+// 从 localStorage 读取缓存的字数
+const getCachedWordCount = (): number => {
+  try {
+    const cached = localStorage.getItem(WORD_COUNT_CACHE_KEY);
+    if (cached) {
+      const value = parseInt(cached, 10);
+      if (value >= 500 && value <= 10000) {
+        return value;
+      }
+    }
+  } catch (error) {
+    console.warn('读取字数缓存失败:', error);
+  }
+  return DEFAULT_WORD_COUNT;
+};
+
 interface Suggestion {
   category: string;
   content: string;
   priority: string;
+}
+
+// 分析分数接口
+interface AnalysisScores {
+  pacing_score?: number;
+  engagement_score?: number;
+  coherence_score?: number;
+  overall_quality_score?: number;
 }
 
 interface ChapterRegenerationModalProps {
@@ -40,6 +68,7 @@ interface ChapterRegenerationModalProps {
   chapterNumber: number;
   suggestions?: Suggestion[];
   hasAnalysis: boolean;
+  analysisScores?: AnalysisScores; // 新增：分析分数用于智能推荐
 }
 
 
@@ -51,7 +80,8 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
   chapterTitle,
   chapterNumber,
   suggestions = [],
-  hasAnalysis
+  hasAnalysis,
+  analysisScores
 }) => {
   const [form] = Form.useForm();
   const { modal, message } = App.useApp();
@@ -63,6 +93,44 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
   const [selectedSuggestions, setSelectedSuggestions] = useState<number[]>([]);
   const [modificationSource, setModificationSource] = useState<'custom' | 'analysis_suggestions' | 'mixed'>('custom');
 
+  // 根据分析分数智能推荐重点优化方向
+  const getRecommendedFocusAreas = (): string[] => {
+    if (!analysisScores) return ['emotion', 'dialogue']; // 默认推荐
+
+    const recommended: string[] = [];
+    const threshold = 6.5; // 分数低于6.5时推荐优化
+
+    // 节奏分数低时推荐节奏把控
+    if (analysisScores.pacing_score && analysisScores.pacing_score < threshold) {
+      recommended.push('pacing');
+    }
+
+    // 吸引力分数低时推荐情感渲染和冲突强度
+    if (analysisScores.engagement_score && analysisScores.engagement_score < threshold) {
+      recommended.push('emotion');
+      if (!recommended.includes('conflict')) {
+        recommended.push('conflict');
+      }
+    }
+
+    // 连贯性分数低时推荐场景描写
+    if (analysisScores.coherence_score && analysisScores.coherence_score < threshold) {
+      recommended.push('description');
+    }
+
+    // 如果没有低分项，但整体分数低，推荐综合优化
+    if (recommended.length === 0 && analysisScores.overall_quality_score && analysisScores.overall_quality_score < threshold) {
+      recommended.push('pacing', 'emotion');
+    }
+
+    // 如果没有任何推荐，默认推荐情感渲染和对话质量
+    if (recommended.length === 0) {
+      recommended.push('emotion', 'dialogue');
+    }
+
+    return recommended;
+  };
+
   useEffect(() => {
     if (visible) {
       // 重置状态
@@ -71,24 +139,24 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
       setErrorMessage('');
       setWordCount(0);
       setSelectedSuggestions([]);
-      
+
       // 如果有分析建议，默认选择混合模式
       if (hasAnalysis && suggestions.length > 0) {
         setModificationSource('mixed');
       } else {
         setModificationSource('custom');
       }
-      
+
       // 设置默认值
       form.setFieldsValue({
         modification_source: hasAnalysis && suggestions.length > 0 ? 'mixed' : 'custom',
-        target_word_count: 3000,
+        target_word_count: getCachedWordCount(), // 使用缓存的字数
         preserve_structure: false,
         preserve_character_traits: true,
-        focus_areas: []
+        focus_areas: getRecommendedFocusAreas() // 智能推荐重点优化方向
       });
     }
-  }, [visible, hasAnalysis, suggestions.length, form]);
+  }, [visible, hasAnalysis, suggestions.length, form, analysisScores]);
 
   const handleSubmit = async () => {
     try {
@@ -373,7 +441,8 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
                   {/* 重点优化方向 */}
                   <Form.Item
                     name="focus_areas"
-                    label="重点优化方向"
+                    label={<span>重点优化方向 <Tag color="purple" style={{ marginLeft: 4 }}>智能推荐</Tag></span>}
+                    tooltip="根据分析分数智能推荐需要优化的方向，分数低于6.5分的维度会自动选中"
                   >
                     <Checkbox.Group>
                       <Space direction="vertical">
@@ -406,9 +475,20 @@ const ChapterRegenerationModal: React.FC<ChapterRegenerationModalProps> = ({
                   <Form.Item
                     name="target_word_count"
                     label="目标字数"
-                    tooltip="生成内容的目标字数，实际字数可能有±20%的浮动"
+                    tooltip="与章节编辑弹窗同步，修改后自动记住。实际字数可能有±20%的浮动"
                   >
-                    <InputNumber min={500} max={10000} step={500} style={{ width: '100%' }} />
+                    <InputNumber
+                      min={500}
+                      max={10000}
+                      step={500}
+                      style={{ width: '100%' }}
+                      onChange={(value) => {
+                        // 同步保存到 localStorage
+                        if (value) {
+                          localStorage.setItem(WORD_COUNT_CACHE_KEY, String(value));
+                        }
+                      }}
+                    />
                   </Form.Item>
                 </>
               )

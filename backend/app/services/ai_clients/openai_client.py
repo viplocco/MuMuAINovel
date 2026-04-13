@@ -109,7 +109,7 @@ class OpenAIClient(BaseAIClient):
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         流式生成，支持工具调用
-        
+
         Yields:
             Dict with keys:
             - content: str - 文本内容块
@@ -117,21 +117,41 @@ class OpenAIClient(BaseAIClient):
             - done: bool - 是否结束
         """
         payload = self._build_payload(messages, model, temperature, max_tokens, tools, tool_choice, stream=True)
-        
+
+        logger.info(f"📤 OpenAI 流式请求 - 模型: {model}, max_tokens: {max_tokens}, 温度: {temperature}")
+        logger.debug(f"📤 流式请求 messages 数量: {len(messages)}, 总字符数: {sum(len(m.get('content', '')) for m in messages)}")
+
         tool_calls_buffer = {}  # 收集工具调用块
-        
+        finish_reason = None  # 记录结束原因
+
         try:
             async with await self._request_with_retry("POST", "/chat/completions", payload, stream=True) as response:
+                # 检查响应状态码
+                logger.info(f"📥 流式响应状态码: {response.status_code}")
+                if response.status_code != 200:
+                    error_body = await response.aread()
+                    logger.error(f"❌ 流式响应非200状态: {response.status_code}, body: {error_body[:500]}")
+                    raise ValueError(f"API返回非200状态码: {response.status_code}")
+
                 response.raise_for_status()
+                chunk_count = 0
+                content_count = 0
+                raw_line_count = 0  # 统计原始行数
                 try:
                     async for line in response.aiter_lines():
+                        raw_line_count += 1
+                        # 记录前几行原始内容以便诊断
+                        if raw_line_count <= 3:
+                            logger.debug(f"📥 流式原始行[{raw_line_count}]: {line[:200]}")
+
                         if line.startswith("data: "):
                             data_str = line[6:]
                             if data_str.strip() == "[DONE]":
                                 # 流结束，检查是否有工具调用需要处理
+                                logger.info(f"📥 OpenAI 流式结束 - 原始行数: {raw_line_count}, 收到 {chunk_count} 个chunk, {content_count} 个有效内容块, finish_reason: {finish_reason}")
                                 if tool_calls_buffer:
-                                    yield {"tool_calls": list(tool_calls_buffer.values()), "done": True}
-                                yield {"done": True}
+                                    yield {"tool_calls": list(tool_calls_buffer.values()), "done": True, "finish_reason": finish_reason}
+                                yield {"done": True, "finish_reason": finish_reason}
                                 break
                             try:
                                 data = json.loads(data_str)
@@ -139,7 +159,13 @@ class OpenAIClient(BaseAIClient):
                                 if choices and len(choices) > 0:
                                     delta = choices[0].get("delta", {})
                                     content = delta.get("content", "")
-                                    
+                                    chunk_count += 1
+
+                                    # 提取 finish_reason（在流的最后几个 chunk 中出现）
+                                    fr = choices[0].get("finish_reason")
+                                    if fr:
+                                        finish_reason = fr
+
                                     # 检查工具调用
                                     tc_list = delta.get("tool_calls")
                                     if tc_list:
@@ -158,6 +184,7 @@ class OpenAIClient(BaseAIClient):
                                                         )
                                     
                                     if content:
+                                        content_count += 1
                                         yield {"content": content}
                                         
                             except json.JSONDecodeError:

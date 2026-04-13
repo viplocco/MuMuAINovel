@@ -8,7 +8,7 @@ import { AIProjectGenerator, type GenerationConfig } from '../components/AIProje
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
-type Step = 'idea' | 'title' | 'description' | 'theme' | 'genre' | 'perspective' | 'outline_mode' | 'confirm' | 'generating' | 'complete';
+type Step = 'idea' | 'title' | 'description' | 'theme' | 'genre' | 'target_words' | 'perspective' | 'outline_mode' | 'confirm' | 'generating' | 'complete';
 
 interface Message {
   type: 'ai' | 'user';
@@ -25,6 +25,7 @@ interface WizardData {
   description: string;
   theme: string;
   genre: string[];
+  target_words: number;
   narrative_perspective: string;
   outline_mode: 'one-to-one' | 'one-to-many';
 }
@@ -335,7 +336,7 @@ const Inspiration: React.FC = () => {
   };
 
   // 步骤顺序
-  const stepOrder: Step[] = ['idea', 'title', 'description', 'theme', 'genre', 'perspective', 'outline_mode', 'confirm'];
+  const stepOrder: Step[] = ['idea', 'title', 'description', 'theme', 'genre', 'target_words', 'perspective', 'outline_mode', 'confirm'];
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) {
@@ -436,6 +437,31 @@ const Inspiration: React.FC = () => {
       return newMessages;
     });
 
+    if (currentStep === 'target_words') {
+      const userMessage: Message = {
+        type: 'user',
+        content: option,
+      };
+      setMessages(prev => [...prev, userMessage]);
+
+      // 解析字数（从选项中提取数字）
+      const wordsMatch = option.match(/(\d+)万字/);
+      const targetWords = wordsMatch ? parseInt(wordsMatch[1]) * 10000 : 100000;
+
+      const updatedData = { ...wizardData, target_words: targetWords };
+      setWizardData(updatedData);
+
+      // 进入叙事视角选择
+      const aiMessage: Message = {
+        type: 'ai',
+        content: '很好！接下来，请选择小说的叙事视角：',
+        options: ['第一人称', '第三人称', '全知视角']
+      };
+      setMessages(prev => [...prev, aiMessage]);
+      setCurrentStep('perspective');
+      return;
+    }
+
     if (currentStep === 'perspective') {
       const userMessage: Message = {
         type: 'user',
@@ -483,6 +509,7 @@ const Inspiration: React.FC = () => {
 
       // 显示摘要
       const modeText = modeValue === 'one-to-one' ? '一对一模式' : '一对多模式';
+      const targetWordsText = updatedData.target_words >= 10000 ? `${updatedData.target_words / 10000}万字` : `${updatedData.target_words}字`;
       const summary = `
 太棒了！你的小说设定已完成，请确认：
 
@@ -490,6 +517,7 @@ const Inspiration: React.FC = () => {
 📝 简介：${updatedData.description}
 🎯 主题：${updatedData.theme}
 🏷️ 类型：${updatedData.genre.join('、')}
+📊 目标字数：${targetWordsText}
 👁️ 视角：${updatedData.narrative_perspective}
 📋 大纲模式：${modeText}
 
@@ -531,7 +559,7 @@ const Inspiration: React.FC = () => {
           theme: data.theme,
           genre: data.genre,
           narrative_perspective: data.narrative_perspective,
-          target_words: 100000,
+          target_words: data.target_words || 100000,
           chapter_count: 3,
           character_count: 5,
           outline_mode: data.outline_mode,
@@ -587,6 +615,23 @@ const Inspiration: React.FC = () => {
         updatedData.theme = input;
       } else if (currentStep === 'genre') {
         updatedData.genre = [input];
+      } else if (currentStep === 'target_words') {
+        // 解析自定义输入的字数
+        const wordsMatch = input.match(/(\d+)/);
+        const targetWords = wordsMatch ? parseInt(wordsMatch[1]) * 10000 : 100000; // 默认10万字
+        updatedData.target_words = targetWords;
+        setWizardData(updatedData);
+
+        // 进入叙事视角选择
+        const aiMessage: Message = {
+          type: 'ai',
+          content: '很好！接下来，请选择小说的叙事视角：',
+          options: ['第一人称', '第三人称', '全知视角']
+        };
+        setMessages(prev => [...prev, aiMessage]);
+        setCurrentStep('perspective');
+        setLoading(false);
+        return;
       } else if (currentStep === 'perspective') {
         updatedData.narrative_perspective = input;
         setWizardData(updatedData);
@@ -659,11 +704,11 @@ const Inspiration: React.FC = () => {
     try {
       const aiMessage: Message = {
         type: 'ai',
-        content: '很好！接下来，请选择小说的叙事视角：',
-        options: ['第一人称', '第三人称', '全知视角']
+        content: '很好！接下来，请选择小说的目标字数（这会影响章节规划和大纲结构）：',
+        options: ['2万字（短篇）', '10万字（中篇）', '50万字（长篇）', '100万字（宏篇巨作）', '400万字（史诗巨作）']
       };
       setMessages(prev => [...prev, aiMessage]);
-      setCurrentStep('perspective');
+      setCurrentStep('target_words');
     } finally {
       setLoading(false);
     }
@@ -673,8 +718,17 @@ const Inspiration: React.FC = () => {
     const currentIndex = stepOrder.indexOf(currentStep);
     const nextStep = stepOrder[currentIndex + 1];
 
-    if (nextStep === 'perspective') {
-      // genre 步骤完成后，进入 perspective
+    if (nextStep === 'target_words') {
+      // genre 步骤完成后，进入 target_words
+      const aiMessage: Message = {
+        type: 'ai',
+        content: '很好！接下来，请选择小说的目标字数（这会影响章节规划和大纲结构）：',
+        options: ['2万字（短篇）', '10万字（中篇）', '50万字（长篇）', '100万字（宏篇巨作）', '400万字（史诗巨作）']
+      };
+      setMessages(prev => [...prev, aiMessage]);
+      setCurrentStep('target_words');
+    } else if (nextStep === 'perspective') {
+      // target_words 步骤完成后，进入 perspective
       const aiMessage: Message = {
         type: 'ai',
         content: '很好！接下来，请选择小说的叙事视角：',
@@ -1168,8 +1222,8 @@ const Inspiration: React.FC = () => {
         padding: isMobile ? '16px 12px' : '24px 24px',
       }}>
         {(currentStep === 'idea' || currentStep === 'title' || currentStep === 'description' ||
-          currentStep === 'theme' || currentStep === 'genre' || currentStep === 'perspective' ||
-          currentStep === 'outline_mode' || currentStep === 'confirm') && renderChat()}
+          currentStep === 'theme' || currentStep === 'genre' || currentStep === 'target_words' ||
+          currentStep === 'perspective' || currentStep === 'outline_mode' || currentStep === 'confirm') && renderChat()}
         {(currentStep === 'generating' || currentStep === 'complete') && generationConfig && (
           <AIProjectGenerator
             config={generationConfig}

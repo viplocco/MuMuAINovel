@@ -160,6 +160,11 @@ class ItemResponse(ItemBase):
     source_chapter_id: Optional[str] = None
     status_changed_at: Optional[datetime] = None
 
+    # 上下文管理字段
+    last_mentioned_chapter: Optional[int] = Field(None, description="最后被提及的章节号")
+    mention_count: int = Field(0, description="累计提及次数")
+    context_priority: float = Field(1.0, description="上下文优先级(0.0-1.0)")
+
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

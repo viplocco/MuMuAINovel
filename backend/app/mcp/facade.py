@@ -197,7 +197,7 @@ class MCPClientFacade:
         self._status_callbacks: List[StatusCallback] = []
         
         self._initialized = True
-        logger.info("✅ MCPClientFacade 初始化完成")
+        logger.info("MCPClientFacade 初始化完成")
     
     def _get_key(self, user_id: str, plugin_name: str) -> str:
         """生成会话键"""
@@ -229,11 +229,11 @@ class MCPClientFacade:
                 loop = asyncio.get_running_loop()
                 if self._cleanup_task is None:
                     self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-                    logger.info("✅ MCP后台清理任务已启动")
-                
+                    logger.debug("MCP后台清理任务已启动")
+
                 if self._health_check_task is None:
                     self._health_check_task = asyncio.create_task(self._health_check_loop())
-                    logger.info("✅ MCP健康检查任务已启动")
+                    logger.debug("MCP健康检查任务已启动")
                 
                 self._tasks_started = True
             except RuntimeError as e:
@@ -278,7 +278,7 @@ class MCPClientFacade:
                     expired_keys.append(key)
         
         if expired_keys:
-            logger.info(f"🧹 清理 {len(expired_keys)} 个过期的MCP会话")
+            logger.debug(f"清理 {len(expired_keys)} 个过期的MCP会话")
             for key in expired_keys:
                 user_id = key.split(':', 1)[0]
                 user_lock = await self._get_user_lock(user_id)
@@ -338,7 +338,7 @@ class MCPClientFacade:
             session = None
 
             try:
-                logger.info(f"🔗 连接MCP服务器: {config.plugin_name} -> {config.url} (类型: {config.plugin_type})")
+                logger.info(f"连接MCP服务器: {config.plugin_name} -> {config.url}")
 
                 # 根据类型选择客户端
                 if config.plugin_type == "sse":
@@ -375,7 +375,7 @@ class MCPClientFacade:
                 async with self._session_lock:
                     self._sessions[key] = info
 
-                logger.info(f"✅ MCP会话建立成功: {key}")
+                logger.debug(f"MCP会话建立成功: {key}")
                 await self._emit_status_change(config.user_id, config.plugin_name, "inactive", "active", "连接成功")
                 return True
 
@@ -453,7 +453,7 @@ class MCPClientFacade:
                 except Exception as e:
                     logger.debug(f"清理{ctx_type}上下文: {e}")
             
-            logger.info(f"🗑️ 关闭MCP会话: {key}")
+            logger.debug(f"关闭MCP会话: {key}")
     
     async def _get_session(self, user_id: str, plugin_name: str) -> ClientSession:
         """
@@ -646,27 +646,17 @@ class MCPClientFacade:
                 logger.debug(f"⏰ 工具缓存过期: {cache_key}")
 
         # 从服务器获取
-        logger.info(f"🔍 开始获取工具列表: {plugin_name}")
         session = await self._get_session(user_id, plugin_name)
-        logger.info(f"🔍 Session对象: {session}, 类型: {type(session)}")
         try:
             result = await session.list_tools()
-            logger.info(f"✅ list_tools() 返回: {result}, 工具数: {len(result.tools) if result.tools else 0}")
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
-            logger.error(f"❌ list_tools() 调用失败: {plugin_name}, 错误类型: {type(e).__name__}")
-            logger.error(f"   错误信息: {str(e)}")
-            logger.error(f"   完整堆栈: {tb[:1000]}")
-            # 检查session状态
-            info = self._sessions.get(cache_key)
-            if info:
-                logger.error(f"   会话状态: {info.status}, 请求数: {info.request_count}")
-            else:
-                logger.error(f"   会话不存在于: {cache_key}")
+            logger.error(f"获取工具列表失败: {plugin_name}, 错误: {str(e)}")
+            logger.debug(f"详细堆栈: {tb[:500]}")
 
             # 尝试重新注册插件
-            logger.info(f"🔄 尝试重新注册插件: {plugin_name}")
+            logger.debug(f"尝试重新注册插件: {plugin_name}")
             try:
                 # 获取插件配置信息（这里简化处理，实际需要从数据库获取）
                 # 先清除失效的会话
@@ -693,7 +683,7 @@ class MCPClientFacade:
             expire_time=now + self._cache_ttl
         )
         
-        logger.info(f"获取到 {len(tools)} 个工具: {plugin_name}")
+        logger.debug(f"获取到 {len(tools)} 个工具: {plugin_name}")
         return tools
     
     async def call_tool(
@@ -727,7 +717,7 @@ class MCPClientFacade:
             try:
                 session = await self._get_session(user_id, plugin_name)
                 
-                logger.info(f"调用工具: {tool_key}")
+                logger.debug(f"调用工具: {tool_key}")
                 logger.debug(f"  参数: {arguments}")
                 
                 # 带超时调用
@@ -742,8 +732,8 @@ class MCPClientFacade:
                 # 记录成功指标
                 duration_ms = (time.time() - start_time) * 1000
                 self._metrics[tool_key].record_success(duration_ms)
-                
-                logger.info(f"✅ 工具调用成功: {tool_key} ({duration_ms:.2f}ms)")
+
+                logger.debug(f"工具调用成功: {tool_key} ({duration_ms:.2f}ms)")
                 return output
                 
             except asyncio.TimeoutError:
@@ -778,7 +768,7 @@ class MCPClientFacade:
                             user_id, plugin_name, url, plugin_type
                         )
                         if success:
-                            logger.info(f"✅ MCP会话重新建立成功: {key}")
+                            logger.debug(f"MCP会话重新建立成功: {key}")
                             await asyncio.sleep(0.5)
                             continue
                     
@@ -810,7 +800,7 @@ class MCPClientFacade:
                             user_id, plugin_name, url, plugin_type
                         )
                         if success:
-                            logger.info(f"✅ MCP会话重新注册成功: {key}")
+                            logger.debug(f"MCP会话重新注册成功: {key}")
                             await asyncio.sleep(0.5)
                             continue
                     
@@ -849,13 +839,13 @@ class MCPClientFacade:
                 
                 error_msg = str(e)
                 error_type = type(e).__name__
-                
+
                 # 检查是否是 JSON 解析错误（MCP SDK 内部错误）
                 if "parsing JSON" in error_msg.lower() or "json" in error_msg.lower():
-                    logger.error(f"❌ 工具调用失败 (JSON解析错误): {tool_key}: {e}")
+                    logger.error(f"工具调用JSON解析错误: {tool_key}: {e}")
                     raise MCPError(f"MCP服务器响应格式错误，请检查服务器状态或稍后重试")
-                
-                logger.error(f"❌ 工具调用失败: {tool_key} [{error_type}]: {e}")
+
+                logger.error(f"工具调用失败: {tool_key}: {e}")
                 raise MCPError(f"工具调用失败: {error_msg}")
         
         raise MCPError("工具调用失败: 未知错误")
@@ -901,8 +891,8 @@ class MCPClientFacade:
         """
         if not tool_calls:
             return []
-        
-        logger.info(f"开始执行 {len(tool_calls)} 个工具调用 (最大并发={max_concurrent})")
+
+        logger.debug(f"开始执行 {len(tool_calls)} 个工具调用 (最大并发={max_concurrent})")
         
         results = []
         
@@ -910,8 +900,8 @@ class MCPClientFacade:
             batch = tool_calls[i:i+max_concurrent]
             batch_num = i // max_concurrent + 1
             total_batches = (len(tool_calls) + max_concurrent - 1) // max_concurrent
-            
-            logger.info(f"执行工具批次 {batch_num}/{total_batches}, 数量: {len(batch)}")
+
+            logger.debug(f"执行工具批次 {batch_num}/{total_batches}, 数量: {len(batch)}")
             
             tasks = [
                 self._execute_single_tool_call(user_id, tc, timeout)
@@ -1148,16 +1138,16 @@ class MCPClientFacade:
         if user_id and plugin_name:
             key = self._get_key(user_id, plugin_name)
             self._invalidate_cache(key)
-            logger.info(f"🧹 已清理缓存: {key}")
+            logger.debug(f"已清理缓存: {key}")
         elif user_id:
             keys = [k for k in self._tool_cache if k.startswith(f"{user_id}:")]
             for k in keys:
                 del self._tool_cache[k]
-            logger.info(f"🧹 已清理用户缓存: {user_id} ({len(keys)}个)")
+            logger.debug(f"已清理用户缓存: {user_id} ({len(keys)}个)")
         else:
             count = len(self._tool_cache)
             self._tool_cache.clear()
-            logger.info(f"🧹 已清理所有缓存 ({count}个)")
+            logger.debug(f"已清理所有缓存 ({count}个)")
     
     def get_metrics(self, tool_name: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -1236,7 +1226,7 @@ class MCPClientFacade:
         """注册状态变更回调"""
         if callback not in self._status_callbacks:
             self._status_callbacks.append(callback)
-            logger.info(f"✅ 已注册状态变更回调: {callback.__name__ if hasattr(callback, '__name__') else 'anonymous'}")
+            logger.debug(f"已注册状态变更回调: {callback.__name__ if hasattr(callback, '__name__') else 'anonymous'}")
     
     def unregister_status_callback(self, callback: StatusCallback):
         """注销状态变更回调"""
@@ -1264,7 +1254,7 @@ class MCPClientFacade:
             "timestamp": datetime.now().isoformat()
         }
         
-        logger.info(f"📢 状态变更: {plugin_name} [{old_status} -> {new_status}] {reason}")
+        logger.debug(f"状态变更: {plugin_name} [{old_status} -> {new_status}] {reason}")
         
         for callback in self._status_callbacks:
             try:
@@ -1302,7 +1292,7 @@ class MCPClientFacade:
         self._tool_cache.clear()
         
         self._tasks_started = False
-        logger.info("✅ MCPClientFacade 资源已清理")
+        logger.debug("MCPClientFacade 资源已清理")
 
 
 # ==================== 全局单例 ====================

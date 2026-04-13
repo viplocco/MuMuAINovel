@@ -15,7 +15,7 @@ import {
 import { foreshadowApi, chapterApi, characterApi } from '../services/api';
 import type {
   Foreshadow, ForeshadowCreate, ForeshadowUpdate, ForeshadowStats,
-  ForeshadowStatus, ForeshadowCategory, Chapter, Character
+  ForeshadowStatus, ForeshadowCategory, Chapter, Character, ForeshadowWarningsResponse
 } from '../types';
 
 const { TextArea } = Input;
@@ -63,6 +63,10 @@ export default function Foreshadows() {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [plantModalVisible, setPlantModalVisible] = useState(false);
   const [resolveModalVisible, setResolveModalVisible] = useState(false);
+  const [warningsModalVisible, setWarningsModalVisible] = useState(false);
+
+  // 预警数据
+  const [warnings, setWarnings] = useState<ForeshadowWarningsResponse | null>(null);
   
   const [currentForeshadow, setCurrentForeshadow] = useState<Foreshadow | null>(null);
   const [form] = Form.useForm();
@@ -139,6 +143,21 @@ export default function Foreshadows() {
     }
   }, [projectId, chapters]);
 
+  // 加载伏笔预警
+  const loadWarnings = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const chaptersWithContent = chapters.filter(c => c.content);
+      const currentChapter = chaptersWithContent.length > 0
+        ? Math.max(...chaptersWithContent.map(c => c.chapter_number))
+        : 1;
+      const warningsData = await foreshadowApi.getForeshadowWarnings(projectId, currentChapter);
+      setWarnings(warningsData);
+    } catch (error) {
+      console.error('加载预警失败:', error);
+    }
+  }, [projectId, chapters]);
+
   useEffect(() => {
     loadForeshadows();
     loadChapters();
@@ -170,8 +189,9 @@ export default function Foreshadows() {
   useEffect(() => {
     if (chapters.length > 0) {
       loadStats();
+      loadWarnings();
     }
-  }, [chapters, loadStats]);
+  }, [chapters, loadStats, loadWarnings]);
 
   // 创建/编辑伏笔
   const handleSave = async (values: ForeshadowCreate | ForeshadowUpdate) => {
@@ -514,31 +534,30 @@ export default function Foreshadows() {
           </Col>
           <Col span={3}>
             <Card size="small">
+              <Statistic title="部分回收" value={stats.partially_resolved} valueStyle={{ color: token.colorWarning }} />
+            </Card>
+          </Col>
+          <Col span={3}>
+            <Card size="small">
+              <Statistic title="已废弃" value={stats.abandoned} valueStyle={{ color: token.colorTextSecondary }} />
+            </Card>
+          </Col>
+          <Col span={3}>
+            <Card size="small">
               <Statistic title="长线伏笔" value={stats.long_term_count} valueStyle={{ color: token.colorInfo }} />
             </Card>
           </Col>
           <Col span={3}>
             <Card size="small">
-              <Statistic 
-                title="超期未回收" 
-                value={stats.overdue_count} 
+              <Statistic
+                title="超期未回收"
+                value={stats.overdue_count}
                 valueStyle={{ color: stats.overdue_count > 0 ? token.colorError : token.colorTextSecondary }}
                 prefix={stats.overdue_count > 0 ? <WarningOutlined /> : null}
               />
             </Card>
           </Col>
         </Row>
-      )}
-
-      {/* 超期提醒 */}
-      {stats && stats.overdue_count > 0 && (
-        <Alert
-          message={`有 ${stats.overdue_count} 个伏笔已超期未回收`}
-          description="请尽快在后续章节中回收这些伏笔，或调整计划回收章节"
-          type="warning"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
       )}
 
       {/* 自动同步提示 */}
@@ -598,6 +617,17 @@ export default function Foreshadows() {
               onClick={loadForeshadows}
             />
           </Tooltip>
+          {warnings && warnings.total_warnings > 0 && (
+            <Tooltip title={`${warnings.total_warnings} 个伏笔预警`}>
+              <Button
+                icon={<WarningOutlined />}
+                onClick={() => setWarningsModalVisible(true)}
+                danger
+              >
+                预警 {warnings.total_warnings}
+              </Button>
+            </Tooltip>
+          )}
           <Dropdown
             menu={{
               items: [
@@ -647,12 +677,12 @@ export default function Foreshadows() {
         />
       </div>
 
-      {/* 分页器 - 固定在底部居中 */}
+      {/* 分页器 - 固定在底部右侧 */}
       <div style={{
         padding: '12px 0',
         borderTop: `1px solid ${token.colorBorderSecondary}`,
         display: 'flex',
-        justifyContent: 'center',
+        justifyContent: 'flex-end',
         alignItems: 'center',
         flexShrink: 0,
         background: token.colorBgContainer,
@@ -1019,6 +1049,89 @@ export default function Foreshadows() {
           <li>新同步的伏笔将自动设置为"已埋入"状态</li>
           <li>同步完成后可在列表中查看和编辑</li>
         </ul>
+      </Modal>
+
+      {/* 预警模态框 */}
+      <Modal
+        title="伏笔预警"
+        open={warningsModalVisible}
+        centered
+        onCancel={() => setWarningsModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setWarningsModalVisible(false)}>
+            关闭
+          </Button>,
+        ]}
+        width={700}
+      >
+        {warnings && (
+          <div>
+            {/* 超期伏笔 */}
+            {warnings.overdue.count > 0 && (
+              <Card size="small" title={<span style={{ color: token.colorError }}>💀 超期未回收 ({warnings.overdue.count})</span>} style={{ marginBottom: 16 }}>
+                <Alert
+                  message="以下伏笔已超过计划回收章节，请尽快处理"
+                  type="error"
+                  showIcon
+                  style={{ marginBottom: 8 }}
+                />
+                {warnings.overdue.items.map(fs => (
+                  <div key={fs.id} style={{ padding: '8px 0', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+                    <Space>
+                      <Tag color="red">超期</Tag>
+                      <strong>{fs.title}</strong>
+                      <span style={{ color: token.colorTextSecondary }}>
+                        计划第{fs.target_resolve_chapter_number}章回收
+                      </span>
+                    </Space>
+                    <div style={{ color: token.colorTextSecondary, marginTop: 4 }}>
+                      {fs.content?.substring(0, 100)}...
+                    </div>
+                  </div>
+                ))}
+              </Card>
+            )}
+
+            {/* 急需回收 */}
+            {warnings.urgent.count > 0 && (
+              <Card size="small" title={<span style={{ color: token.colorWarning }}>⚡ 本章必须回收 ({warnings.urgent.count})</span>} style={{ marginBottom: 16 }}>
+                {warnings.urgent.items.map(fs => (
+                  <div key={fs.id} style={{ padding: '8px 0', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+                    <Space>
+                      <Tag color="orange">急需</Tag>
+                      <strong>{fs.title}</strong>
+                    </Space>
+                    <div style={{ color: token.colorTextSecondary, marginTop: 4 }}>
+                      {fs.content?.substring(0, 100)}...
+                    </div>
+                  </div>
+                ))}
+              </Card>
+            )}
+
+            {/* 即将到期 */}
+            {warnings.reminder.count > 0 && (
+              <Card size="small" title={<span style={{ color: token.colorInfo }}>⏰ 即将到期提醒 ({warnings.reminder.count})</span>}>
+                {warnings.reminder.items.map(fs => (
+                  <div key={fs.id} style={{ padding: '8px 0', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+                    <Space>
+                      <Tag color="blue">提醒</Tag>
+                      <strong>{fs.title}</strong>
+                      <span style={{ color: token.colorTextSecondary }}>
+                        计划第{fs.target_resolve_chapter_number}章回收
+                      </span>
+                    </Space>
+                  </div>
+                ))}
+              </Card>
+            )}
+
+            {/* 无预警 */}
+            {warnings.total_warnings === 0 && (
+              <Empty description="暂无伏笔预警" style={{ marginTop: 40 }} />
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );

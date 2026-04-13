@@ -68,7 +68,7 @@ interface MCPPluginSimpleCreate {
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 120000,
+  timeout: 180000,  // 3分钟超时，支持长时间AI分析
   headers: {
     'Content-Type': 'application/json',
   },
@@ -394,6 +394,9 @@ export const projectApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+
+  // 获取预定义小说类型列表
+  getGenres: () => api.get<unknown, { name: string; description: string }[]>('/projects/genres'),
 };
 
 export const bookImportApi = {
@@ -1171,6 +1174,13 @@ export const foreshadowApi = {
       { params: { current_chapter: currentChapter, lookahead } }
     ),
 
+  // 获取伏笔预警列表
+  getForeshadowWarnings: (projectId: string, currentChapter: number, remindThreshold?: number) =>
+    api.get<unknown, import('../types').ForeshadowWarningsResponse>(
+      `/foreshadows/projects/${projectId}/warnings`,
+      { params: { current_chapter: currentChapter, remind_threshold: remindThreshold } }
+    ),
+
   // 获取单个伏笔
   getForeshadow: (foreshadowId: string) =>
     api.get<unknown, import('../types').Foreshadow>(`/foreshadows/${foreshadowId}`),
@@ -1354,4 +1364,18 @@ export const itemApi = {
         attribute_change_count: number;
       };
     }>(`/items/chapters/${chapterId}/items`),
+
+  // 批量重算物品上下文优先级
+  recalculatePriority: (projectId: string) =>
+    api.post<unknown, {
+      success: boolean;
+      updated_count: number;
+      latest_chapter_number: number;
+      priority_distribution: {
+        high: number;    // >= 0.8
+        medium: number;  // 0.5-0.8
+        low: number;     // 0.3-0.5
+        ignored: number; // < 0.3
+      };
+    }>(`/items/projects/${projectId}/recalculate-priority`),
 };

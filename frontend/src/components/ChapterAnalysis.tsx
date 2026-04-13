@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Modal, Spin, Alert, Tabs, Card, Tag, List, Empty, Statistic, Row, Col, Button, theme, Table } from 'antd';
+import { Modal, Spin, Alert, Tabs, Card, Tag, List, Empty, Statistic, Row, Col, Button, theme, Table, Space } from 'antd';
 import {
   ThunderboltOutlined,
   BulbOutlined,
@@ -347,14 +347,35 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
   };
 
   // 将分析建议转换为重新生成组件需要的格式
+  // 包括：常规改进建议 + 字数超标的建议（从 consistency_issues 中提取）
   const convertSuggestionsForRegeneration = () => {
-    if (!analysis?.analysis?.suggestions) return [];
+    const result: Array<{ category: string; content: string; priority: string }> = [];
 
-    return analysis.analysis.suggestions.map((suggestion, index) => ({
-      category: '改进建议',
-      content: suggestion,
-      priority: index < 3 ? 'high' : 'medium'
-    }));
+    // 1. 添加常规改进建议
+    if (analysis?.analysis?.suggestions) {
+      analysis.analysis.suggestions.forEach((suggestion, index) => {
+        result.push({
+          category: '改进建议',
+          content: suggestion,
+          priority: index < 3 ? 'high' : 'medium'
+        });
+      });
+    }
+
+    // 2. 添加字数超标的建议（从 consistency_issues 提取）
+    if (analysis?.analysis?.consistency_issues) {
+      analysis.analysis.consistency_issues.forEach((issue) => {
+        if (issue.type === 'word_count_overflow' && issue.suggestion) {
+          result.push({
+            category: '字数超标',
+            content: issue.suggestion,
+            priority: issue.severity
+          });
+        }
+      });
+    }
+
+    return result;
   };
 
   const renderAnalysisResult = () => {
@@ -374,12 +395,18 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
             children: (
               <div style={{ height: isMobile ? 'calc(80vh - 180px)' : 'calc(90vh - 220px)', overflowY: 'auto', paddingRight: '8px' }}>
                 {/* 根据建议重新生成按钮 */}
-                {analysis_data.suggestions && analysis_data.suggestions.length > 0 && (
+                {(analysis_data.suggestions?.length > 0 ||
+                  (analysis_data.consistency_issues?.some(i => i.type === 'word_count_overflow' && i.suggestion))) && (
                   <Alert
                     message="发现改进建议"
                     description={
                       <div>
-                        <p style={{ marginBottom: 12 }}>AI已分析出 {analysis_data.suggestions.length} 条改进建议，您可以根据这些建议重新生成章节内容。</p>
+                        <p style={{ marginBottom: 12 }}>
+                          AI已分析出 {analysis_data.suggestions?.length || 0} 条改进建议，
+                          {analysis_data.consistency_issues?.filter(i => i.type === 'word_count_overflow' && i.suggestion).length > 0 &&
+                            ` 以及 ${analysis_data.consistency_issues.filter(i => i.type === 'word_count_overflow' && i.suggestion).length} 条字数超标建议`}
+                          ，您可以根据这些建议重新生成章节内容。
+                        </p>
                         <Button
                           type="primary"
                           icon={<EditOutlined />}
@@ -428,6 +455,42 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
                       />
                     </Col>
                   </Row>
+                  {/* 内容占比统计 */}
+                  <Row gutter={isMobile ? 8 : 16} style={{ marginTop: 16 }}>
+                    <Col span={isMobile ? 12 : 6}>
+                      <Statistic
+                        title="对话占比"
+                        value={analysis_data.dialogue_ratio ? (analysis_data.dialogue_ratio * 100).toFixed(1) : 0}
+                        suffix="%"
+                      />
+                    </Col>
+                    <Col span={isMobile ? 12 : 6}>
+                      <Statistic
+                        title="描写占比"
+                        value={analysis_data.description_ratio ? (analysis_data.description_ratio * 100).toFixed(1) : 0}
+                        suffix="%"
+                      />
+                    </Col>
+                    <Col span={isMobile ? 12 : 6}>
+                      <Statistic
+                        title="节奏类型"
+                        value={
+                          analysis_data.pacing === 'slow' ? '缓慢' :
+                          analysis_data.pacing === 'moderate' ? '中速' :
+                          analysis_data.pacing === 'fast' ? '快速' :
+                          analysis_data.pacing === 'varied' ? '变化多样' :
+                          '未知'
+                        }
+                      />
+                    </Col>
+                    <Col span={isMobile ? 12 : 6}>
+                      <Statistic
+                        title="情节点"
+                        value={analysis_data.plot_points_count || 0}
+                        suffix="个"
+                      />
+                    </Col>
+                  </Row>
                 </Card>
 
                 {analysis_data.analysis_report && (
@@ -438,13 +501,42 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
                   </Card>
                 )}
 
-                {analysis_data.suggestions && analysis_data.suggestions.length > 0 && (
+                {(analysis_data.suggestions?.length > 0 ||
+                  (analysis_data.consistency_issues?.some(i => i.type === 'word_count_overflow' && i.suggestion))) && (
                   <Card title={<><BulbOutlined /> 改进建议</>} size={isMobile ? 'small' : 'default'}>
                     <List
-                      dataSource={analysis_data.suggestions}
-                      renderItem={(item, index) => (
+                      dataSource={[
+                        // 常规建议
+                        ...(analysis_data.suggestions || []).map((item, index) => ({
+                          type: 'suggestion',
+                          content: item,
+                          index: index + 1
+                        })),
+                        // 字数超标建议
+                        ...(analysis_data.consistency_issues || [])
+                          .filter(i => i.type === 'word_count_overflow' && i.suggestion)
+                          .map((issue, index) => ({
+                            type: 'word_count_overflow',
+                            content: issue.suggestion,
+                            severity: issue.severity,
+                            overflow_percent: issue.overflow_percent,
+                            expected_value: issue.expected_value,
+                            described_value: issue.described_value,
+                            index: (analysis_data.suggestions?.length || 0) + index + 1
+                          }))
+                      ]}
+                      renderItem={(item) => (
                         <List.Item>
-                          <span>{index + 1}. {item}</span>
+                          <Space>
+                            {item.type === 'word_count_overflow' ? (
+                              <Tag color={item.severity === 'high' ? 'red' : item.severity === 'medium' ? 'orange' : 'blue'}>
+                                字数超标 {item.overflow_percent && `+${item.overflow_percent}%`}
+                              </Tag>
+                            ) : (
+                              <Tag color="green">建议</Tag>
+                            )}
+                            <span>{item.index}. {item.content}</span>
+                          </Space>
                         </List.Item>
                       )}
                     />
@@ -637,12 +729,125 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
                             key: 'quantity',
                             width: 80,
                             render: (qty: number, record: any) => `${qty} ${record.unit || '个'}`
+                          },
+                          {
+                            title: '上下文优先级',
+                            dataIndex: 'context_priority',
+                            key: 'context_priority',
+                            width: 100,
+                            render: (priority: number) => {
+                              // 注意：priority 可能是 0，不能用 !priority 判断
+                              if (priority === undefined || priority === null) return '-';
+                              const displayValue = priority.toFixed(1);
+                              let color = 'green';
+                              let text = '高';
+                              // 优先级为 0 表示已消耗/销毁
+                              if (priority === 0) {
+                                color = 'red';
+                                text = '已排除';
+                              } else if (priority < 0.3) {
+                                color = 'default';
+                                text = '忽略';
+                              } else if (priority < 0.5) {
+                                color = 'orange';
+                                text = '低';
+                              } else if (priority < 0.8) {
+                                color = 'blue';
+                                text = '中';
+                              }
+                              return <Tag color={color}>{text} ({displayValue})</Tag>;
+                            }
                           }
                         ]}
                       />
                     </>
                   ) : (
                     <Empty description="本章未发现相关物品" />
+                  )}
+                </Card>
+              </div>
+            )
+          },
+          {
+            key: 'plotpoints',
+            label: `情节点 (${analysis_data.plot_points?.length || 0})`,
+            icon: <TrophyOutlined />,
+            children: (
+              <div style={{ height: isMobile ? 'calc(80vh - 180px)' : 'calc(90vh - 220px)', overflowY: 'auto', paddingRight: '8px' }}>
+                <Card size={isMobile ? 'small' : 'default'}>
+                  {analysis_data.plot_points && analysis_data.plot_points.length > 0 ? (
+                    <List
+                      dataSource={analysis_data.plot_points}
+                      renderItem={(point) => (
+                        <List.Item>
+                          <List.Item.Meta
+                            title={
+                              <div>
+                                <Tag color={
+                                  point.type === 'revelation' ? 'purple' :
+                                  point.type === 'conflict' ? 'red' :
+                                  point.type === 'resolution' ? 'green' :
+                                  'blue'
+                                }>
+                                  {point.type === 'revelation' ? '揭示' :
+                                   point.type === 'conflict' ? '冲突' :
+                                   point.type === 'resolution' ? '解决' :
+                                   '过渡'}
+                                </Tag>
+                                <Tag color="orange">重要性: {(point.importance * 10).toFixed(1)}</Tag>
+                              </div>
+                            }
+                            description={
+                              <div>
+                                <p style={{ marginBottom: 8 }}>{point.content}</p>
+                                {point.impact && (
+                                  <p style={{ color: token.colorTextSecondary, fontSize: 13 }}>
+                                    <strong>影响：</strong>{point.impact}
+                                  </p>
+                                )}
+                              </div>
+                            }
+                          />
+                        </List.Item>
+                      )}
+                    />
+                  ) : (
+                    <Empty description="暂无情节点分析" />
+                  )}
+                </Card>
+              </div>
+            )
+          },
+          {
+            key: 'scenes',
+            label: `场景 (${analysis_data.scenes?.length || 0})`,
+            icon: <GiftOutlined />,
+            children: (
+              <div style={{ height: isMobile ? 'calc(80vh - 180px)' : 'calc(90vh - 220px)', overflowY: 'auto', paddingRight: '8px' }}>
+                <Card size={isMobile ? 'small' : 'default'}>
+                  {analysis_data.scenes && analysis_data.scenes.length > 0 ? (
+                    <List
+                      dataSource={analysis_data.scenes}
+                      renderItem={(scene) => (
+                        <List.Item>
+                          <Card type="inner" size="small" style={{ width: '100%' }}>
+                            <Row gutter={16}>
+                              <Col span={8}>
+                                <Statistic title="地点" value={scene.location || '未知'} valueStyle={{ fontSize: 14 }} />
+                              </Col>
+                              <Col span={8}>
+                                <Statistic title="氛围" value={scene.atmosphere || '未知'} valueStyle={{ fontSize: 14 }} />
+                              </Col>
+                              <Col span={8}>
+                                <Statistic title="时长" value={scene.duration || '未知'} valueStyle={{ fontSize: 14 }} />
+                              </Col>
+                            </Row>
+                          </Card>
+                        </List.Item>
+                      )}
+                    />
+                  ) : (
+                    <Empty description="暂无场景分析" />
                   )}
                 </Card>
               </div>
@@ -686,6 +891,37 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
                           </div>
                         )}
                       </Card>
+                      {/* 情感曲线 */}
+                      {analysis_data.emotional_curve && (
+                        <Card type="inner" title="情感曲线" size="small" style={{ marginTop: 16 }}>
+                          <Row gutter={16}>
+                            <Col span={8}>
+                              <Statistic
+                                title="开头"
+                                value={analysis_data.emotional_curve.start ? (analysis_data.emotional_curve.start * 10).toFixed(1) : '-'}
+                                suffix="/ 10"
+                              />
+                            </Col>
+                            <Col span={8}>
+                              <Statistic
+                                title="中段"
+                                value={analysis_data.emotional_curve.middle ? (analysis_data.emotional_curve.middle * 10).toFixed(1) : '-'}
+                                suffix="/ 10"
+                              />
+                            </Col>
+                            <Col span={8}>
+                              <Statistic
+                                title="结尾"
+                                value={analysis_data.emotional_curve.end ? (analysis_data.emotional_curve.end * 10).toFixed(1) : '-'}
+                                suffix="/ 10"
+                              />
+                            </Col>
+                          </Row>
+                          <div style={{ marginTop: 12, fontSize: 13, color: token.colorTextSecondary }}>
+                            💡 情感曲线反映了章节从开头到结尾的情感强度变化趋势
+                          </div>
+                        </Card>
+                      )}
                     </div>
                   ) : (
                     <Empty description="暂无情感分析" />
@@ -799,9 +1035,7 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
       styles={{
         body: {
           padding: isMobile ? '12px' : '24px',
-          paddingBottom: 0,
-          maxHeight: isMobile ? 'calc(100vh - 200px)' : 'calc(90vh - 150px)',
-          overflowY: 'auto'
+          paddingBottom: 0
         }
       }}
       footer={[
@@ -885,6 +1119,12 @@ export default function ChapterAnalysis({ chapterId, visible, onClose }: Chapter
           chapterNumber={chapterInfo.chapter_number}
           suggestions={convertSuggestionsForRegeneration()}
           hasAnalysis={true}
+          analysisScores={analysis?.analysis ? {
+            pacing_score: analysis.analysis.pacing_score,
+            engagement_score: analysis.analysis.engagement_score,
+            coherence_score: analysis.analysis.coherence_score,
+            overall_quality_score: analysis.analysis.overall_quality_score
+          } : undefined}
         />
       )}
 

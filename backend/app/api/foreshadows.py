@@ -149,12 +149,98 @@ async def get_pending_resolve_foreshadows(
             "total": len(foreshadows),
             "items": [f.to_dict() for f in foreshadows]
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"❌ 获取待回收伏笔失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取待回收伏笔失败: {str(e)}")
+
+
+@router.get("/projects/{project_id}/warnings")
+async def get_foreshadow_warnings(
+    project_id: str,
+    request: Request,
+    current_chapter: int = Query(..., ge=1, description="当前最新章节号"),
+    remind_threshold: int = Query(3, ge=1, le=10, description="提前几章开始提醒"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取伏笔预警列表
+
+    返回三类预警：
+    - overdue: 已超期未回收的伏笔（当前章节 > 计划回收章节）
+    - urgent: 急需回收的伏笔（当前章节 >= 计划回收章节）
+    - reminder: 即将到期提醒（当前章节 >= 计划回收章节 - remind_threshold）
+
+    用于前端快速获取需要关注的伏笔列表
+    """
+    try:
+        user_id = getattr(request.state, 'user_id', None)
+        await verify_project_access(project_id, user_id, db)
+
+        # 获取超期伏笔（当前章节 > 计划回收章节）
+        overdue_foreshadows = await foreshadow_service.get_overdue_foreshadows(
+            db=db,
+            project_id=project_id,
+            current_chapter=current_chapter
+        )
+
+        # 获取本章必须回收的伏笔（当前章节 == 计划回收章节）
+        must_resolve_foreshadows = await foreshadow_service.get_must_resolve_foreshadows(
+            db=db,
+            project_id=project_id,
+            chapter_number=current_chapter
+        )
+
+        # 获取即将到期的伏笔（当前章节 >= 计划回收章节 - remind_threshold，排除已超期和必须回收）
+        from sqlalchemy import select, and_
+        from app.models.foreshadow import Foreshadow
+
+        reminder_query = (
+            select(Foreshadow)
+            .where(
+                and_(
+                    Foreshadow.project_id == project_id,
+                    Foreshadow.status == 'planted',
+                    Foreshadow.target_resolve_chapter_number.is_not(None),
+                    Foreshadow.target_resolve_chapter_number > current_chapter,
+                    Foreshadow.target_resolve_chapter_number <= current_chapter + remind_threshold
+                )
+            )
+            .order_by(Foreshadow.target_resolve_chapter_number)
+        )
+        reminder_result = await db.execute(reminder_query)
+        reminder_foreshadows = list(reminder_result.scalars().all())
+
+        # 统计各类预警数量
+        overdue_count = len(overdue_foreshadows)
+        urgent_count = len(must_resolve_foreshadows)
+        reminder_count = len(reminder_foreshadows)
+
+        logger.info(f"📋 伏笔预警: 超期{overdue_count}, 急需{urgent_count}, 提醒{reminder_count}")
+
+        return {
+            "overdue": {
+                "count": overdue_count,
+                "items": [f.to_dict() for f in overdue_foreshadows]
+            },
+            "urgent": {
+                "count": urgent_count,
+                "items": [f.to_dict() for f in must_resolve_foreshadows]
+            },
+            "reminder": {
+                "count": reminder_count,
+                "items": [f.to_dict() for f in reminder_foreshadows]
+            },
+            "total_warnings": overdue_count + urgent_count + reminder_count
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 获取伏笔预警失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取伏笔预警失败: {str(e)}")
 
 
 @router.get("/{foreshadow_id}", response_model=ForeshadowResponse)

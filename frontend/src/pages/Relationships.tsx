@@ -353,7 +353,7 @@ export default function Relationships() {
                     current: currentPage,
                     pageSize: isMobile ? 10 : pageSize,
                     pageSizeOptions: ['10', '20', '50', '100'],
-                    position: ['bottomCenter'],
+                    position: ['bottomRight'],
                     showSizeChanger: !isMobile,
                     showQuickJumper: !isMobile,
                     showTotal: (total) => `共 ${total} 条`,

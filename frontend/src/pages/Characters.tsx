@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Button, Modal, Form, Input, Select, Row, Col, Empty, Tabs, Divider, Typography, Space, InputNumber, Checkbox, theme, App } from 'antd';
-import { ThunderboltOutlined, UserOutlined, TeamOutlined, PlusOutlined, ExportOutlined, ImportOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Modal, Form, Input, Select, Row, Col, Empty, Tabs, Divider, Typography, Space, InputNumber, Checkbox, theme, App, Tag, Segmented, Pagination, List, Popconfirm } from 'antd';
+import { ThunderboltOutlined, UserOutlined, TeamOutlined, PlusOutlined, ExportOutlined, ImportOutlined, DownloadOutlined, ReloadOutlined, DeleteOutlined, AppstoreOutlined, UnorderedListOutlined, EditOutlined, BankOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useCharacterSync } from '../store/hooks';
 import { charactersPageGridConfig } from '../components/CardStyles';
@@ -12,7 +12,7 @@ import { characterApi } from '../services/api';
 import { SSEPostClient } from '../utils/sseClient';
 import api from '../services/api';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 interface Career {
@@ -127,6 +127,14 @@ export default function Characters() {
   const [attributeSchema, setAttributeSchema] = useState<AttributeSchema | null>(null);
   // 当前编辑的能力值
   const [editingAttributes, setEditingAttributes] = useState<Record<string, AttributeValue> | null>(null);
+  // 详情弹窗状态
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [detailCharacter, setDetailCharacter] = useState<Character | null>(null);
+  // 视图切换状态
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
+  // 分页状态
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const {
     refreshCharacters,
@@ -350,6 +358,12 @@ export default function Characters() {
     } catch {
       message.error('创建失败');
     }
+  };
+
+  // 查看角色/组织详情
+  const handleViewDetail = (character: Character) => {
+    setDetailCharacter(character);
+    setDetailModalOpen(true);
   };
 
   const handleEditCharacter = (character: Character) => {
@@ -587,15 +601,6 @@ export default function Characters() {
     );
   };
 
-  // 全选/取消全选
-  const toggleSelectAll = () => {
-    if (selectedCharacters.length === displayList.length) {
-      setSelectedCharacters([]);
-    } else {
-      setSelectedCharacters(displayList.map(c => c.id));
-    }
-  };
-
   const showGenerateModal = () => {
     modal.confirm({
       title: 'AI生成角色',
@@ -681,6 +686,14 @@ export default function Characters() {
 
   const displayList = getDisplayList();
 
+  // 分页处理后的列表
+  const paginatedList = displayList.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  // 切换Tab时重置分页
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab]);
+
   const isMobile = window.innerWidth <= 768;
 
   return (
@@ -753,13 +766,38 @@ export default function Characters() {
             导入
           </Button>
           {selectedCharacters.length > 0 && (
-            <Button
-              icon={<ExportOutlined />}
-              onClick={handleExportSelected}
-              size={isMobile ? 'small' : 'middle'}
-            >
-              批量导出 ({selectedCharacters.length})
-            </Button>
+            <>
+              <Button
+                icon={<ExportOutlined />}
+                onClick={handleExportSelected}
+                size={isMobile ? 'small' : 'middle'}
+              >
+                批量导出 ({selectedCharacters.length})
+              </Button>
+              <Button
+                type="primary"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => {
+                  modal.confirm({
+                    title: '批量删除确认',
+                    content: `确定删除选中的 ${selectedCharacters.length} 个角色/组织吗？此操作不可撤销。`,
+                    okText: '确定删除',
+                    cancelText: '取消',
+                    onOk: async () => {
+                      for (const id of selectedCharacters) {
+                        await handleDeleteCharacter(id);
+                      }
+                      setSelectedCharacters([]);
+                      message.success('批量删除成功');
+                    },
+                  });
+                }}
+                size={isMobile ? 'small' : 'middle'}
+              >
+                批量删除 ({selectedCharacters.length})
+              </Button>
+            </>
           )}
         </Space>
       </div>
@@ -772,6 +810,9 @@ export default function Characters() {
           backgroundColor: 'var(--color-bg-container)',
           paddingBottom: 8,
           borderBottom: '1px solid var(--color-border-secondary)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}>
           <Tabs
             activeKey={activeTab}
@@ -798,27 +839,33 @@ export default function Characters() {
                 ),
               },
             ]}
+            style={{ marginBottom: 0 }}
           />
-        </div>
-      )}
-
-      {/* 批量选择工具栏 */}
-      {characters.length > 0 && (
-        <div style={{
-          position: 'sticky',
-          top: isMobile ? 120 : 132,
-          zIndex: 8,
-          backgroundColor: 'var(--color-bg-container)',
-          paddingBottom: 8,
-          paddingTop: 8,
-          marginTop: 8,
-          borderBottom: selectedCharacters.length > 0 ? '1px solid var(--color-border-secondary)' : 'none',
-        }}>
           <Space>
+            <Segmented
+              value={viewMode}
+              onChange={(value) => setViewMode(value as 'card' | 'list')}
+              options={[
+                { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
+                { value: 'list', icon: <UnorderedListOutlined />, label: '列表' },
+              ]}
+              size="small"
+              style={{
+                '--segmented-item-selected-bg': token.colorPrimary,
+                '--segmented-item-selected-color': token.colorBgContainer,
+              } as React.CSSProperties}
+            />
             <Checkbox
-              checked={selectedCharacters.length === displayList.length && displayList.length > 0}
-              indeterminate={selectedCharacters.length > 0 && selectedCharacters.length < displayList.length}
-              onChange={toggleSelectAll}
+              checked={selectedCharacters.length === paginatedList.length && paginatedList.length > 0}
+              indeterminate={selectedCharacters.length > 0 && selectedCharacters.length < paginatedList.length}
+              onChange={() => {
+                // 全选/取消全选当前页
+                if (selectedCharacters.length === paginatedList.length) {
+                  setSelectedCharacters([]);
+                } else {
+                  setSelectedCharacters(paginatedList.map(c => c.id));
+                }
+              }}
             >
               {selectedCharacters.length > 0 ? `已选 ${selectedCharacters.length} 个` : '全选'}
             </Checkbox>
@@ -840,139 +887,191 @@ export default function Characters() {
           <Empty description="还没有角色或组织，开始创建吧！" />
         ) : (
           <>
-            <Row gutter={isMobile ? [8, 8] : charactersPageGridConfig.gutter}>
-              {activeTab === 'all' && (
-                <>
-                  {characterList.length > 0 && (
-                    <>
-                      <Col span={24}>
-                        <Divider orientation="left">
-                          <Title level={5} style={{ margin: 0 }}>
-                            <UserOutlined style={{ marginRight: 8 }} />
-                            角色 ({characterList.length})
-                          </Title>
-                        </Divider>
-                      </Col>
-                      {characterList.map((character) => (
-                        <Col
-                          xs={24}
-                          sm={charactersPageGridConfig.sm}
-                          md={charactersPageGridConfig.md}
-                          lg={charactersPageGridConfig.lg}
-                          xl={charactersPageGridConfig.xl}
-                          key={character.id}
-                          style={{ padding: isMobile ? '4px' : '8px' }}
-                        >
-                          <div style={{ position: 'relative' }}>
-                            <Checkbox
-                              checked={selectedCharacters.includes(character.id)}
-                              onChange={() => toggleSelectCharacter(character.id)}
-                              style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
-                            />
-                            <CharacterCard
-                              character={character}
-                              onEdit={handleEditCharacter}
-                              onDelete={handleDeleteCharacterWrapper}
-                              onExport={() => handleExportSingle(character.id)}
-                            />
-                          </div>
+            {/* 卡片视图 */}
+            {viewMode === 'card' && (
+              <Row gutter={isMobile ? [8, 8] : charactersPageGridConfig.gutter}>
+                {activeTab === 'all' && (
+                  <>
+                    {characterList.length > 0 && (
+                      <>
+                        <Col span={24}>
+                          <Divider orientation="left">
+                            <Title level={5} style={{ margin: 0 }}>
+                              <UserOutlined style={{ marginRight: 8 }} />
+                              角色 ({characterList.length})
+                            </Title>
+                          </Divider>
                         </Col>
-                      ))}
-                    </>
-                  )}
+                        {paginatedList.filter(c => !c.is_organization).map((character) => (
+                          <Col
+                            xs={24}
+                            sm={charactersPageGridConfig.sm}
+                            md={charactersPageGridConfig.md}
+                            lg={charactersPageGridConfig.lg}
+                            xl={charactersPageGridConfig.xl}
+                            key={character.id}
+                            style={{ padding: isMobile ? '4px' : '8px' }}
+                          >
+                            <div style={{ position: 'relative' }}>
+                              <Checkbox
+                                checked={selectedCharacters.includes(character.id)}
+                                onChange={() => toggleSelectCharacter(character.id)}
+                                style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
+                              />
+                              <CharacterCard
+                                character={character}
+                                onEdit={handleEditCharacter}
+                                onDelete={handleDeleteCharacterWrapper}
+                                onExport={() => handleExportSingle(character.id)}
+                                onClick={handleViewDetail}
+                              />
+                            </div>
+                          </Col>
+                        ))}
+                      </>
+                    )}
 
-                  {organizationList.length > 0 && (
-                    <>
-                      <Col span={24}>
-                        <Divider orientation="left">
-                          <Title level={5} style={{ margin: 0 }}>
-                            <TeamOutlined style={{ marginRight: 8 }} />
-                            组织 ({organizationList.length})
-                          </Title>
-                        </Divider>
-                      </Col>
-                      {organizationList.map((org) => (
-                        <Col
-                          xs={24}
-                          sm={charactersPageGridConfig.sm}
-                          md={charactersPageGridConfig.md}
-                          lg={charactersPageGridConfig.lg}
-                          xl={charactersPageGridConfig.xl}
-                          key={org.id}
-                          style={{ padding: isMobile ? '4px' : '8px' }}
-                        >
-                          <div style={{ position: 'relative' }}>
-                            <Checkbox
-                              checked={selectedCharacters.includes(org.id)}
-                              onChange={() => toggleSelectCharacter(org.id)}
-                              style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
-                            />
-                            <CharacterCard
-                              character={org}
-                              onEdit={handleEditCharacter}
-                              onDelete={handleDeleteCharacterWrapper}
-                              onExport={() => handleExportSingle(org.id)}
-                            />
-                          </div>
+                    {organizationList.length > 0 && (
+                      <>
+                        <Col span={24}>
+                          <Divider orientation="left">
+                            <Title level={5} style={{ margin: 0 }}>
+                              <TeamOutlined style={{ marginRight: 8 }} />
+                              组织 ({organizationList.length})
+                            </Title>
+                          </Divider>
                         </Col>
-                      ))}
-                    </>
-                  )}
-                </>
-              )}
+                        {paginatedList.filter(c => c.is_organization).map((org) => (
+                          <Col
+                            xs={24}
+                            sm={charactersPageGridConfig.sm}
+                            md={charactersPageGridConfig.md}
+                            lg={charactersPageGridConfig.lg}
+                            xl={charactersPageGridConfig.xl}
+                            key={org.id}
+                            style={{ padding: isMobile ? '4px' : '8px' }}
+                          >
+                            <div style={{ position: 'relative' }}>
+                              <Checkbox
+                                checked={selectedCharacters.includes(org.id)}
+                                onChange={() => toggleSelectCharacter(org.id)}
+                                style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
+                              />
+                              <CharacterCard
+                                character={org}
+                                onEdit={handleEditCharacter}
+                                onDelete={handleDeleteCharacterWrapper}
+                                onExport={() => handleExportSingle(org.id)}
+                                onClick={handleViewDetail}
+                              />
+                            </div>
+                          </Col>
+                        ))}
+                      </>
+                    )}
+                  </>
+                )}
 
-              {activeTab === 'character' && characterList.map((character) => (
-                <Col
-                  xs={24}
-                  sm={charactersPageGridConfig.sm}
-                  md={charactersPageGridConfig.md}
-                  lg={charactersPageGridConfig.lg}
-                  xl={charactersPageGridConfig.xl}
-                  key={character.id}
-                  style={{ padding: isMobile ? '4px' : '8px' }}
-                >
-                  <div style={{ position: 'relative' }}>
-                    <Checkbox
-                      checked={selectedCharacters.includes(character.id)}
-                      onChange={() => toggleSelectCharacter(character.id)}
-                      style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
-                    />
-                    <CharacterCard
-                      character={character}
-                      onEdit={handleEditCharacter}
-                      onDelete={handleDeleteCharacterWrapper}
-                      onExport={() => handleExportSingle(character.id)}
-                    />
-                  </div>
-                </Col>
-              ))}
+                {activeTab !== 'all' && paginatedList.map((item) => (
+                  <Col
+                    xs={24}
+                    sm={charactersPageGridConfig.sm}
+                    md={charactersPageGridConfig.md}
+                    lg={charactersPageGridConfig.lg}
+                    xl={charactersPageGridConfig.xl}
+                    key={item.id}
+                    style={{ padding: isMobile ? '4px' : '8px' }}
+                  >
+                    <div style={{ position: 'relative' }}>
+                      <Checkbox
+                        checked={selectedCharacters.includes(item.id)}
+                        onChange={() => toggleSelectCharacter(item.id)}
+                        style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
+                      />
+                      <CharacterCard
+                        character={item}
+                        onEdit={handleEditCharacter}
+                        onDelete={handleDeleteCharacterWrapper}
+                        onExport={() => handleExportSingle(item.id)}
+                        onClick={handleViewDetail}
+                      />
+                    </div>
+                  </Col>
+                ))}
+              </Row>
+            )}
 
-              {activeTab === 'organization' && organizationList.map((org) => (
-                <Col
-                  xs={24}
-                  sm={charactersPageGridConfig.sm}
-                  md={charactersPageGridConfig.md}
-                  lg={charactersPageGridConfig.lg}
-                  xl={charactersPageGridConfig.xl}
-                  key={org.id}
-                  style={{ padding: isMobile ? '4px' : '8px' }}
-                >
-                  <div style={{ position: 'relative' }}>
-                    <Checkbox
-                      checked={selectedCharacters.includes(org.id)}
-                      onChange={() => toggleSelectCharacter(org.id)}
-                      style={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}
+            {/* 列表视图 */}
+            {viewMode === 'list' && (
+              <List
+                itemLayout="horizontal"
+                dataSource={paginatedList}
+                renderItem={(item) => (
+                  <List.Item
+                    actions={[
+                      <Button
+                        key="edit"
+                        type="link"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => handleEditCharacter(item)}
+                      />,
+                      <Popconfirm
+                        key="delete"
+                        title={`确定删除这个${item.is_organization ? '组织' : '角色'}吗？`}
+                        onConfirm={() => handleDeleteCharacterWrapper(item.id)}
+                        okText="确定"
+                        cancelText="取消"
+                      >
+                        <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+                      </Popconfirm>,
+                    ]}
+                    style={{ padding: '8px 16px', borderBottom: '1px solid var(--color-border-secondary)' }}
+                  >
+                    <List.Item.Meta
+                      avatar={
+                        <Space>
+                          <Checkbox
+                            checked={selectedCharacters.includes(item.id)}
+                            onChange={() => toggleSelectCharacter(item.id)}
+                          />
+                          {item.is_organization ? (
+                            <BankOutlined style={{ fontSize: 24, color: token.colorSuccess }} />
+                          ) : (
+                            <UserOutlined style={{ fontSize: 24, color: token.colorPrimary }} />
+                          )}
+                        </Space>
+                      }
+                      title={
+                        <Space>
+                          <span>{item.name}</span>
+                          {item.is_organization ? (
+                            <Tag color="green">组织</Tag>
+                          ) : (
+                            item.role_type && (
+                              <Tag color={
+                                item.role_type === 'protagonist' ? 'blue' :
+                                item.role_type === 'supporting' ? 'green' :
+                                item.role_type === 'antagonist' ? 'red' : 'default'
+                              }>
+                                {item.role_type === 'protagonist' ? '主角' :
+                                 item.role_type === 'supporting' ? '配角' :
+                                 item.role_type === 'antagonist' ? '反派' : '其他'}
+                              </Tag>
+                            )
+                          )}
+                        </Space>
+                      }
+                      description={
+                        <Text type="secondary" ellipsis={{ tooltip: item.background }}>
+                          {item.background || '暂无背景'}
+                        </Text>
+                      }
                     />
-                    <CharacterCard
-                      character={org}
-                      onEdit={handleEditCharacter}
-                      onDelete={handleDeleteCharacterWrapper}
-                      onExport={() => handleExportSingle(org.id)}
-                    />
-                  </div>
-                </Col>
-              ))}
-            </Row>
+                  </List.Item>
+                )}
+              />
+            )}
 
             {displayList.length === 0 && (
               <Empty
@@ -984,6 +1083,34 @@ export default function Characters() {
                       : '暂无数据'
                 }
               />
+            )}
+
+            {/* 分页组件 - 列表视图始终显示，卡片视图超过pageSize时显示 */}
+            {(viewMode === 'list' || displayList.length > pageSize) && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                padding: '16px 0',
+                marginTop: 16,
+                borderTop: '1px solid var(--color-border-secondary)'
+              }}>
+                <Pagination
+                  current={currentPage}
+                  pageSize={pageSize}
+                  total={displayList.length}
+                  onChange={(page, newPageSize) => {
+                    setCurrentPage(page);
+                    if (newPageSize !== pageSize) {
+                      setPageSize(newPageSize);
+                      setCurrentPage(1);
+                    }
+                  }}
+                  showSizeChanger
+                  showQuickJumper
+                  showTotal={(total) => `共 ${total} 条`}
+                  pageSizeOptions={['10', '20', '50', '100']}
+                />
+              </div>
             )}
           </>
         )}
@@ -1639,6 +1766,310 @@ export default function Characters() {
             </ul>
           </div>
         </div>
+      </Modal>
+
+      {/* 角色/组织详情弹窗 */}
+      <Modal
+        title={detailCharacter?.is_organization ? '组织详情' : '角色详情'}
+        open={detailModalOpen}
+        onCancel={() => setDetailModalOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setDetailModalOpen(false)}>
+            关闭
+          </Button>,
+          <Button key="edit" type="primary" onClick={() => {
+            setDetailModalOpen(false);
+            if (detailCharacter) {
+              handleEditCharacter(detailCharacter);
+            }
+          }}>
+            编辑
+          </Button>
+        ]}
+        width={700}
+      >
+        {detailCharacter && (
+          <div>
+            {/* 基本信息 */}
+            <Divider orientation="left">基本信息</Divider>
+            <Row gutter={[16, 16]}>
+              <Col span={12}>
+                <Typography.Text type="secondary">名称：</Typography.Text>
+                <Typography.Text strong style={{ marginLeft: 8 }}>{detailCharacter.name}</Typography.Text>
+              </Col>
+              {!detailCharacter.is_organization && (
+                <>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">年龄：</Typography.Text>
+                    <Typography.Text style={{ marginLeft: 8 }}>{detailCharacter.age || '未设置'}</Typography.Text>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">性别：</Typography.Text>
+                    <Typography.Text style={{ marginLeft: 8 }}>{detailCharacter.gender || '未设置'}</Typography.Text>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">角色类型：</Typography.Text>
+                    <Tag style={{ marginLeft: 8 }} color={
+                      detailCharacter.role_type === 'protagonist' ? 'blue' :
+                      detailCharacter.role_type === 'supporting' ? 'green' :
+                      detailCharacter.role_type === 'antagonist' ? 'red' : 'default'
+                    }>
+                      {detailCharacter.role_type === 'protagonist' ? '主角' :
+                       detailCharacter.role_type === 'supporting' ? '配角' :
+                       detailCharacter.role_type === 'antagonist' ? '反派' : '其他'}
+                    </Tag>
+                  </Col>
+                </>
+              )}
+              {detailCharacter.is_organization && (
+                <>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">类型：</Typography.Text>
+                    <Tag style={{ marginLeft: 8 }} color="cyan">{detailCharacter.organization_type || '未设置'}</Tag>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">势力等级：</Typography.Text>
+                    <Tag style={{ marginLeft: 8 }} color={
+                      (detailCharacter.power_level ?? 0) >= 70 ? 'red' :
+                      (detailCharacter.power_level ?? 0) >= 50 ? 'orange' : 'default'
+                    }>
+                      {detailCharacter.power_level ?? '未设置'}
+                    </Tag>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">所在地：</Typography.Text>
+                    <Typography.Text style={{ marginLeft: 8 }}>{detailCharacter.location || '未设置'}</Typography.Text>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">代表颜色：</Typography.Text>
+                    <Typography.Text style={{ marginLeft: 8 }}>{detailCharacter.color || '未设置'}</Typography.Text>
+                  </Col>
+                </>
+              )}
+              <Col span={12}>
+                <Typography.Text type="secondary">状态：</Typography.Text>
+                <Tag style={{ marginLeft: 8 }} color={
+                  detailCharacter.status === 'active' ? 'green' :
+                  detailCharacter.status === 'deceased' ? 'default' :
+                  detailCharacter.status === 'missing' ? 'orange' :
+                  detailCharacter.status === 'retired' ? 'default' :
+                  detailCharacter.status === 'destroyed' ? 'default' : 'green'
+                }>
+                  {detailCharacter.status === 'active' ? '活跃' :
+                   detailCharacter.status === 'deceased' ? '已死亡' :
+                   detailCharacter.status === 'missing' ? '已失踪' :
+                   detailCharacter.status === 'retired' ? '已退场' :
+                   detailCharacter.status === 'destroyed' ? '已覆灭' : '活跃'}
+                </Tag>
+              </Col>
+            </Row>
+
+            {/* 性格与外貌（仅角色） */}
+            {!detailCharacter.is_organization && (
+              <>
+                <Divider orientation="left">性格与外貌</Divider>
+                {detailCharacter.personality && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Typography.Text type="secondary">性格：</Typography.Text>
+                    <Typography.Paragraph style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                      {detailCharacter.personality}
+                    </Typography.Paragraph>
+                  </div>
+                )}
+                {detailCharacter.appearance && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Typography.Text type="secondary">外貌：</Typography.Text>
+                    <Typography.Paragraph style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                      {detailCharacter.appearance}
+                    </Typography.Paragraph>
+                  </div>
+                )}
+                {detailCharacter.traits && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Typography.Text type="secondary">特质：</Typography.Text>
+                    <Typography.Paragraph style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                      {detailCharacter.traits}
+                    </Typography.Paragraph>
+                  </div>
+                )}
+                {detailCharacter.relationships && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Typography.Text type="secondary">人物关系：</Typography.Text>
+                    <Typography.Paragraph style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                      {detailCharacter.relationships}
+                    </Typography.Paragraph>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 心理状态（仅角色） */}
+            {!detailCharacter.is_organization && detailCharacter.current_state && (
+              <>
+                <Divider orientation="left">心理状态</Divider>
+                <Row gutter={[16, 16]}>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">当前状态：</Typography.Text>
+                    <Typography.Text style={{ marginLeft: 8 }}>{detailCharacter.current_state}</Typography.Text>
+                  </Col>
+                  {detailCharacter.state_updated_chapter && (
+                    <Col span={12}>
+                      <Typography.Text type="secondary">更新章节：</Typography.Text>
+                      <Typography.Text style={{ marginLeft: 8 }}>第{detailCharacter.state_updated_chapter}章</Typography.Text>
+                    </Col>
+                  )}
+                </Row>
+              </>
+            )}
+
+            {/* 状态变更信息 */}
+            {detailCharacter.status && detailCharacter.status !== 'active' && detailCharacter.status_changed_chapter && (
+              <>
+                <Divider orientation="left">状态变更</Divider>
+                <Row gutter={[16, 16]}>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">变更状态：</Typography.Text>
+                    <Tag style={{ marginLeft: 8 }} color={
+                      detailCharacter.status === 'deceased' ? 'default' :
+                      detailCharacter.status === 'missing' ? 'orange' :
+                      detailCharacter.status === 'retired' ? 'default' :
+                      detailCharacter.status === 'destroyed' ? 'default' : 'green'
+                    }>
+                      {detailCharacter.status === 'deceased' ? '已死亡' :
+                       detailCharacter.status === 'missing' ? '已失踪' :
+                       detailCharacter.status === 'retired' ? '已退场' :
+                       detailCharacter.status === 'destroyed' ? '已覆灭' : '活跃'}
+                    </Tag>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">变更章节：</Typography.Text>
+                    <Typography.Text style={{ marginLeft: 8 }}>第{detailCharacter.status_changed_chapter}章</Typography.Text>
+                  </Col>
+                </Row>
+              </>
+            )}
+
+            {/* 组织特有字段 */}
+            {detailCharacter.is_organization && (
+              <>
+                <Divider orientation="left">组织信息</Divider>
+                {detailCharacter.motto && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Typography.Text type="secondary">格言：</Typography.Text>
+                    <Typography.Paragraph style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                      {detailCharacter.motto}
+                    </Typography.Paragraph>
+                  </div>
+                )}
+                {detailCharacter.organization_purpose && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Typography.Text type="secondary">目的：</Typography.Text>
+                    <Typography.Paragraph style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                      {detailCharacter.organization_purpose}
+                    </Typography.Paragraph>
+                  </div>
+                )}
+                {detailCharacter.organization_members && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Typography.Text type="secondary">成员：</Typography.Text>
+                    <Typography.Paragraph style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                      {typeof detailCharacter.organization_members === 'string'
+                        ? detailCharacter.organization_members
+                        : JSON.stringify(detailCharacter.organization_members)}
+                    </Typography.Paragraph>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 背景故事 */}
+            {detailCharacter.background && (
+              <>
+                <Divider orientation="left">背景故事</Divider>
+                <Typography.Paragraph style={{ whiteSpace: 'pre-wrap' }}>
+                  {detailCharacter.background}
+                </Typography.Paragraph>
+              </>
+            )}
+
+            {/* 职业信息（仅角色） */}
+            {!detailCharacter.is_organization && detailCharacter.main_career_id && (
+              <>
+                <Divider orientation="left">职业信息</Divider>
+                <Row gutter={[16, 16]}>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">主职业：</Typography.Text>
+                    <Typography.Text style={{ marginLeft: 8 }}>
+                      {mainCareers.find(c => c.id === detailCharacter.main_career_id)?.name || '未知职业'}
+                    </Typography.Text>
+                  </Col>
+                  <Col span={12}>
+                    <Typography.Text type="secondary">阶段：</Typography.Text>
+                    <Typography.Text style={{ marginLeft: 8 }}>
+                      第{detailCharacter.main_career_stage || 1}阶段
+                    </Typography.Text>
+                  </Col>
+                </Row>
+                {detailCharacter.sub_careers && detailCharacter.sub_careers.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <Typography.Text type="secondary">副职业：</Typography.Text>
+                    <div style={{ marginTop: 8 }}>
+                      {detailCharacter.sub_careers.map((sc, idx) => {
+                        const career = subCareers.find(c => c.id === sc.career_id);
+                        return (
+                          <Tag key={idx} color="purple" style={{ marginBottom: 4 }}>
+                            {career?.name || '未知职业'} - 第{sc.stage || 1}阶段
+                          </Tag>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 能力值（仅角色） */}
+            {!detailCharacter.is_organization && detailCharacter.attributes && Object.keys(detailCharacter.attributes).length > 0 && attributeSchema && (
+              <>
+                <Divider orientation="left">能力值</Divider>
+                <Row gutter={[16, 16]}>
+                  {attributeSchema.display_order.map((key) => {
+                    const value = detailCharacter.attributes?.[key];
+                    const config = attributeSchema.attributes[key];
+                    if (!value || !config) return null;
+
+                    // 根据类型显示不同的值
+                    let displayValue: string | React.ReactNode = '';
+                    if (value.type === 'numeric') {
+                      displayValue = `${value.value || 0}${config.unit || ''}`;
+                    } else if (value.type === 'stage') {
+                      displayValue = value.name || `第${value.value || 1}阶`;
+                    } else if (value.type === 'combo_select') {
+                      displayValue = (
+                        <Space>
+                          {value.elements && value.elements.length > 0 && (
+                            <span>{value.elements.join(' + ')}</span>
+                          )}
+                          {value.quality && <Tag color="blue">{value.quality}</Tag>}
+                          {value.growth_rate && value.growth_rate > 1 && (
+                            <Tag color="gold">修炼速度 {value.growth_rate}x</Tag>
+                          )}
+                        </Space>
+                      );
+                    }
+
+                    return (
+                      <Col span={8} key={key}>
+                        <Typography.Text type="secondary">{config.name}：</Typography.Text>
+                        <span style={{ marginLeft: 8 }}>{displayValue}</span>
+                      </Col>
+                    );
+                  })}
+                </Row>
+              </>
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* SSE进度显示 */}

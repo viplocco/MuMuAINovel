@@ -39,8 +39,10 @@ class PlotAnalyzer:
         max_retries: int = 3,
         existing_foreshadows: Optional[List[Dict[str, Any]]] = None,
         existing_items: Optional[List[Dict[str, Any]]] = None,
+        character_careers: Optional[List[Dict[str, Any]]] = None,
         on_retry: Optional[OnRetryCallback] = None,
-        characters_info: str = ""
+        characters_info: str = "",
+        target_word_count: int = 3000
     ) -> Optional[Dict[str, Any]]:
         """
         分析单章内容（带重试机制）
@@ -55,8 +57,10 @@ class PlotAnalyzer:
             max_retries: 最大重试次数，默认3次
             existing_foreshadows: 已埋入的伏笔列表（用于回收匹配）
             existing_items: 已有的物品列表（用于物品匹配）
+            character_careers: 角色职业等级列表（用于一致性检测）
             on_retry: 重试时的回调函数，参数为 (当前重试次数, 最大重试次数, 等待秒数, 错误原因)
             characters_info: 项目角色信息文本（用于角色名称匹配）
+            target_word_count: 目标字数（用于字数一致性检测）
 
         Returns:
             分析结果字典,失败返回None
@@ -135,6 +139,9 @@ class PlotAnalyzer:
         # 格式化已有物品列表
         items_text = self._format_existing_items(existing_items)
 
+        # 格式化角色职业等级列表（一致性检测）
+        careers_text = self._format_character_careers(character_careers)
+
         # 格式化提示词
         prompt = PromptService.format_prompt(
             template,
@@ -144,7 +151,9 @@ class PlotAnalyzer:
             content=analysis_content,
             existing_foreshadows=foreshadows_text,
             existing_items=items_text,
-            characters_info=characters_info if characters_info else "（暂无角色信息）"
+            character_careers=careers_text,
+            characters_info=characters_info if characters_info else "（暂无角色信息）",
+            target_word_count=target_word_count
         )
         
         last_error = None
@@ -158,7 +167,7 @@ class PlotAnalyzer:
                 try:
                     async for chunk in self.ai_service.generate_text_stream(
                         prompt=prompt,
-                        temperature=0.3  # 降低温度以获得更稳定的JSON输出
+                        temperature=None  # 使用用户配置的默认温度
                     ):
                         accumulated_text += chunk
                 except GeneratorExit:
@@ -372,7 +381,66 @@ class PlotAnalyzer:
         lines.append("并使用完全相同的物品名称，在 reference_item_id 填写对应ID。")
 
         return "\n".join(lines)
-    
+
+    def _format_character_careers(self, careers: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        格式化角色职业等级信息，用于注入到分析提示词中（一致性检测）
+
+        Args:
+            careers: 角色职业列表，每个包含:
+                - character_name: 角色名
+                - career_name: 职业名
+                - current_stage: 当前阶段号
+                - stage_name: 阶段名称（如"筑基期"、"剑道三阶")
+                - max_stage: 最大阶段
+                - character_status: 角色存活状态（用于检测死亡角色再现）
+
+        Returns:
+            格式化的文本
+        """
+        if not careers:
+            return "（暂无角色职业信息）"
+
+        lines = ["【角色职业等级与状态 - 一致性检测参考】"]
+        lines.append("以下是角色当前的职业等级和存活状态，分析时请对比章节描述：")
+        lines.append("")
+
+        for career in careers[:20]:  # 限制最多20个角色
+            char_name = career.get('character_name', '未知角色')
+            career_name = career.get('career_name', '未知职业')
+            current_stage = career.get('current_stage', 1)
+            stage_name = career.get('stage_name', '')
+            max_stage = career.get('max_stage', 10)
+            char_status = career.get('character_status', 'active')
+            career_id = career.get('career_id', '')
+
+            # 存活状态标记
+            status_mark = ""
+            if char_status == 'deceased':
+                status_mark = " 💀【已死亡】"
+            elif char_status == 'missing':
+                status_mark = " 🔍【已失踪】"
+            elif char_status == 'retired':
+                status_mark = " 🚪【已退场】"
+
+            # 阶段名称显示
+            stage_display = f"第{current_stage}阶段" if not stage_name else f"{stage_name}(第{current_stage}阶段)"
+
+            lines.append(f"- {char_name}{status_mark}")
+            lines.append(f"   职业：{career_name}，当前等级：{stage_display}")
+            if max_stage:
+                lines.append(f"   最高阶段：{max_stage}")
+            if career_id:
+                lines.append(f"   【ID: {career_id}】")
+
+        lines.append("")
+        lines.append("⚠️ 一致性检测提示：")
+        lines.append("- 如果章节中【已死亡/失踪/退场】的角色出现，请记录到 consistency_issues（type: character_death）")
+        lines.append("- 如果章节描述的角色等级与上述不符，请记录到 consistency_issues（type: cultivation_level）")
+        lines.append("- 如果角色使用了超出当前等级的能力，请记录到 consistency_issues（type: ability_overflow）")
+
+        return "\n".join(lines)
+
     def _parse_analysis_response(self, response: str) -> Optional[Dict[str, Any]]:
         """
         解析AI返回的分析结果（使用统一的JSON清洗方法）
@@ -396,7 +464,31 @@ class PlotAnalyzer:
                 if field not in result:
                     logger.warning(f"⚠️ 分析结果缺少字段: {field}")
                     result[field] = [] if field != 'scores' else {}
-            
+
+            # 确保一致性检测结果存在
+            if 'consistency_issues' not in result:
+                result['consistency_issues'] = []
+            elif not isinstance(result['consistency_issues'], list):
+                logger.warning(f"⚠️ consistency_issues 不是数组，重置为空数组")
+                result['consistency_issues'] = []
+
+            # 确保改进建议存在
+            if 'suggestions' not in result:
+                result['suggestions'] = []
+            elif not isinstance(result['suggestions'], list):
+                logger.warning(f"⚠️ suggestions 不是数组，重置为空数组")
+                result['suggestions'] = []
+
+            # 记录一致性检测结果
+            consistency_count = len(result.get('consistency_issues', []))
+            if consistency_count > 0:
+                logger.info(f"  🔍 发现 {consistency_count} 个一致性问题")
+
+            # 记录改进建议
+            suggestions_count = len(result.get('suggestions', []))
+            if suggestions_count > 0:
+                logger.info(f"  💡 发现 {suggestions_count} 条改进建议")
+
             logger.info("✅ 成功解析分析结果")
             return result
             
@@ -719,14 +811,9 @@ class PlotAnalyzer:
                 lines.append(f"  类型: {', '.join(conflict.get('types', []))}")
                 lines.append(f"  强度: {conflict.get('level', 0)}/10")
                 lines.append(f"  进度: {int(conflict.get('resolution_progress', 0) * 100)}%\n")
-            
-            # 改进建议
-            suggestions = analysis.get('suggestions', [])
-            if suggestions:
-                lines.append(f"【改进建议】")
-                for i, sug in enumerate(suggestions, 1):
-                    lines.append(f"  {i}. {sug}")
-            
+
+            # 注意：改进建议已在前端单独显示，不在摘要中重复
+
             return "\n".join(lines)
             
         except Exception as e:

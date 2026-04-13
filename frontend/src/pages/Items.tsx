@@ -5,7 +5,7 @@ import {
   Tooltip, Typography, Spin, Alert, List, Pagination
 } from 'antd';
 import {
-  PlusOutlined, HistoryOutlined, EyeOutlined, RobotOutlined, LoadingOutlined, SearchOutlined, ToolOutlined
+  PlusOutlined, HistoryOutlined, EyeOutlined, RobotOutlined, LoadingOutlined, SearchOutlined, ToolOutlined, SyncOutlined
 } from '@ant-design/icons';
 import { useStore } from '../store';
 import { itemApi, chapterApi } from '../services/api';
@@ -35,6 +35,16 @@ const RARITY_CONFIG: Record<ItemRarity, { text: string; color: string }> = {
   epic: { text: '史诗', color: 'purple' },
   legendary: { text: '传说', color: 'gold' },
   artifact: { text: '神器', color: 'red' },
+};
+
+// 上下文优先级显示配置
+const getPriorityConfig = (priority: number): { text: string; color: string } => {
+  // 优先级为 0 表示已消耗/销毁，显示为"已排除"
+  if (priority === 0) return { text: '已排除', color: 'red' };
+  if (priority >= 0.8) return { text: '高', color: 'green' };
+  if (priority >= 0.5) return { text: '中', color: 'blue' };
+  if (priority >= 0.3) return { text: '低', color: 'orange' };
+  return { text: '忽略', color: 'default' };
 };
 
 // 标签英文到中文映射
@@ -126,6 +136,9 @@ export default function Items() {
 
   // 修复不一致数据状态
   const [fixLoading, setFixLoading] = useState(false);
+
+  // 重算优先级状态
+  const [recalculateLoading, setRecalculateLoading] = useState(false);
 
   // 获取物品列表
   const fetchItems = useCallback(async (page = 1, pageSize = 20, keyword = '') => {
@@ -368,6 +381,33 @@ export default function Items() {
     }
   };
 
+  // 批量重算优先级
+  const handleRecalculatePriority = async () => {
+    if (!currentProject?.id) return;
+    setRecalculateLoading(true);
+    const hideLoading = getMessageInstance().loading('正在重算物品优先级...', 0);
+    try {
+      const result = await itemApi.recalculatePriority(currentProject.id);
+      hideLoading();
+      if (result.success) {
+        const { updated_count, priority_distribution } = result;
+        getMessageInstance().success(
+          `重算完成！已更新 ${updated_count} 个物品\n` +
+          `高优先级: ${priority_distribution.high}, 中: ${priority_distribution.medium}, ` +
+          `低: ${priority_distribution.low}, 忽略: ${priority_distribution.ignored}`
+        );
+        // 刷新物品列表
+        fetchItems(pagination.current, pagination.pageSize, searchKeyword);
+      }
+    } catch (error: any) {
+      hideLoading();
+      const errorDetail = error?.response?.data?.detail || error?.message || '重算失败';
+      getMessageInstance().error(`重算失败: ${errorDetail}`);
+    } finally {
+      setRecalculateLoading(false);
+    }
+  };
+
   // 表格列定义
   const columns = [
     {
@@ -431,6 +471,23 @@ export default function Items() {
       render: (status: ItemStatus) => (
         <Tag color={STATUS_CONFIG[status]?.color}>{STATUS_CONFIG[status]?.text || status}</Tag>
       ),
+    },
+    {
+      title: '上下文优先级',
+      dataIndex: 'context_priority',
+      key: 'context_priority',
+      width: 110,
+      align: 'center' as const,
+      render: (priority: number) => {
+        // 注意：priority 可能是 0（已销毁/消耗），不能用 !priority 判断
+        if (priority === undefined || priority === null) return '-';
+        const config = getPriorityConfig(priority);
+        return (
+          <Tooltip title={`优先级: ${priority.toFixed(2)}`}>
+            <Tag color={config.color}>{config.text} ({priority.toFixed(1)})</Tag>
+          </Tooltip>
+        );
+      },
     },
     {
       title: '持有者',
@@ -521,6 +578,9 @@ export default function Items() {
           </Button>
           <Button icon={<ToolOutlined />} onClick={handleFixInconsistent} loading={fixLoading}>
             修复数据
+          </Button>
+          <Button icon={<SyncOutlined />} onClick={handleRecalculatePriority} loading={recalculateLoading}>
+            重算优先级
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
             创建物品
@@ -806,6 +866,44 @@ export default function Items() {
                     : <Text type="secondary">无</Text>}
                 </Descriptions.Item>
               </Descriptions>
+            </Card>
+
+            {/* 上下文管理信息 */}
+            <Card title="上下文管理" size="small" style={{ marginBottom: 16 }}>
+              <Descriptions column={2} size="small">
+                <Descriptions.Item label="上下文优先级">
+                  {(() => {
+                    // 注意：priority 可能是 0，不能用 || 语法
+                    const priority = viewingItem.context_priority ?? 0.3;
+                    const config = getPriorityConfig(priority);
+                    return (
+                      <Space>
+                        <Tag color={config.color}>{config.text}</Tag>
+                        <Text type="secondary">({priority.toFixed(2)})</Text>
+                      </Space>
+                    );
+                  })()}
+                </Descriptions.Item>
+                <Descriptions.Item label="最后提及章节">
+                  {viewingItem.last_mentioned_chapter
+                    ? `第${viewingItem.last_mentioned_chapter}章`
+                    : <Text type="secondary">未记录</Text>}
+                </Descriptions.Item>
+                <Descriptions.Item label="提及次数">
+                  {viewingItem.mention_count || 0} 次
+                </Descriptions.Item>
+                <Descriptions.Item label="首次出现">
+                  {viewingItem.source_chapter_number
+                    ? `第${viewingItem.source_chapter_number}章`
+                    : '-'}
+                </Descriptions.Item>
+              </Descriptions>
+              <div style={{ marginTop: 8, padding: '8px 12px', background: '#f5f5f5', borderRadius: 4 }}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  优先级说明：高(≥0.8) 表示近期提及，始终注入上下文；中(0.5-0.8) 适度降权；
+                  低(0.3-0.5) 显著降权；忽略(&lt;0.3) 不注入上下文以减少噪音。
+                </Text>
+              </div>
             </Card>
 
             {/* 标签与备注 */}

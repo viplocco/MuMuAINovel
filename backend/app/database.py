@@ -176,51 +176,48 @@ async def get_db(request: Request):
             await session.rollback()
     except GeneratorExit:
         _session_stats["generator_exits"] += 1
-        logger.warning(f"⚠️ GeneratorExit [User:{user_id}][ID:{session_id}] - SSE连接断开（总计:{_session_stats['generator_exits']}次）")
+        # SSE连接断开是正常情况，降低日志级别
+        logger.debug(f"SSE连接断开 [User:{user_id}]")
         try:
             if session.in_transaction():
                 await session.rollback()
-                logger.info(f"✅ 事务已回滚 [User:{user_id}][ID:{session_id}]（GeneratorExit）")
         except Exception as rollback_error:
             _session_stats["errors"] += 1
-            logger.error(f"❌ GeneratorExit回滚失败 [User:{user_id}][ID:{session_id}]: {str(rollback_error)}")
+            logger.error(f"回滚失败 [User:{user_id}]: {str(rollback_error)}")
     except Exception as e:
         import traceback
         _session_stats["errors"] += 1
         error_trace = traceback.format_exc()
-        logger.error(f"❌ 会话异常 [User:{user_id}][ID:{session_id}]: 类型:{type(e).__name__}, 消息:{str(e)}, 堆栈:{error_trace[:500]}")
+        logger.error(f"会话异常 [User:{user_id}]: {type(e).__name__}, {str(e)}")
         try:
             if session.in_transaction():
                 await session.rollback()
-                logger.info(f"✅ 事务已回滚 [User:{user_id}][ID:{session_id}]（异常）")
         except Exception as rollback_error:
-            logger.error(f"❌ 异常回滚失败 [User:{user_id}][ID:{session_id}]: {str(rollback_error)}")
+            logger.error(f"回滚失败 [User:{user_id}]: {str(rollback_error)}")
         raise
     finally:
         try:
             if session.in_transaction():
                 await session.rollback()
-                logger.warning(f"⚠️ finally中发现未提交事务 [User:{user_id}][ID:{session_id}]，已回滚")
-            
+                logger.debug(f"finally中发现未提交事务，已回滚 [User:{user_id}]")
+
             await session.close()
-            
+
             _session_stats["closed"] += 1
             _session_stats["active"] -= 1
             _session_stats["last_check"] = datetime.now().isoformat()
-            
-            # logger.debug(f"📊 会话关闭 [User:{user_id}][ID:{session_id}] - 活跃:{_session_stats['active']}, 总创建:{_session_stats['created']}, 总关闭:{_session_stats['closed']}, 错误:{_session_stats['errors']}")
-            
+
             # 使用优化后的会话监控阈值
             if _session_stats["active"] > settings.database_session_leak_threshold:
-                logger.error(f"🚨 严重告警：活跃会话数 {_session_stats['active']} 超过泄漏阈值 {settings.database_session_leak_threshold}！")
+                logger.error(f"活跃会话数 {_session_stats['active']} 超过泄漏阈值 {settings.database_session_leak_threshold}")
             elif _session_stats["active"] > settings.database_session_max_active:
-                logger.warning(f"⚠️ 警告：活跃会话数 {_session_stats['active']} 超过警告阈值 {settings.database_session_max_active}，可能存在连接泄漏！")
+                logger.warning(f"活跃会话数 {_session_stats['active']} 超过警告阈值")
             elif _session_stats["active"] < 0:
-                logger.error(f"🚨 活跃会话数异常: {_session_stats['active']}，统计可能不准确！")
-                
+                logger.error(f"活跃会话数异常: {_session_stats['active']}")
+
         except Exception as e:
             _session_stats["errors"] += 1
-            logger.error(f"❌ 关闭会话时出错 [User:{user_id}][ID:{session_id}]: {str(e)}", exc_info=True)
+            logger.error(f"关闭会话时出错: {str(e)}", exc_info=True)
             try:
                 await session.close()
             except:

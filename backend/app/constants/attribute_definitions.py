@@ -426,6 +426,169 @@ ATTRIBUTE_DEFINITIONS_BY_GENRE = {
         },
         "display_order": ["官职", "武艺", "谋略", "声望"],
     },
+
+    "现代": {
+        "attributes": {
+            "社会地位": {
+                "type": "stage",
+                "name": "社会地位",
+                "stages": ["普通人", "小有名气", "知名人物", "行业精英", "社会名流", "影响力人物", "公众人物", "顶尖专家", "权威人士", "传奇人物"],
+                "default": 1,
+            },
+            "职业能力": {
+                "type": "numeric",
+                "name": "职业能力",
+                "min": 0,
+                "max": 100,
+                "default": 50,
+            },
+            "人际关系": {
+                "type": "numeric",
+                "name": "人际关系",
+                "min": 0,
+                "max": 100,
+                "default": 50,
+            },
+            "财富值": {
+                "type": "numeric",
+                "name": "财富值",
+                "min": 0,
+                "max": 100,
+                "default": 50,
+                "hidden": True,
+            },
+        },
+        "display_order": ["社会地位", "职业能力", "人际关系", "财富值"],
+    },
+
+    "末世": {
+        "attributes": {
+            "等级": {
+                "type": "stage",
+                "name": "等级",
+                "stages": ["普通人", "觉醒者", "E级", "D级", "C级", "B级", "A级", "S级", "SS级", "SSS级"],
+                "default": 1,
+            },
+            "异能": {
+                "type": "combo_select",
+                "name": "异能",
+                "elements": {
+                    "力量": {"name": "力量强化", "traits": "肉体力量增强"},
+                    "速度": {"name": "速度强化", "traits": "移动速度极快"},
+                    "防御": {"name": "防御强化", "traits": "身体坚硬如铁"},
+                    "治愈": {"name": "治愈能力", "traits": "快速恢复伤势"},
+                    "元素": {"name": "元素操控", "traits": "控制火焰、冰霜等"},
+                    "精神": {"name": "精神力量", "traits": "心灵感应、控制"},
+                    "空间": {"name": "空间能力", "traits": "空间移动、储物"},
+                    "时间": {"name": "时间能力", "traits": "时间减缓、回溯"},
+                    "召唤": {"name": "召唤能力", "traits": "召唤异兽、亡灵"},
+                },
+                "max_select": 3,
+                "default": ["力量"],
+            },
+            "生存值": {
+                "type": "numeric",
+                "name": "生存值",
+                "min": 0,
+                "max": 100,
+                "default": 50,
+            },
+            "装备评分": {
+                "type": "numeric",
+                "name": "装备评分",
+                "min": 0,
+                "max": 100,
+                "default": 30,
+            },
+        },
+        "display_order": ["等级", "异能", "生存值", "装备评分"],
+    },
+
+    "游戏": {
+        "attributes": {
+            "等级": {
+                "type": "stage",
+                "name": "等级",
+                "stages": ["新手", "普通玩家", "资深玩家", "高手", "大神", "职业选手", "顶尖选手", "传奇", "世界冠军", "神级玩家"],
+                "default": 1,
+            },
+            "游戏天赋": {
+                "type": "combo_select",
+                "name": "游戏天赋",
+                "elements": {
+                    "操作": {"name": "操作天赋", "traits": "手速快、反应灵敏"},
+                    "意识": {"name": "意识天赋", "traits": "局势判断精准"},
+                    "策略": {"name": "策略天赋", "traits": "善于制定战术"},
+                    "指挥": {"name": "指挥天赋", "traits": "团队协调能力强"},
+                    "创新": {"name": "创新天赋", "traits": "善于开发新打法"},
+                    "适应": {"name": "适应天赋", "traits": "快速适应新版本"},
+                    "心理": {"name": "心理天赋", "traits": "心态稳定、抗压"},
+                    "分析": {"name": "分析天赋", "traits": "数据分析能力强"},
+                    "直播": {"name": "直播天赋", "traits": "直播感染力强"},
+                },
+                "max_select": 3,
+                "default": ["操作"],
+            },
+            "战力积分": {
+                "type": "numeric",
+                "name": "战力积分",
+                "min": 0,
+                "max": 10000,
+                "default": 1000,
+            },
+            "粉丝数": {
+                "type": "numeric",
+                "name": "粉丝数",
+                "min": 0,
+                "max": 10000000,
+                "default": 100,
+            },
+        },
+        "display_order": ["等级", "游戏天赋", "战力积分", "粉丝数"],
+    },
+
+    "灵异": {
+        "attributes": {
+            "境界": {
+                "type": "stage",
+                "name": "境界",
+                "stages": ["凡人", "感知者", "觉醒者", "修行者", "驱魔人", "阴阳师", "道士", "高僧", "大师", "天师"],
+                "default": 1,
+            },
+            "灵力": {
+                "type": "combo_select",
+                "name": "灵力属性",
+                "elements": {
+                    "阳": {"name": "阳气", "traits": "正气、光明"},
+                    "阴": {"name": "阴气", "traits": "阴冷、神秘"},
+                    "煞": {"name": "煞气", "traits": "凶煞、压制"},
+                    "灵": {"name": "灵气", "traits": "通灵、感应"},
+                    "鬼": {"name": "鬼气", "traits": "鬼道、幽冥"},
+                    "妖": {"name": "妖气", "traits": "妖异、幻化"},
+                    "魔": {"name": "魔气", "traits": "魔道、邪恶"},
+                    "佛": {"name": "佛光", "traits": "慈悲、净化"},
+                    "道": {"name": "道韵", "traits": "道法、自然"},
+                },
+                "max_select": 3,
+                "default": ["阳"],
+            },
+            "灵力值": {
+                "type": "numeric",
+                "name": "灵力值",
+                "min": 0,
+                "max": 10000,
+                "default": 100,
+            },
+            "感应": {
+                "type": "numeric",
+                "name": "感应",
+                "min": 0,
+                "max": 100,
+                "default": 50,
+            },
+        },
+        "display_order": ["境界", "灵力", "灵力值", "感应"],
+    },
 }
 
 # 默认通用属性（当类型未匹配时使用）

@@ -1080,6 +1080,7 @@ class PromptService:
 章节：第{chapter_number}章
 标题：{title}
 字数：{word_count}字
+目标字数：{target_word_count}字（用于一致性检测）
 
 【章节内容】
 {content}
@@ -1088,6 +1089,12 @@ class PromptService:
 <existing_foreshadows priority="P1">
 【已埋入伏笔列表 - 用于回收匹配】
 以下是本项目中已埋入但尚未回收的伏笔，分析时如发现章节内容回收了某个伏笔，请使用对应的ID：
+
+⚠️ **超期伏笔处理规则**：
+- 如果列表中的伏笔有 replan_hint 标记（超期≥5章），必须在 foreshadows 中处理：
+  - 若本章回收 → type=resolved，填写 reference_foreshadow_id
+  - 若剧情上已无需回收 → type=no_need_resolve，填写 reference_foreshadow_id
+  - 若仍需后续回收 → 填写新的 estimated_resolve_chapter
 
 {existing_foreshadows}
 </existing_foreshadows>
@@ -1105,6 +1112,13 @@ class PromptService:
 
 {characters_info}
 </characters>
+
+<character_careers priority="P2">
+【角色职业等级信息 - 用于一致性检测】
+以下是角色当前的职业等级状态，分析时如发现章节描述与这些状态不一致，请记录到 consistency_issues：
+
+{character_careers}
+</character_careers>
 
 <analysis_framework priority="P0">
 【分析维度】
@@ -1134,7 +1148,10 @@ class PromptService:
   - ⚠️ 回收伏笔时，标题应与原伏笔标题保持一致，不要添加"回收"等后缀
   - 例如：原伏笔标题是"绿头发的视觉符号"，回收时标题仍为"绿头发的视觉符号"，而非"绿头发的视觉符号回收"
 - **content**：详细描述伏笔内容和预期作用
-- **type**：planted（埋下）或 resolved（回收）
+- **type**：planted（埋下）/ resolved（回收）/ no_need_resolve（无需回收）
+  - planted：本章新埋下的伏笔
+  - resolved：本章回收了已有伏笔（必须填写 reference_foreshadow_id）
+  - no_need_resolve：超期伏笔经判断已无需回收（放弃该伏笔，必须填写 reference_foreshadow_id）
 - **strength**：强度1-10（对读者的吸引力）
 - **subtlety**：隐藏度1-10（越高越隐蔽）
 - **reference_chapter**：回收时引用的原埋入章节号，埋下时为null
@@ -1290,15 +1307,70 @@ class PromptService:
 
 **9. 改进建议（与分数关联）**
 建议数量必须与整体质量分数关联：
-- overall < 4.0：必须提供4-5条具体改进建议，指出严重问题
-- overall 4.0-5.9：必须提供3-4条改进建议，指出主要问题
-- overall 6.0-7.9：提供1-2条优化建议，指出可提升之处
-- overall ≥ 8.0：提供0-1条锦上添花的建议
+- overall < 5.9：必须提供4-5条具体改进建议，指出严重问题
+- overall 6.0-7.9：必须提供3-4条改进建议，指出主要问题
+- overall 8.0-8.9：提供1-2条优化建议，指出可提升之处
+- overall ≥ 9.0：提供0-1条锦上添花的建议
+
+注：章节字数超限的建议不包括在上述数量限制内，可额外添加。
 
 每条建议必须：
 - 指出具体问题位置或类型
 - 说明为什么是问题
 - 给出明确的改进方向
+
+**10. 一致性检测（Consistency Issues）- 🔴 重要**
+检测章节内容与已有设定之间的矛盾，包括：
+
+**角色状态一致性**：
+- **死亡角色再现**：已死亡角色在本章出现（对比 Character.status）
+- **角色位置冲突**：角色在同一时间出现在不同地点
+- **能力超出设定**：角色使用了超出其职业阶段的能力（对比 CharacterCareer.current_stage）
+
+**数量一致性**：
+- **物品数量矛盾**：描述的物品数量与记录不符（对比 Item.quantity）
+- **货币数量矛盾**：灵石、金币等消耗后余额描述错误
+- **修为等级矛盾**：角色等级描述与记录不符（对比 CharacterCareer.current_stage）
+
+**字数一致性**：
+- **字数超标**：章节实际字数超过目标字数（对比 target_word_count）
+  - 超过100%以上（如目标3000字实际6000+）：严重超标，建议大幅压缩或精简次要场景及压缩重复度高部分的描写，保留核心情节
+  - 超过50%-100%（如目标3000字实际4500-6000）：中度超标，建议精简次要场景或压缩描写
+  - 超过30%-50%（如目标3000字实际3900-4500）：轻微超标，建议适当压缩冗余段落
+  - 超过30%以下：正常浮动，无需处理
+  - 低于目标字数30%以上（如目标3000字实际2100以下）：字数不足，建议扩展细节或增加场景
+
+**模糊数量估计规则**：
+当章节中出现模糊数量描述时（如"几十个"、"数百"、"约一百"等），必须给出明确的估计值：
+- "几个" → 估计 3-5，取 4
+- "十几个" → 估计 12-17，取 15
+- "几十个" → 估计 30-80，根据上下文取具体值（如 35、50）
+- "数百" → 估计 200-800，根据上下文取具体值（如 300、500）
+- "上千" → 估计 1000-3000，根据上下文取具体值
+- "约X" → 直接取 X
+
+**重要**：对于新出现的物品获取场景，如果使用模糊数量，必须在 `character_states[].item_changes[].quantity` 中填写估计的明确数量，便于后续追踪。
+
+**伏笔一致性**：
+- **伏笔遗漏**：当前章节号超过预估回收章节，但伏笔未回收
+- **孤儿伏笔**：回收了从未埋入的伏笔
+- **超期伏笔处理**：对于已超期多章（≥5章）的伏笔，需要在本章分析中处理：
+  - 如果剧情合适，在本章回收（type=resolved）
+  - 如果剧情上已不再需要回收，标注 type=no_need_resolve（无需回收）
+  - 如果仍需后续回收，重新规划 estimated_resolve_chapter（更新为合理的新章节号）
+
+每个一致性问题需要：
+- **type**：问题类型（character_death/item_quantity/currency_quantity/cultivation_level/ability_overflow/foreshadow_missed/character_location/foreshadow_orphan/word_count_overflow）
+- **character_name**：涉及的角色名（角色相关问题）
+- **item_name**：涉及的物品名（数量相关问题）
+- **issue**：具体问题描述
+- **severity**：严重程度（high/medium/low）
+- **suggestion**：修改建议
+- **expected_value**：预期值（数量/等级类问题）
+- **described_value**：章节描述的值（模糊数量保留原文描述）
+- **estimated_value**：估计的明确数量（当描述值模糊时填写，便于后续追踪）
+- **overflow_percent**：字数超出百分比（字数类问题）
+- **reference_id**：关联的ID（如 item_id, career_id, foreshadow_id）
 </analysis_framework>
 
 <output priority="P0">
@@ -1343,6 +1415,20 @@ class PromptService:
       "is_long_term": false,
       "related_characters": ["角色A"],
       "estimated_resolve_chapter": 10
+    }},
+    {{
+      "title": "超期已久的伏笔",
+      "content": "此伏笔已超期10章，经剧情分析判断已无需回收",
+      "type": "no_need_resolve",
+      "strength": 5,
+      "subtlety": 7,
+      "reference_chapter": 3,
+      "reference_foreshadow_id": "xyz789-超期伏笔的ID",
+      "keyword": "相关原文关键词",
+      "category": "event",
+      "is_long_term": false,
+      "related_characters": ["角色C"],
+      "estimated_resolve_chapter": null
     }}
   ],
   "conflict": {{
@@ -1471,6 +1557,60 @@ class PromptService:
   "suggestions": [
     "【节奏问题】第三场景的心理描写过长（约500字），建议精简至200字以内，保留核心情感即可",
     "【吸引力不足】章节中段缺乏有效钩子，建议在主角发现线索后增加一个小悬念"
+  ],
+  "consistency_issues": [
+    {{
+      "type": "item_quantity",
+      "character_name": "主角",
+      "item_name": "灵石",
+      "expected_value": 500,
+      "described_value": 1000,
+      "issue": "主角持有灵石应剩余500块，但章节描述为1000块",
+      "severity": "high",
+      "suggestion": "修正灵石数量描述，改为'查看剩余五百块灵石'",
+      "reference_id": "item_xxx"
+    }},
+    {{
+      "type": "item_quantity",
+      "character_name": "主角",
+      "item_name": "金币",
+      "expected_value": 300,
+      "described_value": "几百枚",
+      "estimated_value": 350,
+      "issue": "主角花费200金币后应剩余100枚，但章节描述'钱包里有几百枚金币'，估计约350枚，数量矛盾",
+      "severity": "high",
+      "suggestion": "修正金币数量描述，改为'钱包里剩下一百多枚金币'",
+      "reference_id": "item_yyy"
+    }},
+    {{
+      "type": "cultivation_level",
+      "character_name": "李四",
+      "career_name": "剑修",
+      "expected_value": 3,
+      "described_value": 5,
+      "issue": "李四当前应为剑道第3阶段，但章节描述为第5阶段",
+      "severity": "high",
+      "suggestion": "修正等级描述，或添加突破情节",
+      "reference_id": "career_xxx"
+    }},
+    {{
+      "type": "word_count_overflow",
+      "expected_value": 3000,
+      "described_value": 6500,
+      "overflow_percent": 117,
+      "issue": "章节目标字数为3000字，实际字数6500字，超出117%，属于严重超标",
+      "severity": "high",
+      "suggestion": "建议大幅压缩或精简次要场景及压缩重复度高部分的描写，保留核心情节"
+    }},
+    {{
+      "type": "word_count_overflow",
+      "expected_value": 3000,
+      "described_value": 4800,
+      "overflow_percent": 60,
+      "issue": "章节目标字数为3000字，实际字数4800字，超出60%，属于中度超标",
+      "severity": "medium",
+      "suggestion": "建议精简次要场景描写和对话，适当压缩心理描写段落"
+    }}
   ]
 }}
 </output>
@@ -1499,6 +1639,12 @@ class PromptService:
    - overall 6.0-8.0 → 1-2条建议
    - overall≥8.0 → 0-1条建议
 ✅ 每条建议必须标注问题类型（如【节奏问题】【描写不足】等）
+
+【一致性检测约束】
+✅ 对比角色职业等级信息中的 current_stage，如章节描述等级不符，记录到 consistency_issues
+✅ 对比已有物品列表中的 quantity，如章节描述数量不符，记录到 consistency_issues
+✅ 对比角色存活状态（Character.status），如死亡角色出现，记录到 consistency_issues
+✅ consistency_issues 数组可选：仅当发现实际矛盾时填写，无问题则为空数组 []
 
 【禁止事项】
 ❌ keyword使用概括或改写的文字
@@ -1853,12 +1999,28 @@ class PromptService:
 - 简介：{description}
 - 主题：{theme}
 
-请生成6个合适的类型标签（每个2-4字），要求：
-1. 必须符合用户原始想法中暗示的类型倾向
-2. 符合小说整体风格
-3. 可以多选组合
+请从以下预定义类型列表中选择6个最合适的类型标签（可多选组合）：
 
-常见类型：玄幻、都市、科幻、武侠、仙侠、历史、言情、悬疑、奇幻、修仙等
+【预定义类型列表】（必须从中选择，不能生成其他类型）
+- 修仙：修仙问道、境界突破、飞升成仙
+- 玄幻：异世大陆、血脉觉醒、战力等级
+- 仙侠：仙侠世界、剑道修行、斩妖除魔
+- 奇幻：魔法世界、种族共存、奇幻冒险
+- 灵异：鬼怪悬疑、阴阳两界、驱魔抓鬼
+- 武侠：江湖恩怨、武功秘籍、侠义精神
+- 历史：历史背景、权谋争斗、朝代更迭
+- 都市：都市生活、职场情感、现代背景
+- 现代：现代社会、现实题材、生活故事
+- 言情：爱情主线、情感纠葛、浪漫故事
+- 游戏：游戏世界、电竞竞技、网游小说
+- 悬疑：悬疑推理、案件侦破、谜团解开
+- 科幻：科技未来、太空探索、科幻设定
+- 末世：末日生存、丧尸危机、废土世界
+
+【选择规则】
+1. 根据用户原始想法和小说信息，选择最匹配的类型
+2. 可以选择多个相关类型组合（如"都市+言情"、"玄幻+修仙"）
+3. 必须严格从上述列表中选择，不能创造新类型
 
 返回JSON格式：
 {{"prompt":"选择类型标签（可多选）：","options":["类型1","类型2","类型3","类型4","类型5","类型6"]}}
@@ -1866,7 +2028,7 @@ class PromptService:
 只返回紧凑的纯JSON，不要换行，不要有其他文字。"""
 
     # 灵感模式 - 类型生成（用户提示词）
-    INSPIRATION_GENRE_USER = "原始想法：{initial_idea}\n书名：{title}\n简介：{description}\n主题：{theme}\n请生成6个类型标签"
+    INSPIRATION_GENRE_USER = "原始想法：{initial_idea}\n书名：{title}\n简介：{description}\n主题：{theme}\n请从预定义列表中选择6个类型标签"
 
     # 灵感模式智能补全提示词
     INSPIRATION_QUICK_COMPLETE = """你是一位专业的小说创作顾问。用户提供了部分小说信息，请补全缺失的字段。
@@ -1878,9 +2040,12 @@ class PromptService:
 1. title: 书名（3-6字，如果用户已提供则保持原样）
 2. description: 简介（50-100字，必须基于用户提供的信息，不要偏离原意）
 3. theme: 核心主题（30-50字，必须与用户提供的信息保持一致）
-4. genre: 类型标签数组（2-3个）
+4. genre: 类型标签数组（必须从以下预定义列表中选择2-3个）
 
-重要：所有补全的内容都必须与用户提供的信息保持高度关联，确保前后一致性。
+【预定义类型列表】
+修仙、玄幻、仙侠、奇幻、灵异、武侠、历史、都市、现代、言情、游戏、悬疑、科幻、末世
+
+重要：所有补全的内容都必须与用户提供的信息保持高度关联，确保前后一致性。genre必须从预定义列表中选择。
 
 返回JSON格式：
 {{
@@ -3271,7 +3436,7 @@ class PromptService:
                 "name": "情节分析",
                 "category": "情节分析",
                 "description": "深度分析章节的剧情、钩子、伏笔等",
-                "parameters": ["chapter_number", "title", "content", "word_count"]
+                "parameters": ["chapter_number", "title", "content", "word_count", "target_word_count"]
             },
             "OUTLINE_EXPAND_SINGLE": {
                 "name": "大纲单批次展开",

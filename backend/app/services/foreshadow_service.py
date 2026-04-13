@@ -833,12 +833,21 @@ class ForeshadowService:
                 
                 # 智能标记回收状态
                 if current_chapter_number and f.target_resolve_chapter_number:
+                    overdue_chapters = current_chapter_number - f.target_resolve_chapter_number
+
                     if f.target_resolve_chapter_number == current_chapter_number:
                         item["resolve_status"] = "must_resolve_now"  # 本章必须回收
                         item["resolve_hint"] = "本章必须回收此伏笔"
-                    elif f.target_resolve_chapter_number < current_chapter_number:
+                    elif overdue_chapters > 0:
                         item["resolve_status"] = "overdue"  # 已超期
-                        item["resolve_hint"] = f"已超期{current_chapter_number - f.target_resolve_chapter_number}章，应尽快回收"
+                        item["resolve_hint"] = f"已超期{overdue_chapters}章，应尽快回收"
+                        # 标记超期严重程度和重新规划提示
+                        if overdue_chapters >= 10:
+                            item["overdue_severity"] = "critical"
+                            item["replan_hint"] = "🔴 超期超过10章！请选择：1)本章回收(type=resolved) 2)标注无需回收(type=no_need_resolve) 3)重新规划回收章节(更新estimated_resolve_chapter)"
+                        elif overdue_chapters >= 5:
+                            item["overdue_severity"] = "warning"
+                            item["replan_hint"] = "🟡 超期超过5章。请选择：本章回收(type=resolved) 或 标注无需回收(type=no_need_resolve) 或 更新estimated_resolve_chapter"
                     else:
                         item["resolve_status"] = "not_yet"  # 尚未到期
                         item["resolve_hint"] = f"计划第{f.target_resolve_chapter_number}章回收，请勿提前回收"
@@ -1153,6 +1162,7 @@ class ForeshadowService:
             stats = {
                 "planted_count": 0,      # 新埋入的伏笔
                 "resolved_count": 0,     # 回收的伏笔
+                "abandoned_count": 0,    # 标记为无需回收的伏笔
                 "created_count": 0,      # 新创建的伏笔记录
                 "updated_ids": [],       # 更新的伏笔ID
                 "created_ids": [],       # 创建的伏笔ID
@@ -1235,7 +1245,36 @@ class ForeshadowService:
                             logger.warning(f"   提示：AI可能误识别了回收伏笔，或者 reference_foreshadow_id 未正确填写")
                             stats["skipped_resolve_count"] = stats.get("skipped_resolve_count", 0) + 1
                             continue
-                    
+
+                    elif fs_type == "no_need_resolve":
+                        # 超期伏笔经判断已无需回收，标记为废弃
+                        existing = None
+
+                        if reference_id:
+                            existing = await self.get_foreshadow(db, reference_id)
+                            if existing and existing.project_id == project_id:
+                                logger.info(f"🎯 无需回收伏笔ID匹配: {existing.title}")
+                            else:
+                                existing = None
+
+                        if existing and existing.status == "planted":
+                            existing.status = "abandoned"
+                            existing.notes = (existing.notes or "") + "\n[AI分析] 经判断此伏笔已无需回收"
+                            await db.flush()
+                            await db.refresh(existing)
+
+                            stats["abandoned_count"] = stats.get("abandoned_count", 0) + 1
+                            stats["updated_ids"].append(existing.id)
+                            logger.info(f"✅ 标记伏笔无需回收: {existing.title} (ID: {existing.id})")
+
+                            planted_foreshadows = [f for f in planted_foreshadows if f['id'] != existing.id]
+                        elif existing:
+                            logger.warning(f"⚠️ 伏笔状态不是planted，跳过: {existing.title} (status: {existing.status})")
+                        else:
+                            logger.warning(f"⚠️ 无需回收的伏笔ID未找到: {reference_id}")
+                            stats["skipped_resolve_count"] = stats.get("skipped_resolve_count", 0) + 1
+                            continue
+
                     elif fs_type == "planted":
                         fs_content = fs_data.get("content", "")
                         if not fs_content:
@@ -1334,7 +1373,7 @@ class ForeshadowService:
             
             await db.commit()
             
-            logger.info(f"📊 伏笔自动更新完成: 埋入{stats['planted_count']}个, 回收{stats['resolved_count']}个, 创建{stats['created_count']}个")
+            logger.info(f"📊 伏笔自动更新完成: 埋入{stats['planted_count']}个, 回收{stats['resolved_count']}个, 废弃{stats['abandoned_count']}个, 创建{stats['created_count']}个")
             return stats
             
         except Exception as e:

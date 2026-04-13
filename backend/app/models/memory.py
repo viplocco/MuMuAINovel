@@ -157,6 +157,17 @@ class PlotAnalysis(Base):
     # 文本分析报告
     analysis_report = Column(Text, comment="完整的文字分析报告")
     suggestions = Column(JSON, comment="改进建议列表: ['建议1', '建议2']")
+
+    # 一致性检测结果
+    consistency_issues = Column(JSON, comment="""一致性检测结果列表: [
+        {
+            "type": "character_death|item_quantity|currency_quantity|cultivation_level|ability_overflow|foreshadow_missed|character_location|foreshadow_orphan",
+            "character_name": "角色名",
+            "issue": "问题描述",
+            "severity": "high|medium|low",
+            "suggestion": "修改建议"
+        }
+    ]""")
     
     # 统计信息
     word_count = Column(Integer, comment="章节字数")
@@ -194,6 +205,7 @@ class PlotAnalysis(Base):
             "coherence_score": self.coherence_score or 0.0,
             "analysis_report": self.analysis_report,
             "suggestions": self.suggestions or [],
+            "consistency_issues": self.consistency_issues or [],
             "dialogue_ratio": self.dialogue_ratio or 0.0,
             "description_ratio": self.description_ratio or 0.0,
             "created_at": self.created_at.isoformat() if self.created_at else None

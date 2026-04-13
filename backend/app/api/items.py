@@ -851,3 +851,152 @@ async def get_chapter_items(
     except Exception as e:
         logger.error(f"❌ 获取章节物品失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取章节物品失败: {str(e)}")
+
+
+@router.post("/projects/{project_id}/recalculate-priority")
+async def recalculate_items_priority(
+    project_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    批量重算项目中所有物品的上下文优先级（使用 V2 多维度权重算法）
+
+    基于：
+    - 持有者重要性（角色 role_type）
+    - 物品类别权重
+    - 稀有度权重
+    - 提及次数
+    - 距离上次提及的章节数
+
+    Returns:
+        更新统计信息
+    """
+    try:
+        from app.models.item import Item
+        from app.models.item_category import ItemCategory
+        from app.models.character import Character
+        from app.models.chapter import Chapter
+        from app.services.item_service import (
+            calculate_context_priority_v2,
+            get_character_importance_weight,
+            get_item_category_weight,
+            get_rarity_weight,
+            get_rarity_min_priority,
+            get_category_min_priority,
+            CHARACTER_IMPORTANCE_WEIGHTS
+        )
+
+        # 验证权限
+        user_id = getattr(request.state, 'user_id', None)
+        await verify_project_access(project_id, user_id, db)
+
+        # 获取项目最新章节号（用于计算距离）
+        latest_chapter_query = (
+            select(Chapter.chapter_number)
+            .where(Chapter.project_id == project_id)
+            .order_by(Chapter.chapter_number.desc())
+            .limit(1)
+        )
+        latest_result = await db.execute(latest_chapter_query)
+        latest_chapter_number = latest_result.scalar_one_or_none() or 1
+
+        logger.info(f"🔄 开始批量重算物品优先级: project_id={project_id}, 最新章节={latest_chapter_number}")
+
+        # 获取所有物品
+        items_query = select(Item).where(Item.project_id == project_id)
+        items_result = await db.execute(items_query)
+        items = items_result.scalars().all()
+
+        # 预加载所有角色信息（用于获取持有者 role_type）
+        characters_query = select(Character).where(Character.project_id == project_id)
+        characters_result = await db.execute(characters_query)
+        characters = characters_result.scalars().all()
+        character_map = {c.name: c for c in characters}
+
+        # 预加载所有分类信息
+        categories_query = select(ItemCategory).where(ItemCategory.project_id == project_id)
+        categories_result = await db.execute(categories_query)
+        categories = categories_result.scalars().all()
+        category_map = {c.id: c.name for c in categories}
+
+        # 批量更新
+        updated_count = 0
+        priority_stats = {
+            "high": 0,      # >= 0.8
+            "medium": 0,    # 0.5-0.8
+            "low": 0,       # 0.3-0.5
+            "ignored": 0,   # < 0.3
+        }
+
+        for item in items:
+            # 获取持有者重要性权重
+            character_importance = CHARACTER_IMPORTANCE_WEIGHTS["default"]
+            if item.owner_character_name:
+                char = character_map.get(item.owner_character_name)
+                if char and char.role_type:
+                    character_importance = get_character_importance_weight(char.role_type)
+
+            # 获取物品类别权重
+            category_name = category_map.get(item.category_id) if item.category_id else None
+            item_category_weight = get_item_category_weight(category_name, item.tags)
+
+            # 获取稀有度权重和保底
+            rarity_weight = get_rarity_weight(item.rarity)
+            rarity_min = get_rarity_min_priority(item.rarity)
+
+            # 获取分类保底
+            category_min = get_category_min_priority(category_name, item.tags)
+
+            # 计算距离
+            distance = 0
+            if item.last_mentioned_chapter:
+                distance = latest_chapter_number - item.last_mentioned_chapter
+            elif item.source_chapter_number:
+                distance = latest_chapter_number - item.source_chapter_number
+
+            # 计算新优先级
+            new_priority = calculate_context_priority_v2(
+                distance=distance,
+                character_importance=character_importance,
+                item_category_weight=item_category_weight,
+                rarity_weight=rarity_weight,
+                rarity_min=rarity_min,
+                category_min=category_min,
+                mention_count=item.mention_count or 1,
+                is_plot_critical=item.is_plot_critical or False,
+                status=item.status
+            )
+
+            # 更新物品
+            item.context_priority = new_priority
+            updated_count += 1
+
+            # 统计优先级分布
+            if new_priority >= 0.8:
+                priority_stats["high"] += 1
+            elif new_priority >= 0.5:
+                priority_stats["medium"] += 1
+            elif new_priority >= 0.3:
+                priority_stats["low"] += 1
+            else:
+                priority_stats["ignored"] += 1
+
+        await db.commit()
+
+        logger.info(f"✅ 批量重算完成: 更新 {updated_count} 个物品")
+        logger.info(f"📊 优先级分布: 高={priority_stats['high']}, 中={priority_stats['medium']}, 低={priority_stats['low']}, 忽略={priority_stats['ignored']}")
+
+        return {
+            "success": True,
+            "updated_count": updated_count,
+            "latest_chapter_number": latest_chapter_number,
+            "priority_distribution": priority_stats
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 批量重算优先级失败: {str(e)}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"批量重算优先级失败: {str(e)}")

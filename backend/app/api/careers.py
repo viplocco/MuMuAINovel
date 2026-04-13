@@ -604,6 +604,9 @@ async def update_career(
         elif field == "attribute_bonuses" and value is not None:
             # 转换为JSON字符串
             setattr(career, field, json.dumps(value, ensure_ascii=False))
+        elif field in ("base_attributes", "per_stage_bonus") and value is not None:
+            # 前端已经发送 JSON 字符串，直接存储
+            setattr(career, field, value)
         else:
             setattr(career, field, value)
     

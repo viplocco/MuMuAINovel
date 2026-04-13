@@ -5,11 +5,314 @@ from sqlalchemy import select, and_, or_, desc, func, delete, update, asc
 from sqlalchemy.orm import selectinload
 from datetime import datetime
 import uuid
+import math
 
 from app.database import Base
 from app.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+# ==================== 权重配置常量 ====================
+
+# 持有者重要性权重（与角色 role_type 绑定）
+CHARACTER_IMPORTANCE_WEIGHTS = {
+    "主角": 1.0,       # 核心角色，物品最关键
+    "重要配角": 0.7,   # 常出场，有剧情影响
+    "反派": 0.8,       # 与主角对抗，装备值得关注
+    "普通配角": 0.4,   # 偶尔出场
+    "路人NPC": 0.2,    # 几乎不重要
+    "组织势力": 0.5,   # 组织持有的公共物品
+    "default": 0.3,    # 无持有者/未知
+}
+
+# 物品类别基础权重（物品本身的价值）
+ITEM_CATEGORY_WEIGHTS = {
+    "武器": 1.0,       # 战斗核心
+    "法宝": 1.0,       # 修炼/战斗核心
+    "攻击法宝": 1.0,
+    "防御法宝": 0.9,
+    "辅助法宝": 0.85,
+    "神器": 1.0,       # 最高价值
+    "装备": 0.9,       # 持续使用
+    "剧情物品": 1.0,   # 钥匙、信物、任务物
+    "特殊物品": 0.85,
+    "丹药": 0.6,       # 消耗类，有使用价值
+    "疗伤丹药": 0.65,
+    "突破丹药": 0.7,   # 更重要
+    "辅助丹药": 0.5,
+    "材料": 0.4,       # 库存类
+    "货币": 0.3,       # 数量变化意义小
+    "典籍": 0.7,       # 可能蕴含秘密
+    "符箓": 0.6,
+    "灵兽": 0.8,       # 战斗伙伴
+    "道具": 0.5,       # 默认道具类
+    "default": 0.5,    # 默认权重
+}
+
+# 稀有度权重（叠加因子）- 提高权重让稀有度有更大影响
+RARITY_WEIGHTS = {
+    "artifact": 1.5,   # 神器，权重大幅提升
+    "legendary": 1.3,  # 传说
+    "epic": 1.2,       # 史诗
+    "rare": 1.0,       # 稀有（基准）
+    "uncommon": 0.9,   # 优秀
+    "common": 0.8,     # 普通
+    "default": 1.0,    # 无稀有度
+}
+
+# 稀有度保底优先级（稀有度高的物品应该有更高的基础优先级）
+RARITY_MIN_PRIORITY = {
+    "artifact": 0.60,   # 神器保底提高到 0.60
+    "legendary": 0.50,  # 传说保底提高到 0.50
+    "epic": 0.40,       # 史诗保底提高到 0.40
+    "rare": 0.30,       # 稀有保底提高到 0.30
+    "uncommon": 0.20,   # 优秀保底 0.20
+    "common": 0.15,     # 普通保底 0.15（出现在剧情中就不应完全忽略）
+    "default": 0.15,    # 无稀有度保底 0.15
+}
+
+# 物品分类保底优先级（重要分类不应该被完全忽略）
+CATEGORY_MIN_PRIORITY = {
+    "武器": 0.30,       # 武器保底提高到 0.30
+    "法宝": 0.30,       # 法宝保底提高到 0.30
+    "神器": 0.40,       # 神器分类保底 0.40
+    "攻击法宝": 0.30,
+    "防御法宝": 0.25,
+    "辅助法宝": 0.20,
+    "剧情物品": 0.40,   # 剧情物品保底提高到 0.40
+    "特殊物品": 0.25,
+    "装备": 0.25,
+    "灵兽": 0.30,
+    "典籍": 0.20,
+    "default": 0.15,    # 默认保底提高到 0.15
+}
+
+
+# ==================== 上下文优先级计算 V2 ====================
+
+def get_character_importance_weight(role_type: Optional[str]) -> float:
+    """获取持有者重要性权重"""
+    if not role_type:
+        return CHARACTER_IMPORTANCE_WEIGHTS["default"]
+    return CHARACTER_IMPORTANCE_WEIGHTS.get(role_type, CHARACTER_IMPORTANCE_WEIGHTS["default"])
+
+
+def get_item_category_weight(category_name: Optional[str], tags: Optional[List[str]] = None) -> float:
+    """获取物品类别权重"""
+    # 优先使用分类名称匹配
+    if category_name:
+        # 精确匹配
+        if category_name in ITEM_CATEGORY_WEIGHTS:
+            return ITEM_CATEGORY_WEIGHTS[category_name]
+        # 模糊匹配（包含关键词）
+        for key, weight in ITEM_CATEGORY_WEIGHTS.items():
+            if key in category_name or category_name in key:
+                return weight
+
+    # 从标签推断
+    if tags:
+        for tag in tags:
+            if tag in ITEM_CATEGORY_WEIGHTS:
+                return ITEM_CATEGORY_WEIGHTS[tag]
+            tag_lower = tag.lower()
+            for key, weight in ITEM_CATEGORY_WEIGHTS.items():
+                if key.lower() in tag_lower or tag_lower in key.lower():
+                    return weight
+
+    return ITEM_CATEGORY_WEIGHTS["default"]
+
+
+def get_rarity_weight(rarity: Optional[str]) -> float:
+    """获取稀有度权重"""
+    if not rarity:
+        return RARITY_WEIGHTS["default"]
+    return RARITY_WEIGHTS.get(rarity, RARITY_WEIGHTS["default"])
+
+
+def get_rarity_min_priority(rarity: Optional[str]) -> float:
+    """获取稀有度保底优先级"""
+    if not rarity:
+        return RARITY_MIN_PRIORITY["default"]
+    return RARITY_MIN_PRIORITY.get(rarity, RARITY_MIN_PRIORITY["default"])
+
+
+def get_category_min_priority(category_name: Optional[str], tags: Optional[List[str]] = None) -> float:
+    """获取分类保底优先级"""
+    # 优先使用分类名称匹配
+    if category_name:
+        if category_name in CATEGORY_MIN_PRIORITY:
+            return CATEGORY_MIN_PRIORITY[category_name]
+        # 模糊匹配
+        for key, min_p in CATEGORY_MIN_PRIORITY.items():
+            if key in category_name or category_name in key:
+                return min_p
+
+    # 从标签推断
+    if tags:
+        for tag in tags:
+            if tag in CATEGORY_MIN_PRIORITY:
+                return CATEGORY_MIN_PRIORITY[tag]
+
+    return CATEGORY_MIN_PRIORITY["default"]
+
+
+def calculate_context_priority_v2(
+    distance: int,
+    character_importance: float,
+    item_category_weight: float,
+    rarity_weight: float,
+    mention_count: int = 1,
+    is_plot_critical: bool = False,
+    status: str = 'appeared',
+    rarity_min: float = 0.0,
+    category_min: float = 0.0
+) -> float:
+    """
+    计算物品的上下文优先级 V2 - 多维度权重融合
+
+    优先级范围：0.0 - 1.0
+    - 1.0: 最高优先级，主角的核心装备且当章提及
+    - 0.0: 已完成使命（消耗/销毁），完全排除
+
+    保底机制（按优先级从高到低）：
+    1. 剧情关键物品保底: 0.60
+    2. 刚提及保底: 当章(distance=0) → 0.50, 近期(distance≤3) → 0.40
+    3. 稀有度保底: 神器0.60, 传说0.50, 史诗0.40, 稀有0.30
+    4. 分类保底: 神器/剧情物品0.40, 武器/法宝/灵兽0.30
+    5. 状态保底: equipped0.30, owned0.25, appeared0.20
+    6. 基础保底: 任何物品最低0.15
+
+    Args:
+        distance: 距离上次提及的章节数
+        character_importance: 持有者重要性权重 (0.0-1.0)
+        item_category_weight: 物品类别基础权重 (0.0-1.0)
+        rarity_weight: 稀有度权重因子
+        rarity_min: 稀有度保底优先级
+        category_min: 分类保底优先级
+        mention_count: 累计提及次数
+        is_plot_critical: 是否剧情关键物品
+        status: 物品状态
+
+    Returns:
+        计算后的优先级值
+    """
+    # 状态覆盖：已完成使命的物品直接排除（优先级为0）
+    if status in ('consumed', 'destroyed'):
+        return 0.0
+
+    # 被封印或丢失的物品，低优先级但保留可能恢复的信息
+    if status in ('sealed', 'lost'):
+        # 稀有度高的封印物品仍需关注（可能被解封）
+        sealed_min = max(0.10, rarity_min * 0.6)
+        return sealed_min
+
+    # === 计算实际优先级 ===
+
+    # 基础权重融合（持有者 × 类别 × 稀有度）
+    # 注意：稀有度权重现在更高（神器1.5），所以即使持有者不重要，稀有度也能提升优先级
+    base_importance = character_importance * item_category_weight * rarity_weight
+
+    # 稀有度加成：高稀有度物品本身就应该重要，不受持有者限制
+    # 如果稀有度权重 >= 1.2（史诗及以上），给予额外加成
+    if rarity_weight >= 1.5:  # 神器
+        rarity_bonus = 0.30
+    elif rarity_weight >= 1.3:  # 传说
+        rarity_bonus = 0.20
+    elif rarity_weight >= 1.2:  # 史诗
+        rarity_bonus = 0.10
+    else:
+        rarity_bonus = 0.0
+
+    # 将稀有度加成加入基础重要性
+    base_importance = base_importance + rarity_bonus
+    # 限幅到 0.0-1.0
+    base_importance = min(1.0, max(0.0, base_importance))
+
+    # 时间衰减（使用更温和的衰减系数）
+    decay = math.exp(-0.05 * max(0, distance))
+
+    # 活跃度因子（基于提及次数）
+    activity_factor = min(1.0, 0.7 + mention_count * 0.03)
+
+    # 计算优先级
+    calculated_priority = base_importance * decay * activity_factor
+
+    # === 多层保底机制 ===
+
+    # 1. 剧情关键物品保底（最高优先级）
+    min_priority = 0.60 if is_plot_critical else 0.0
+
+    # 2. 刚提及保底：刚在剧情中出现的物品应该有更高的优先级
+    if distance == 0:
+        # 当章提及的物品，给予较高保底
+        min_priority = max(min_priority, 0.50)
+    elif distance <= 3:
+        # 近3章内提及，给予中等保底
+        min_priority = max(min_priority, 0.40)
+
+    # 3. 稀有度保底（神器/传说不应被忽略）
+    min_priority = max(min_priority, rarity_min)
+
+    # 4. 分类保底（武器/法宝等重要分类不应被忽略）
+    min_priority = max(min_priority, category_min)
+
+    # 5. 状态保底：根据物品状态设置不同的保底值
+    if status == 'equipped':
+        state_min = 0.30
+    elif status == 'owned':
+        state_min = 0.25
+    elif status == 'appeared':
+        state_min = 0.20
+    else:
+        state_min = 0.15
+
+    min_priority = max(min_priority, state_min)
+
+    # 6. 被持有的物品额外提升（基于持有者重要性）
+    if status in ('owned', 'equipped'):
+        min_priority = max(min_priority, base_importance * 0.5)
+
+    # 7. 基础保底：任何物品最低 0.15
+    min_priority = max(min_priority, 0.15)
+
+    # 应用保底值（取保底值和计算值的较大者）
+    priority = max(min_priority, calculated_priority)
+
+    # 最终限幅
+    return min(1.0, max(0.0, priority))
+
+
+# 保留旧函数作为兼容（内部调用新函数）
+def calculate_context_priority(
+    last_mentioned_chapter: Optional[int],
+    current_chapter: int,
+    status: str,
+    is_plot_critical: bool
+) -> float:
+    """
+    计算物品的上下文优先级（兼容旧调用）
+
+    已弃用，建议使用 calculate_context_priority_v2
+    """
+    if last_mentioned_chapter is None:
+        distance = 0
+    else:
+        distance = current_chapter - last_mentioned_chapter
+
+    # 使用默认权重（保守估计）
+    return calculate_context_priority_v2(
+        distance=distance,
+        character_importance=0.5,  # 默认持有者权重
+        item_category_weight=0.5,  # 默认类别权重
+        rarity_weight=1.0,         # 默认稀有度权重
+        rarity_min=0.0,            # 无稀有度保底
+        category_min=0.0,          # 无分类保底
+        mention_count=0,
+        is_plot_critical=is_plot_critical,
+        status=status
+    )
+
 
 # 延迟导入模型（避免循环导入）
 Item = None
@@ -214,6 +517,60 @@ class ItemService:
     ) -> Item:
         """创建物品"""
         try:
+            # 获取持有者重要性权重
+            character_importance = CHARACTER_IMPORTANCE_WEIGHTS["default"]
+            if data.owner_character_name:
+                try:
+                    char_query = select(Character).where(
+                        Character.project_id == data.project_id,
+                        Character.name == data.owner_character_name
+                    )
+                    char_result = await db.execute(char_query)
+                    char = char_result.scalar_one_or_none()
+                    if char and char.role_type:
+                        character_importance = get_character_importance_weight(char.role_type)
+                except Exception as e:
+                    logger.warning(f"查询持有者角色类型失败: {e}")
+
+            # 获取物品类别权重
+            category_name = None
+            if data.category_id:
+                try:
+                    cat_query = select(ItemCategory).where(ItemCategory.id == data.category_id)
+                    cat_result = await db.execute(cat_query)
+                    cat = cat_result.scalar_one_or_none()
+                    if cat:
+                        category_name = cat.name
+                except Exception as e:
+                    logger.warning(f"查询分类名称失败: {e}")
+
+            item_category_weight = get_item_category_weight(category_name, data.tags)
+
+            # 获取稀有度权重和保底
+            rarity_str = data.rarity.value if hasattr(data.rarity, 'value') else data.rarity
+            rarity_weight = get_rarity_weight(rarity_str)
+            rarity_min = get_rarity_min_priority(rarity_str)
+            category_min = get_category_min_priority(category_name, data.tags)
+
+            # 获取状态
+            status_str = data.status.value if hasattr(data.status, 'value') else data.status
+
+            # 计算初始优先级
+            initial_priority = calculate_context_priority_v2(
+                distance=0,
+                character_importance=character_importance,
+                item_category_weight=item_category_weight,
+                rarity_weight=rarity_weight,
+                rarity_min=rarity_min,
+                category_min=category_min,
+                mention_count=1,
+                is_plot_critical=data.is_plot_critical or False,
+                status=status_str
+            )
+
+            logger.info(f"📊 创建物品优先级: {data.name} → {initial_priority:.2f} "
+                       f"(持有者={character_importance:.1f}, 类别={item_category_weight:.1f}, 稀有度保底={rarity_min:.1f})")
+
             item = Item(
                 id=str(uuid.uuid4()),
                 project_id=data.project_id,
@@ -225,7 +582,7 @@ class ItemService:
                 quantity=data.quantity,
                 initial_quantity=data.initial_quantity or data.quantity,
                 max_quantity=data.max_quantity,
-                rarity=data.rarity.value if hasattr(data.rarity, 'value') else data.rarity,
+                rarity=rarity_str,
                 quality=data.quality,
                 attributes=data.attributes,
                 special_effects=data.special_effects,
@@ -233,14 +590,18 @@ class ItemService:
                 value=data.value,
                 source_type=data.source_type.value if hasattr(data.source_type, 'value') else data.source_type,
                 source_chapter_number=data.source_chapter_number,
-                status=data.status.value if hasattr(data.status, 'value') else data.status,
+                status=status_str,
                 owner_character_id=data.owner_character_id,
                 owner_character_name=data.owner_character_name,
                 related_characters=data.related_characters or [],
                 related_chapters=data.related_chapters or [],
                 tags=data.tags or [],
                 notes=data.notes,
-                is_plot_critical=data.is_plot_critical,
+                is_plot_critical=data.is_plot_critical or False,
+                # 上下文管理字段
+                last_mentioned_chapter=data.source_chapter_number,
+                mention_count=1,
+                context_priority=initial_priority,
                 status_changed_at=datetime.now()
             )
 
@@ -290,11 +651,61 @@ class ItemService:
             for key, value in update_data.items():
                 setattr(item, key, value)
 
+            # 重新计算优先级（当状态、稀有度、持有者、分类变更时）
+            priority_recalc_fields = {'status', 'rarity', 'owner_character_name', 'category_id', 'tags', 'is_plot_critical'}
+            if any(field in update_data for field in priority_recalc_fields):
+                # 获取持有者重要性权重
+                character_importance = CHARACTER_IMPORTANCE_WEIGHTS["default"]
+                if item.owner_character_name:
+                    try:
+                        char_query = select(Character).where(
+                            Character.project_id == item.project_id,
+                            Character.name == item.owner_character_name
+                        )
+                        char_result = await db.execute(char_query)
+                        char = char_result.scalar_one_or_none()
+                        if char and char.role_type:
+                            character_importance = get_character_importance_weight(char.role_type)
+                    except Exception as e:
+                        logger.warning(f"查询持有者角色类型失败: {e}")
+
+                # 获取物品类别权重
+                category_name = None
+                if item.category_id:
+                    try:
+                        cat_query = select(ItemCategory).where(ItemCategory.id == item.category_id)
+                        cat_result = await db.execute(cat_query)
+                        cat = cat_result.scalar_one_or_none()
+                        if cat:
+                            category_name = cat.name
+                    except Exception as e:
+                        logger.warning(f"查询分类名称失败: {e}")
+
+                item_category_weight = get_item_category_weight(category_name, item.tags)
+                rarity_weight = get_rarity_weight(item.rarity)
+                rarity_min = get_rarity_min_priority(item.rarity)
+                category_min = get_category_min_priority(category_name, item.tags)
+
+                new_priority = calculate_context_priority_v2(
+                    distance=0,
+                    character_importance=character_importance,
+                    item_category_weight=item_category_weight,
+                    rarity_weight=rarity_weight,
+                    rarity_min=rarity_min,
+                    category_min=category_min,
+                    mention_count=item.mention_count or 1,
+                    is_plot_critical=item.is_plot_critical or False,
+                    status=item.status
+                )
+                item.context_priority = new_priority
+                logger.info(f"  📊 重新计算优先级: {new_priority:.2f} "
+                           f"(持有者={character_importance:.1f}, 类别={item_category_weight:.1f}, 状态={item.status})")
+
             await db.commit()
             await db.refresh(item)
 
             # 🔍 调试日志：确认更新后的值
-            logger.info(f"更新后物品 {item.name}: category_id={item.category_id}")
+            logger.info(f"更新后物品 {item.name}: category_id={item.category_id}, context_priority={item.context_priority:.2f}")
 
             # 更新分类统计
             if old_category_id != item.category_id:
@@ -862,20 +1273,156 @@ class ItemService:
         item_name: str,
         existing_items: List[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
-        """匹配已有物品"""
-        item_name_lower = item_name.lower().strip()
+        """匹配已有物品（增强匹配：处理多种名称变体）"""
+        import re
+
+        # 深度清理物品名称
+        def clean_name_deep(name: str) -> str:
+            if not name:
+                return ''
+
+            # 1. 移除书名号《》
+            name = re.sub(r'[《》]', '', name)
+
+            # 2. 移除各种引号："" '' 「」 『』
+            name = re.sub(r'[""「」『』]', '', name)
+            name = name.replace('"', '').replace("'", '')
+
+            # 3. 移除方括号标签：【xxx】[xxx]
+            name = re.sub(r'[【\[][^\】\]]*[\】\]]', '', name)
+
+            # 4. 移除括号及其内容（别名、说明等）
+            name = re.sub(r'[（\(][^）\)]*[）\)]', '', name)
+
+            # 5. 移除破折号和下划线
+            name = name.replace('-', '').replace('_', '')
+
+            # 6. 移除多余空格
+            name = re.sub(r'\s+', '', name)
+
+            # 7. 移除数量词前缀（数字+量词的组合，如"三颗"、"两块"、"一个"）
+            # 注意：不要单独移除"百"，因为"百草"是物品名的一部分
+            quantity_patterns = [
+                '一颗', '两颗', '三颗', '四颗', '五颗', '六颗', '七颗', '八颗', '九颗', '十颗',
+                '一块', '两块', '三块', '四块', '五块', '六块', '七块', '八块', '九块', '十块',
+                '一把', '两把', '三把', '四把', '五把',
+                '一柄', '两柄', '三柄',
+                '一枚', '两枚', '三枚',
+                '一件', '两件', '三件',
+                '一张', '两张', '三张',
+                '一瓶', '两瓶', '三瓶',
+                '一个', '两个', '三个',
+                '几颗', '几块', '几把', '几柄', '几枚', '几件', '几张',
+                '数颗', '数块', '数把', '数枚', '数件',
+            ]
+            for pattern in quantity_patterns:
+                if name.startswith(pattern):
+                    name = name[len(pattern):]
+                    break
+
+            # 8. 移除指代词+量词组合（如"那把"、"这柄"、"那颗"）
+            demonstrative_patterns = [
+                '那把', '这把', '那柄', '这柄', '那颗', '这颗', '那块', '这块',
+                '那枚', '这枚', '那件', '这件', '那张', '这张',
+                '那一把', '这一把', '那一柄', '这一柄',
+            ]
+            for pattern in demonstrative_patterns:
+                if name.startswith(pattern):
+                    name = name[len(pattern):]
+                    break
+
+            # 9. 移除单纯指代词前缀（不含量词）
+            simple_prefixes = ['我的', '他的', '她的', '它的', '某', '那个', '这个']
+            for prefix in simple_prefixes:
+                if name.startswith(prefix):
+                    name = name[len(prefix):]
+                    break
+
+            # 10. 移除形容词前缀
+            adj_prefixes = [
+                '古老的', '神秘的', '传说中的', '祖传的', '珍贵的', '稀有的', '普通的', '特殊的', '强大的', '神奇的',
+                '古老', '神秘', '祖传', '珍贵', '稀有', '普通', '特殊', '强大', '神奇',
+            ]
+            for adj in adj_prefixes:
+                if name.startswith(adj):
+                    name = name[len(adj):]
+                    break
+
+            # 11. 移除纯数字前缀（阿拉伯数字）
+            name = re.sub(r'^[0-9]+', '', name)
+
+            return name.strip().lower()
+
+        # 简单清理（仅移除标点和空格）
+        def clean_name_simple(name: str) -> str:
+            if not name:
+                return ''
+            # 移除各种标点符号
+            name = re.sub(r'[《》""''「」『』【】\[\]（）\(\)\-_]', '', name)
+            name = re.sub(r'\s+', '', name)
+            return name.strip().lower()
+
+        # 清理后的输入名称
+        cleaned_deep = clean_name_deep(item_name)
+        cleaned_simple = clean_name_simple(item_name)
+        # 原始名称（小写，仅去空格）
+        raw_input = item_name.lower().strip()
 
         for item in existing_items:
-            # 主名称匹配
-            if item.get('name', '').lower().strip() == item_name_lower:
+            item_name_raw = item.get('name', '').lower().strip()
+            item_name_deep = clean_name_deep(item.get('name', ''))
+            item_name_simple = clean_name_simple(item.get('name', ''))
+
+            # 1. 精确匹配（原始名称）
+            if item_name_raw == raw_input:
                 return item
 
-            # 别名匹配
+            # 2. 深度清理后精确匹配（处理书名号、引号、标签等）
+            if item_name_deep == cleaned_deep and item_name_deep:
+                return item
+
+            # 3. 简单清理后精确匹配
+            if item_name_simple == cleaned_simple and item_name_simple:
+                return item
+
+            # 4. 包含匹配（深度清理后的名称互相包含）
+            if item_name_deep and cleaned_deep:
+                # 完全包含
+                if item_name_deep in cleaned_deep or cleaned_deep in item_name_deep:
+                    return item
+                # 部分包含（核心名称匹配）
+                # 如果其中一个名称包含另一个，且长度差距不大
+                len_diff = abs(len(item_name_deep) - len(cleaned_deep))
+                max_len = max(len(item_name_deep), len(cleaned_deep))
+                if max_len > 0 and len_diff / max_len < 0.4:
+                    # 检查是否有至少一半字符匹配
+                    if item_name_deep in cleaned_deep or cleaned_deep in item_name_deep:
+                        return item
+
+            # 5. 别名匹配（多层次）
             aliases = item.get('alias', [])
             if aliases:
                 for alias in aliases:
-                    if alias.lower().strip() == item_name_lower:
+                    alias_raw = alias.lower().strip()
+                    alias_deep = clean_name_deep(alias)
+                    alias_simple = clean_name_simple(alias)
+
+                    # 别名精确匹配
+                    if alias_raw == raw_input:
                         return item
+
+                    # 别名深度清理匹配
+                    if alias_deep == cleaned_deep and alias_deep:
+                        return item
+
+                    # 别名简单清理匹配
+                    if alias_simple == cleaned_simple and alias_simple:
+                        return item
+
+                    # 别名包含匹配
+                    if alias_deep and cleaned_deep:
+                        if alias_deep in cleaned_deep or cleaned_deep in alias_deep:
+                            return item
 
         return None
 
@@ -928,6 +1475,63 @@ class ItemService:
                        f"quantity_after={item_result.quantity_after}, "
                        f"初始数量={initial_quantity}")
 
+            # 计算初始上下文优先级（V2版本）
+            is_plot_critical = item_result.is_plot_critical or False
+
+            # 获取持有者重要性权重
+            character_importance = CHARACTER_IMPORTANCE_WEIGHTS["default"]  # 默认值
+            if owner_character_name:
+                # 查询持有者的 role_type
+                try:
+                    char_query = select(Character).where(
+                        Character.project_id == project_id,
+                        Character.name == owner_character_name
+                    )
+                    char_result = await db.execute(char_query)
+                    char = char_result.scalar_one_or_none()
+                    if char and char.role_type:
+                        character_importance = get_character_importance_weight(char.role_type)
+                        logger.debug(f"  持有者 '{owner_character_name}' role_type={char.role_type}, 权重={character_importance}")
+                except Exception as e:
+                    logger.warning(f"查询持有者角色类型失败: {e}")
+
+            # 获取物品类别权重
+            category_name = None
+            if category_id:
+                try:
+                    cat_query = select(ItemCategory).where(ItemCategory.id == category_id)
+                    cat_result = await db.execute(cat_query)
+                    cat = cat_result.scalar_one_or_none()
+                    if cat:
+                        category_name = cat.name
+                except Exception as e:
+                    logger.warning(f"查询分类名称失败: {e}")
+
+            item_category_weight = get_item_category_weight(category_name, [item_result.item_type] if item_result.item_type else None)
+
+            # 获取稀有度权重和保底
+            rarity_weight = get_rarity_weight(item_result.rarity)
+            rarity_min = get_rarity_min_priority(item_result.rarity)
+
+            # 获取分类保底
+            category_min = get_category_min_priority(category_name, [item_result.item_type] if item_result.item_type else None)
+
+            # 计算新版本优先级
+            initial_priority = calculate_context_priority_v2(
+                distance=0,  # 新创建物品，距离为0
+                character_importance=character_importance,
+                item_category_weight=item_category_weight,
+                rarity_weight=rarity_weight,
+                rarity_min=rarity_min,
+                category_min=category_min,
+                mention_count=1,
+                is_plot_critical=is_plot_critical,
+                status=status
+            )
+
+            logger.info(f"  📊 优先级计算: 持有者权重={character_importance:.2f}, 类别权重={item_category_weight:.2f}, "
+                       f"稀有度权重={rarity_weight:.2f}, 稀有度保底={rarity_min:.2f}, 分类保底={category_min:.2f} → 优先级={initial_priority:.2f}")
+
             item = Item(
                 id=str(uuid.uuid4()),
                 project_id=project_id,
@@ -950,7 +1554,11 @@ class ItemService:
                 status=status,
                 owner_character_name=owner_character_name,
                 tags=[item_result.item_type] if item_result.item_type else [],
-                is_plot_critical=item_result.is_plot_critical or False,
+                is_plot_critical=is_plot_critical,
+                # 上下文管理字段
+                last_mentioned_chapter=chapter_number,
+                mention_count=1,
+                context_priority=initial_priority,
                 status_changed_at=datetime.now()
             )
 
@@ -1296,6 +1904,61 @@ class ItemService:
                 db.add(status_change)
                 changes_logged.append(f"状态: {old_status}→{item.status}")
 
+            # === 5. 更新上下文管理字段 ===
+            # 更新最后提及章节和提及次数
+            item.last_mentioned_chapter = chapter_number
+            item.mention_count = (item.mention_count or 0) + 1
+
+            # 计算并更新上下文优先级（V2版本）
+            # 获取持有者重要性权重
+            character_importance = CHARACTER_IMPORTANCE_WEIGHTS["default"]
+            if item.owner_character_name:
+                try:
+                    char_query = select(Character).where(
+                        Character.project_id == item.project_id,
+                        Character.name == item.owner_character_name
+                    )
+                    char_result = await db.execute(char_query)
+                    char = char_result.scalar_one_or_none()
+                    if char and char.role_type:
+                        character_importance = get_character_importance_weight(char.role_type)
+                except Exception as e:
+                    logger.warning(f"查询持有者角色类型失败: {e}")
+
+            # 获取物品类别权重
+            category_name = None
+            if item.category_id:
+                try:
+                    cat_query = select(ItemCategory).where(ItemCategory.id == item.category_id)
+                    cat_result = await db.execute(cat_query)
+                    cat = cat_result.scalar_one_or_none()
+                    if cat:
+                        category_name = cat.name
+                except Exception as e:
+                    logger.warning(f"查询分类名称失败: {e}")
+
+            item_category_weight = get_item_category_weight(category_name, item.tags)
+            rarity_weight = get_rarity_weight(item.rarity)
+            rarity_min = get_rarity_min_priority(item.rarity)
+            category_min = get_category_min_priority(category_name, item.tags)
+
+            # 计算距离（当前章节 - 上次提及）
+            distance = 0  # 本次刚提及，距离为0
+
+            new_priority = calculate_context_priority_v2(
+                distance=distance,
+                character_importance=character_importance,
+                item_category_weight=item_category_weight,
+                rarity_weight=rarity_weight,
+                rarity_min=rarity_min,
+                category_min=category_min,
+                mention_count=item.mention_count or 1,
+                is_plot_critical=item.is_plot_critical or False,
+                status=item.status
+            )
+            item.context_priority = new_priority
+            changes_logged.append(f"优先级={new_priority:.2f} (持有者={character_importance:.1f}, 类别={item_category_weight:.1f}, 稀有度保底={rarity_min:.1f})")
+
             # === 日志汇总 ===
             if changes_logged:
                 logger.info(f"  ✅ 物品变更记录: {', '.join(changes_logged)}")
@@ -1568,17 +2231,28 @@ class ItemService:
         character_names: Optional[List[str]] = None,
         max_items: int = 15
     ) -> str:
-        """构建章节生成的物品上下文"""
+        """构建章节生成的物品上下文（基于上下文优先级过滤）
+
+        优先级过滤规则：
+        - priority >= 0.3: 注入到上下文
+        - priority < 0.3: 过滤掉（噪音过大）
+        - 按优先级降序排序，优先注入高优先级物品
+        """
         try:
             lines = []
 
-            # 1. 获取本章角色持有的物品
+            # === 优先级阈值：只注入高优先级物品 ===
+            PRIORITY_THRESHOLD = 0.3
+
+            # 1. 获取本章角色持有的物品（按优先级排序）
             if character_names:
                 owner_items_query = (
                     select(Item)
                     .where(Item.project_id == project_id)
                     .where(Item.status == 'owned')
                     .where(Item.owner_character_name.in_(character_names))
+                    .where(Item.context_priority >= PRIORITY_THRESHOLD)
+                    .order_by(desc(Item.context_priority))
                     .limit(20)
                 )
                 result = await db.execute(owner_items_query)
@@ -1592,12 +2266,13 @@ class ItemService:
                         if item.special_effects:
                             lines.append(f"  特效: {item.special_effects[:50]}")
 
-            # 2. 获取剧情关键物品
+            # 2. 获取剧情关键物品（保持原有逻辑，优先级总是高）
             critical_query = (
                 select(Item)
                 .where(Item.project_id == project_id)
                 .where(Item.is_plot_critical == True)
                 .where(Item.status.in_(['appeared', 'owned', 'equipped', 'sealed']))
+                .where(Item.context_priority >= PRIORITY_THRESHOLD)
                 .limit(5)
             )
             result = await db.execute(critical_query)
@@ -1608,23 +2283,34 @@ class ItemService:
                 for item in critical_items:
                     lines.append(f"- {item.to_context_string()}")
 
-            # 3. 获取近期变更的物品（5章内）
-            recent_query = (
+            # 3. 获取高优先级物品（按上下文优先级排序）
+            # 替换原有的"近期出现物品"逻辑，改用优先级排序
+            high_priority_query = (
                 select(Item)
                 .where(Item.project_id == project_id)
                 .where(Item.status.in_(['appeared', 'owned', 'equipped']))
-                .where(Item.source_chapter_number >= chapter_number - 5)
-                .where(Item.source_chapter_number < chapter_number)
-                .limit(10)
+                .where(Item.context_priority >= 0.5)  # 只取较高优先级
+                .order_by(desc(Item.context_priority))
+                .limit(max_items)
             )
-            result = await db.execute(recent_query)
-            recent_items = result.scalars().all()
+            result = await db.execute(high_priority_query)
+            high_priority_items = result.scalars().all()
 
-            if recent_items:
-                lines.append("\n【近期出现物品】")
-                for item in recent_items:
-                    chapter_str = f"(第{item.source_chapter_number}章出现)"
-                    lines.append(f"- {item.name} {chapter_str}: {item.description[:40]}...")
+            # 过滤掉已经在上面显示过的物品
+            shown_item_ids = set()
+            if character_names and owner_items:
+                shown_item_ids.update(item.id for item in owner_items)
+            if critical_items:
+                shown_item_ids.update(item.id for item in critical_items)
+
+            new_items = [item for item in high_priority_items if item.id not in shown_item_ids]
+
+            if new_items:
+                lines.append("\n【当前活跃物品】")
+                for item in new_items[:8]:  # 最多显示8个
+                    chapter_str = f"(第{item.last_mentioned_chapter or item.source_chapter_number}章提及)"
+                    desc_preview = item.description[:40] if item.description else ""
+                    lines.append(f"- {item.name} {chapter_str}: {desc_preview}...")
 
             return "\n".join(lines) if lines else ""
         except Exception as e:

@@ -4,11 +4,12 @@ import sys
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 from typing import Optional
+from datetime import datetime
 
 
 class UvicornFormatter(logging.Formatter):
-    """Uvicorn风格的日志格式化器"""
-    
+    """Uvicorn风格的日志格式化器，带时间戳"""
+
     # 日志级别颜色（ANSI转义码）
     COLORS = {
         'DEBUG': '\033[36m',      # 青色
@@ -18,35 +19,39 @@ class UvicornFormatter(logging.Formatter):
         'CRITICAL': '\033[35m',   # 紫色
     }
     RESET = '\033[0m'
-    
+
     def __init__(self, use_colors: bool = True):
         """
         初始化格式化器
-        
+
         Args:
             use_colors: 是否使用颜色（控制台输出使用，文件输出不使用）
         """
         super().__init__()
         self.use_colors = use_colors
-    
+
     def format(self, record):
-        """格式化日志记录为 Uvicorn 风格"""
+        """格式化日志记录为 Uvicorn 风格，带时间戳 YY-MM-DD hh:mm:ss"""
         # 获取日志级别名称
         levelname = record.levelname
-        
+
+        # 获取时间戳
+        dt = datetime.fromtimestamp(record.created)
+        timestamp = dt.strftime('%y-%m-%d %H:%M:%S')
+
         # 添加颜色（如果启用且终端支持）
         if self.use_colors and sys.stderr.isatty():
             colored_level = f"{self.COLORS.get(levelname, '')}{levelname}{self.RESET}"
         else:
             colored_level = levelname
-        
+
         # 添加请求追踪ID（如果存在）
         request_id = getattr(record, 'request_id', None)
         request_id_str = f" [{request_id}]" if request_id else ""
-        
-        # Uvicorn风格格式: INFO:     module_name - message [request_id]
+
+        # Uvicorn风格格式: YY-MM-DD hh:mm:ss INFO:     module_name - message [request_id]
         # 注意：INFO后面有5个空格，保持对齐
-        return f"{colored_level}:     {record.name}{request_id_str} - {record.getMessage()}"
+        return f"{timestamp} {colored_level}:     {record.name}{request_id_str} - {record.getMessage()}"
 
 
 # 全局标志，防止重复初始化

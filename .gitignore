@@ -136,3 +136,6 @@ backend/.instance_id
 
 # Type checking
 pyrightconfig.json
+
+# Claude Code CLI settings (user-specific)
+.claude/

@@ -62,21 +62,22 @@ CATEGORY_PRESETS = {
     ],
 }
 
-# 项目题材到分类类型的映射
+# 项目题材到分类类型的映射（与 ATTRIBUTE_DEFINITIONS_BY_GENRE 保持一致）
 GENRE_TO_CATEGORY_TYPE = {
+    "修仙": "fantasy",
     "玄幻": "fantasy",
     "仙侠": "fantasy",
     "奇幻": "fantasy",
+    "灵异": "fantasy",
     "武侠": "historical",
     "历史": "historical",
-    "现代": "modern",
     "都市": "modern",
+    "现代": "modern",
     "言情": "modern",
-    "科幻": "scifi",
-    "末世": "scifi",
     "游戏": "modern",
     "悬疑": "modern",
-    "灵异": "fantasy",
+    "科幻": "scifi",
+    "末世": "scifi",
 }
 
 

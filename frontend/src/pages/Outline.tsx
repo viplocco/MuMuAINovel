@@ -992,7 +992,7 @@ export default function Outline() {
               layout="vertical"
               initialValues={{
                 target_chapter_count: 3,
-                expansion_strategy: 'balanced',
+                expansion_strategy: 'auto',
               }}
             >
               <Form.Item
@@ -1012,9 +1012,20 @@ export default function Outline() {
               <Form.Item
                 label="展开策略"
                 name="expansion_strategy"
-                tooltip="选择如何分配内容到各章节"
+                tooltip={{
+                  title: (
+                    <div>
+                      <div><strong>AI推荐</strong>：由AI根据大纲内容自动选择最合适的策略</div>
+                      <div><strong>均衡分配</strong>：章节篇幅均匀，适合平稳推进的情节</div>
+                      <div><strong>高潮重点</strong>：在关键节点增加篇幅，适合冲突激烈的情节</div>
+                      <div><strong>细节丰富</strong>：注重场景描写和心理刻画，适合细腻叙事</div>
+                    </div>
+                  ),
+                  styles: { root: { maxWidth: 320 } }
+                }}
               >
                 <Radio.Group>
+                  <Radio.Button value="auto">AI推荐</Radio.Button>
                   <Radio.Button value="balanced">均衡分配</Radio.Button>
                   <Radio.Button value="climax">高潮重点</Radio.Button>
                   <Radio.Button value="detail">细节丰富</Radio.Button>
@@ -1505,11 +1516,26 @@ export default function Outline() {
       return;
     }
 
+    // 统计已展开和未展开的大纲数量
+    const expandedCount = outlines.filter(o => o.has_chapters).length;
+    const unexpandedCount = outlines.length - expandedCount;
+    const unexpandedOutlines = outlines.filter(o => !o.has_chapters);
+
+    // 如果所有大纲都已展开，提示用户
+    if (unexpandedCount === 0) {
+      modalApi.info({
+        title: '所有大纲已展开',
+        content: '当前项目的所有大纲都已展开为章节，无需再次展开。',
+        centered: true,
+      });
+      return;
+    }
+
     modalApi.confirm({
       title: (
         <Space>
           <AppstoreAddOutlined />
-          <span>批量展开所有大纲</span>
+          <span>批量展开大纲</span>
         </Space>
       ),
       width: 600,
@@ -1520,13 +1546,17 @@ export default function Outline() {
             style={{
               marginBottom: 16,
               padding: 12,
-              background: token.colorWarningBg,
+              background: token.colorInfoBg,
               borderRadius: token.borderRadius,
-              border: `1px solid ${token.colorWarningBorder}`,
+              border: `1px solid ${token.colorInfoBorder}`,
             }}
           >
-            <div style={{ color: token.colorWarningText }}>
-              ⚠️ 将对当前项目的所有 {outlines.length} 个大纲进行展开
+            <div style={{ color: token.colorInfoText }}>
+              <div>📊 当前项目大纲统计：</div>
+              <div style={{ marginTop: 8 }}>
+                <Tag color="success">已展开: {expandedCount} 个</Tag>
+                <Tag color="processing">未展开: {unexpandedCount} 个</Tag>
+              </div>
             </div>
           </div>
           <Form
@@ -1534,9 +1564,25 @@ export default function Outline() {
             layout="vertical"
             initialValues={{
               chapters_per_outline: 3,
-              expansion_strategy: 'balanced',
+              expansion_strategy: 'auto',
+              expand_scope: 'unexpanded',
             }}
           >
+            <Form.Item
+              label="展开范围"
+              name="expand_scope"
+              tooltip="选择要展开的大纲范围"
+            >
+              <Radio.Group>
+                <Radio value="unexpanded">
+                  仅未展开 ({unexpandedCount} 个)
+                </Radio>
+                <Radio value="all">
+                  全部大纲 ({outlines.length} 个)
+                </Radio>
+              </Radio.Group>
+            </Form.Item>
+
             <Form.Item
               label="每个大纲展开章节数"
               name="chapters_per_outline"
@@ -1554,8 +1600,20 @@ export default function Outline() {
             <Form.Item
               label="展开策略"
               name="expansion_strategy"
+              tooltip={{
+                title: (
+                  <div>
+                    <div><strong>AI推荐</strong>：由AI根据大纲内容自动选择最合适的策略</div>
+                    <div><strong>均衡分配</strong>：章节篇幅均匀，适合平稳推进的情节</div>
+                    <div><strong>高潮重点</strong>：在关键节点增加篇幅，适合冲突激烈的情节</div>
+                    <div><strong>细节丰富</strong>：注重场景描写和心理刻画，适合细腻叙事</div>
+                  </div>
+                ),
+                styles: { root: { maxWidth: 320 } }
+              }}
             >
               <Radio.Group>
+                <Radio.Button value="auto">AI推荐</Radio.Button>
                 <Radio.Button value="balanced">均衡分配</Radio.Button>
                 <Radio.Button value="climax">高潮重点</Radio.Button>
                 <Radio.Button value="detail">细节丰富</Radio.Button>
@@ -1571,6 +1629,12 @@ export default function Outline() {
         try {
           const values = await batchExpansionForm.validateFields();
 
+          // 根据展开范围确定要展开的大纲ID列表
+          let outlineIds: string[] | undefined;
+          if (values.expand_scope === 'unexpanded') {
+            outlineIds = unexpandedOutlines.map(o => o.id);
+          }
+
           // 关闭配置表单
           Modal.destroyAll();
 
@@ -1583,7 +1647,9 @@ export default function Outline() {
           // 准备请求数据
           const requestData = {
             project_id: currentProject.id,
-            ...values,
+            outline_ids: outlineIds,
+            chapters_per_outline: values.chapters_per_outline,
+            expansion_strategy: values.expansion_strategy,
             auto_create_chapters: false // 第一步：仅生成规划
           };
 

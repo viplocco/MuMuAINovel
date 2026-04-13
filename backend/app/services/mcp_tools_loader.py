@@ -62,7 +62,7 @@ class MCPToolsLoader:
         self._max_cache_size = MAX_CACHE_SIZE
 
         self._initialized = True
-        logger.info("✅ MCPToolsLoader 初始化完成")
+        logger.debug("MCPToolsLoader 初始化完成")
 
     def _evict_if_needed(self):
         """清理过期缓存，防止内存无限增长"""
@@ -162,9 +162,9 @@ class MCPToolsLoader:
             )
             
             if tools:
-                logger.info(f"🔧 用户 {user_id} 加载了 {len(tools)} 个MCP工具")
+                logger.debug(f"用户 {user_id} 加载了 {len(tools)} 个MCP工具")
             else:
-                logger.debug(f"📭 用户 {user_id} 没有可用的MCP工具")
+                logger.debug(f"用户 {user_id} 没有可用的MCP工具")
             
             return tools
             
@@ -224,11 +224,9 @@ class MCPToolsLoader:
                 # 获取详细错误信息
                 error_details = traceback.format_exc()
                 logger.warning(
-                    f"⚠️ 加载插件 {plugin.plugin_name} 工具失败: {type(e).__name__}: {e}\n"
-                    f"   插件URL: {plugin.server_url}\n"
-                    f"   插件类型: {plugin.plugin_type}\n"
-                    f"   堆栈: {error_details[:500] if error_details else '无'}"
+                    f"加载插件 {plugin.plugin_name} 工具失败: {type(e).__name__}: {e}"
                 )
+                logger.debug(f"插件URL: {plugin.server_url}, 类型: {plugin.plugin_type}, 堆栈: {error_details[:500] if error_details else '无'}")
                 continue
         
         return all_tools if all_tools else None
@@ -248,7 +246,7 @@ class MCPToolsLoader:
         else:
             count = len(self._cache)
             self._cache.clear()
-            logger.info(f"🧹 清理所有用户工具缓存(MCPToolsLoader) ({count}个)")
+            logger.debug(f"清理所有用户工具缓存 ({count}个)")
 
         # 2. 同时清理 MCPClientFacade 的工具缓存
         from app.mcp import mcp_client

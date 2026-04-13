@@ -10,9 +10,10 @@ interface CharacterCardProps {
   onEdit?: (character: Character) => void;
   onDelete: (id: string) => void;
   onExport?: () => void;
+  onClick?: (character: Character) => void;
 }
 
-export const CharacterCard: React.FC<CharacterCardProps> = ({ character, onEdit, onDelete, onExport }) => {
+export const CharacterCard: React.FC<CharacterCardProps> = ({ character, onEdit, onDelete, onExport, onClick }) => {
   const { token } = theme.useToken();
 
   const getRoleTypeColor = (roleType?: string) => {
@@ -49,12 +50,20 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({ character, onEdit,
     return <Tag color={config.color} style={{ marginLeft: 4 }}>{config.label}</Tag>;
   };
 
+  const handleCardClick = () => {
+    if (onClick) {
+      onClick(character);
+    }
+  };
+
   return (
     <Card
       hoverable
+      onClick={handleCardClick}
       style={{
         ...(isOrganization ? characterCardStyles.organizationCard : characterCardStyles.characterCard),
         ...(isInactive ? { opacity: 0.6, filter: 'grayscale(40%)' } : {}),
+        cursor: onClick ? 'pointer' : 'default',
       }}
       styles={{
         body: {
@@ -68,16 +77,16 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({ character, onEdit,
         }
       }}
       actions={[
-        ...(onEdit ? [<EditOutlined key="edit" onClick={() => onEdit(character)} />] : []),
-        ...(onExport ? [<ExportOutlined key="export" onClick={onExport} />] : []),
+        ...(onEdit ? [<EditOutlined key="edit" onClick={(e) => { e.stopPropagation(); onEdit(character); }} />] : []),
+        ...(onExport ? [<ExportOutlined key="export" onClick={(e) => { e.stopPropagation(); onExport(); }} />] : []),
         <Popconfirm
           key="delete"
           title={`确定删除这个${isOrganization ? '组织' : '角色'}吗？`}
-          onConfirm={() => onDelete(character.id)}
+          onConfirm={(e) => { e?.stopPropagation?.(); onDelete(character.id); }}
           okText="确定"
           cancelText="取消"
         >
-          <DeleteOutlined />
+          <DeleteOutlined onClick={(e) => e.stopPropagation()} />
         </Popconfirm>,
       ]}
     >

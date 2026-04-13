@@ -65,6 +65,12 @@ class Item(Base):
     notes = Column(Text, comment="创作备注")
     is_plot_critical = Column(Boolean, default=False, comment="是否剧情关键物品")
 
+    # === 上下文管理 ===
+    last_mentioned_chapter = Column(Integer, comment="最后被提及的章节号")
+    mention_count = Column(Integer, default=0, comment="累计提及次数")
+    # 默认值设为 0.3（忽略阈值），真实值应在创建时计算
+    context_priority = Column(Float, default=0.3, comment="上下文优先级(0.0-1.0)，越低越不重要")
+
     # === 时间戳 ===
     created_at = Column(DateTime, server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间")
@@ -106,6 +112,10 @@ class Item(Base):
             "tags": self.tags or [],
             "notes": self.notes,
             "is_plot_critical": self.is_plot_critical,
+            "last_mentioned_chapter": self.last_mentioned_chapter,
+            "mention_count": self.mention_count or 0,
+            # 注意：context_priority 可能为 0.0（已销毁/消耗），不能用 `or` 语法
+            "context_priority": self.context_priority if self.context_priority is not None else 0.3,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "status_changed_at": self.status_changed_at.isoformat() if self.status_changed_at else None,

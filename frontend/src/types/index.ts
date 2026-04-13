@@ -455,7 +455,7 @@ export interface ChapterPlanItem {
 
 export interface OutlineExpansionRequest {
   target_chapter_count: number;
-  expansion_strategy?: 'balanced' | 'climax' | 'detail';
+  expansion_strategy?: 'auto' | 'balanced' | 'climax' | 'detail';
   auto_create_chapters?: boolean;
   provider?: string;
   model?: string;
@@ -714,6 +714,11 @@ export interface AnalysisData {
   conflict_types: string[];
   emotional_tone: string;
   emotional_intensity: number;
+  emotional_curve?: {
+    start: number;
+    middle: number;
+    end: number;
+  };
   hooks: AnalysisHook[];
   hooks_count: number;
   foreshadows: AnalysisForeshadow[];
@@ -730,6 +735,7 @@ export interface AnalysisData {
   coherence_score: number;
   analysis_report: string;
   suggestions: string[];
+  consistency_issues?: ConsistencyIssue[];
   dialogue_ratio: number;
   description_ratio: number;
   created_at: string;
@@ -995,6 +1001,53 @@ export interface ForeshadowContextResponse {
   recently_planted: Foreshadow[];
 }
 
+// ==================== 一致性检测类型定义 ====================
+
+export type ConsistencyIssueType =
+  | 'character_death'      // 死亡角色再现
+  | 'character_location'   // 角色位置冲突
+  | 'ability_overflow'     // 能力超出设定
+  | 'item_quantity'        // 物品数量矛盾
+  | 'currency_quantity'    // 货币数量矛盾
+  | 'cultivation_level'    // 修为等级矛盾
+  | 'foreshadow_missed'    // 伏笔遗漏
+  | 'foreshadow_orphan'    // 回收了未埋入的伏笔
+  | 'word_count_overflow'; // 字数超标
+
+export type ConsistencyIssueSeverity = 'high' | 'medium' | 'low';
+
+export interface ConsistencyIssue {
+  type: ConsistencyIssueType;
+  character_name?: string;
+  item_name?: string;
+  career_name?: string;
+  foreshadow_title?: string;
+  expected_value?: number;
+  described_value?: number | string;  // 可能是数字或模糊描述（如"几百枚")
+  estimated_value?: number;           // 当描述模糊时的明确估计值
+  overflow_percent?: number;          // 字数超出百分比（字数类问题）
+  issue: string;
+  severity: ConsistencyIssueSeverity;
+  suggestion?: string;
+  reference_id?: string;
+}
+
+export interface ForeshadowWarningsResponse {
+  overdue: {
+    count: number;
+    items: Foreshadow[];
+  };
+  urgent: {
+    count: number;
+    items: Foreshadow[];
+  };
+  reminder: {
+    count: number;
+    items: Foreshadow[];
+  };
+  total_warnings: number;
+}
+
 // ==================== 拆书导入类型定义 ====================
 
 export type BookImportTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -1205,6 +1258,10 @@ export interface Item {
   tags?: string[];
   notes?: string;
   is_plot_critical: boolean;
+  // 上下文管理字段
+  last_mentioned_chapter?: number;   // 最后被提及的章节号
+  mention_count?: number;            // 累计提及次数
+  context_priority?: number;         // 上下文优先级 (0.0-1.0)
   created_at: string;
   updated_at: string;
   status_changed_at?: string;
