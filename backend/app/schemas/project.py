@@ -35,6 +35,9 @@ class ProjectUpdate(BaseModel):
     world_location: Optional[str] = None
     world_atmosphere: Optional[str] = None
     world_rules: Optional[str] = None
+    world_setting_data: Optional[str] = Field(None, description="世界设定结构化数据(JSON)")
+    world_setting_markdown: Optional[str] = Field(None, description="世界设定Markdown内容")
+    world_setting_format: Optional[str] = Field(None, description="数据格式: json/markdown")
     chapter_count: Optional[int] = None
     narrative_perspective: Optional[str] = None
     character_count: Optional[int] = None
@@ -53,6 +56,9 @@ class ProjectResponse(ProjectBase):
     world_location: Optional[str] = None
     world_atmosphere: Optional[str] = None
     world_rules: Optional[str] = None
+    world_setting_data: Optional[str] = Field(None, description="世界设定结构化数据(JSON)")
+    world_setting_markdown: Optional[str] = Field(None, description="世界设定Markdown内容")
+    world_setting_format: Optional[str] = Field(None, description="数据格式: json/markdown")
     chapter_count: Optional[int] = None
     narrative_perspective: Optional[str] = None
     character_count: Optional[int] = None

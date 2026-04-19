@@ -1216,24 +1216,27 @@ const Inspiration: React.FC = () => {
         </div>
       </div>
 
-      <div style={{
-        maxWidth: 800,
-        margin: '0 auto',
-        padding: isMobile ? '16px 12px' : '24px 24px',
-      }}>
-        {(currentStep === 'idea' || currentStep === 'title' || currentStep === 'description' ||
-          currentStep === 'theme' || currentStep === 'genre' || currentStep === 'target_words' ||
-          currentStep === 'perspective' || currentStep === 'outline_mode' || currentStep === 'confirm') && renderChat()}
-        {(currentStep === 'generating' || currentStep === 'complete') && generationConfig && (
-          <AIProjectGenerator
-            config={generationConfig}
-            storagePrefix="inspiration"
-            onComplete={handleComplete}
-            onBack={handleBackToChat}
-            isMobile={isMobile}
-          />
-        )}
-      </div>
+      {/* 对话阶段：居中布局，限制宽度 */}
+      {!(currentStep === 'generating' || currentStep === 'complete') && (
+        <div style={{
+          maxWidth: 800,
+          margin: '0 auto',
+          padding: isMobile ? '16px 12px' : '24px 24px',
+        }}>
+          {renderChat()}
+        </div>
+      )}
+
+      {/* 生成阶段：全宽布局，适应浏览器宽度 */}
+      {(currentStep === 'generating' || currentStep === 'complete') && generationConfig && (
+        <AIProjectGenerator
+          config={generationConfig}
+          storagePrefix="inspiration"
+          onComplete={handleComplete}
+          onBack={handleBackToChat}
+          isMobile={isMobile}
+        />
+      )}
     </div>
   );
 };

@@ -37,7 +37,7 @@ class PromptService:
 为小说《{title}》构建完整的世界观设定。
 
 【核心要求】
-- 主题契合：世界观必须支撑主题"{theme}"
+- 主题契合：世界观必须支撑主题\"{theme}\"
 - 简介匹配：为简介中的情节提供合理背景
 - 类型适配：符合{genre}类型的特征
 - 规模适当：根据题材选择合适的设定尺度
@@ -132,7 +132,7 @@ class PromptService:
 【必须遵守】
 ✅ 简介契合：为简介情节提供合理背景
 ✅ 类型适配：符合{genre}的特征
-✅ 主题贴合：支撑主题"{theme}"
+✅ 主题贴合：支撑主题\"{theme}\"
 ✅ 具象化：用具体细节而非空洞概念
 ✅ 逻辑自洽：所有设定相互支撑
 
@@ -141,6 +141,1096 @@ class PromptService:
 ❌ 为小规模题材使用宏大世界观
 ❌ 使用模板化、空泛的表达
 ❌ 输出markdown或代码块标记
+</constraints>"""
+
+    # 世界构建提示词 V2（结构化输出）
+    WORLD_BUILDING_V2 = """<system>
+你是资深的世界观设计师，擅长为{genre}类型的小说构建真实、自洽的世界观。
+</system>
+
+<task>
+【设计任务】
+为小说《{title}》构建结构化的世界观设定。
+
+【核心要求】
+- 主题契合：世界观必须支撑主题\"{theme}\"
+- 简介匹配：为简介中的情节提供合理背景
+- 类型适配：符合{genre}类型的特征
+- 结构清晰：按指定JSON格式输出
+</task>
+
+<input priority="P0">
+【项目信息】
+书名：{title}
+类型：{genre}
+主题：{theme}
+简介：{description}
+</input>
+
+<guidelines priority="P1">
+【类型指导原则】
+
+**现代都市/言情/青春**：
+- 重点：具体城市环境、职场文化、社会现状
+- 避免使用过于宏大的时代设定
+
+**历史/古代**：
+- 重点：时代特征、礼教制度、阶级分化
+
+**玄幻/仙侠/修真**：
+- 重点：修炼规则、灵气环境、门派势力
+
+**科幻**：
+- 重点：科技水平、社会形态、文明转折
+
+**奇幻/魔法**：
+- 重点：魔法体系、种族关系、大陆格局
+</guidelines>
+
+<output priority="P0">
+【输出格式】
+输出纯JSON（无markdown标记），结构如下：
+
+{{
+  "version": 1,
+  "core": {{
+    "world_name": "世界名称（一句话，10-20字）",
+    "key_locations": [
+      {{ "name": "地点名称", "type": "宗门/城市/秘境/国家", "brief": "简介（20-50字）" }}
+    ],
+    "key_organizations": [
+      {{ "name": "势力名称", "type": "宗门/商会/家族/联盟", "brief": "简介（20-50字）" }}
+    ],
+    "power_system": "力量体系概述（50-100字，如修炼等级、能力分类）",
+    "core_rules": "核心规则（50-100字，如禁忌、法则、代价）"
+  }},
+  "summary": {{
+    "time_period": "时间背景（300-500字，描述时代背景和社会状态）",
+    "location": "地点描述（300-500字，描述主要空间环境和地理特征）",
+    "atmosphere": "氛围基调（300-500字，描述感官体验和情感基调）",
+    "rules": "规则描述（300-500字，描述世界运行规则和社会结构）"
+  }}
+}}
+
+【约束条件】
+- key_locations：最多5个元素
+- key_organizations：最多5个元素
+- 每个元素仅3字段：name、type、brief
+- brief字段限20-50字
+- 无尾随逗号，以 }} 结尾
+- 所有字符串用双引号包裹
+</output>
+
+<constraints>
+【必须遵守】
+✅ 简介契合：为简介情节提供合理背景
+✅ 类型适配：符合{genre}的特征
+✅ 主题贴合：支撑主题\"{theme}\"
+✅ 具象化：用具体细节而非空洞概念
+✅ 逻辑自洽：所有设定相互支撑
+
+【禁止事项】
+❌ 输出markdown或代码块标记
+❌ 数组超过5个元素
+❌ brief字段超过50字
+❌ 使用模板化、空泛的表达
+❌ 尾随逗号或格式错误
+</constraints>"""
+
+    # ========== V3版本提示词模板（多维度结构）==========
+
+    # 世界构建提示词 V3 核心阶段
+    WORLD_BUILDING_V3_CORE = """<system>
+你是资深的世界观设计师，擅长为{genre}类型的小说构建真实、自洽的多维度世界观。
+</system>
+
+<task>
+【设计任务 - 核心阶段】
+为小说《{title}》构建世界观的核心维度结构（物理维度基础 + 社会维度基础）。
+
+【阶段说明】
+这是三阶段生成流程的第一阶段（核心），后续将扩展隐喻维度和交互维度。
+</task>
+
+<input priority="P0">
+【项目信息】
+书名：{title}
+类型：{genre}
+主题：{theme}
+简介：{description}
+章节数：{chapter_count}章
+叙事视角：{narrative_perspective}
+</input>
+
+<guidelines priority="P1">
+【类型指导原则】
+
+**现代都市/言情/青春**：
+- 重点：具体城市环境、职场文化、社会现状
+- 时间：当代或近未来（具体年份）
+- 避免：过于宏大的时代设定或极端概念
+
+**历史/古代**：
+- 重点：时代特征、礼教制度、阶级分化
+- 时间：明确朝代和阶段
+
+**玄幻/仙侠/修真**：
+- 重点：修炼规则、灵气环境、门派势力
+- 时间：修炼文明的特定时期
+
+**科幻**：
+- 重点：科技水平、社会形态、文明转折
+- 时间：未来明确时期
+
+**奇幻/魔法**：
+- 重点：魔法体系、种族关系、大陆格局
+</guidelines>
+
+<example priority="P0">
+【完整示例 - 玄幻类型】
+
+输入：书名《灵域传说》，类型玄幻，主题"逆境崛起与守护之道"
+
+输出：
+```json
+{{"version": 2,
+  "meta": {{
+    "world_name": "灵域大陆",
+    "genre_scale": "长篇",
+    "creation_stage": "core"
+  }},
+  "physical": {{
+    "space": {{
+      "key_locations": [
+        {{ "name": "天玄宗", "type": "宗门", "brief": "灵域第一大宗门，传承万年，以剑道闻名于世，占据天玄山脉主峰" }},
+        {{ "name": "灵雾城", "type": "城市", "brief": "位于大陆中央的商贸枢纽，灵气充沛，各国商贾云集之地" }},
+        {{ "name": "幽冥深渊", "type": "秘境", "brief": "大陆最深处的禁地，传说藏有上古神器，但灵气暴乱无人敢入" }}
+      ],
+      "space_nodes": [
+        {{ "name": "天玄山门", "type": "入口", "location": "天玄山脉南麓", "properties": ["灵气浓郁", "剑气缭绕"] }},
+        {{ "name": "灵雾集市", "type": "核心区域", "location": "灵雾城中央", "properties": ["交易活跃", "情报流通"] }}
+      ],
+      "space_channels": [
+        {{ "name": "天玄传送阵", "type": "固定通道", "source": "天玄宗", "destination": "灵雾城", "conditions": "需持有宗门令牌" }}
+      ],
+      "space_features": [
+        {{ "name": "灵脉节点", "type": "环境特性", "effect": "灵气浓度提升，修炼速度加快", "distribution": "天玄山脉沿线" }}
+      ]
+    }},
+    "time": {{
+      "current_period": "灵气复苏后的第五纪元，修炼文明繁荣期，各大宗门争霸正酣，小型势力依附生存",
+      "history_epochs": [
+        {{ "name": "上古纪元", "period": "距今万年前", "impact": "灵气充沛，仙神遍地，为后世留下无数遗迹" }},
+        {{ "name": "断绝纪元", "period": "距今千年前", "impact": "天地灵气骤然涌动，开启了修炼新时代" }}
+      ]
+    }},
+    "power": {{
+      "system_name": "灵气修炼体系",
+      "levels": ["炼气期", "筑基期", "金丹期", "元婴期", "化神期"],
+      "cultivation_method": "吸收天地灵气淬炼经脉，需配合功法心诀，天资决定修炼速度，丹药可辅助突破瓶颈",
+      "limitations": "灵气浓度影响修炼效率，天资不足者难以突破筑基期",
+      "ability_branches": [
+        {{ "name": "剑修", "description": "以剑为媒，剑意通灵，攻击凌厉迅捷", "key_skills": ["御剑术", "剑意心法"] }},
+        {{ "name": "丹修", "description": "专研丹药炼制，辅助修炼，亦可毒术伤敌", "key_skills": ["丹道心诀", "药理辨识"] }}
+      ],
+      "power_sources": [
+        {{ "name": "天地灵气", "type": "自然来源", "acquisition": "自然环境吸收，灵脉处效率最高" }},
+        {{ "name": "灵丹妙药", "type": "人工来源", "acquisition": "购买或炼制，需耗费大量资源" }}
+      ]
+    }},
+    "items": {{
+      "equipment_system": {{
+        "category": "法宝",
+        "tiers": ["凡品", "灵品", "仙品", "神品"],
+        "crafting_rules": "需炼器师以灵火淬炼，消耗灵材，品阶取决于材料与技艺"
+      }}
+    }}
+  }},
+  "social": {{
+    "power_structure": {{
+      "hierarchy_rule": "宗门内部实行长老制，辈分森严：掌门至尊、长老次之、弟子依修为分级；世俗社会遵循世家垄断，平民难以翻身",
+      "key_organizations": [
+        {{ "name": "天玄宗", "type": "宗门", "brief": "正道领袖，剑道独尊，弟子十万，掌握灵域半数灵脉", "power_level": "高" }},
+        {{ "name": "暗月盟", "type": "联盟", "brief": "魔道势力联盟，行事隐秘，擅长暗杀与诅咒之术", "power_level": "中" }},
+        {{ "name": "林氏商会", "type": "商会", "brief": "灵雾城首富家族，虽无强大修士但财力雄厚，与各大宗门有合作", "power_level": "低" }}
+      ],
+      "power_fault_lines": [
+        {{ "name": "正邪对立", "type": "理念分歧", "intensity": "高", "parties": ["天玄宗", "暗月盟"] }}
+      ],
+      "power_balance": [
+        {{ "mechanism_name": "正邪大会", "type": "武力威慑", "participants": ["各大宗门"], "effectiveness": "每十年举行一次，避免大规模战争" }}
+      ]
+    }},
+    "economy": {{
+      "currency_system": ["灵石", "金币"],
+      "resource_distribution": "灵脉集中于天玄山脉，灵材多产于幽冥深渊边缘",
+      "trade_networks": [
+        {{ "name": "灵雾集市", "type": "公开市场", "location": "灵雾城", "main_goods": ["灵丹", "法宝", "灵材"] }}
+      ]
+    }},
+    "culture": {{
+      "values": ["忠义为先", "师门如父", "实力至上", "诚信为本"],
+      "taboos": ["背叛宗门", "泄露功法", "欺师灭祖", "私通魔道"],
+      "core_culture": [
+        {{ "name": "剑道文化", "type": "能力文化", "description": "剑修追求剑意通神，以剑为命，剑在人在", "practitioners": ["天玄宗弟子"] }}
+      ]
+    }},
+    "organizations": {{
+      "protagonist_factions": [
+        {{ "name": "天玄宗", "type": "宗门", "brief": "主角出身宗门，正道领袖势力", "power_level": "高" }}
+      ],
+      "antagonist_factions": [
+        {{ "name": "暗月盟", "type": "联盟", "brief": "魔道势力，主角的主要对手", "power_level": "中" }}
+      ],
+      "neutral_factions": [
+        {{ "name": "林氏商会", "type": "商会", "brief": "中立商贸势力，与各方皆有往来", "power_level": "低" }}
+      ]
+    }}
+  }},
+  "metaphor": null,
+  "interaction": null,
+  "legacy": {{
+    "time_period": "灵气复苏后的第五纪元，修炼文明达到鼎盛。千年前天地灵气骤然涌动，开启了修炼新时代。各大宗门在灵脉争夺中崛起，形成了今日的正邪对立格局。世俗百姓依附势力生存，弱小者只能祈求庇护。这个时代强者为尊，弱者如草芥，但也孕育着无数逆天改命的传说。",
+    "location": "灵域大陆位于东方世界中央，四面环海。大陆北部是天玄山脉，绵延万里，峰峦叠嶂，灵气最盛；中部是灵雾平原，城池林立，商贸繁荣；南部是幽冥沼泽，瘴气弥漫，鲜有人迹。三大区域各具特色，构成了修炼世界的地理骨架。",
+    "atmosphere": "整片大陆笼罩在灵气氤氲之中，空气中弥漫着淡淡的灵光。天玄山脉常年云雾缭绕，剑气隐现；灵雾城熙熙攘攘，各色服饰的修士穿行其间，灵器光芒闪烁；幽冥深渊阴风阵阵，时而传来诡异声响。昼夜交替间，天际常有灵气潮汐，形成绚丽的光影变幻。",
+    "rules": "修炼者必须遵守宗门戒律，不得私自传授功法。灵脉归属由实力决定，弱者只能租用或依附。世俗律法在修炼界无效，强者为尊是唯一准则。正邪对立延续千年，但双方约定每十年举行一次正邪大会，以武定胜负，避免大规模战争。违反规则者将面临追杀或禁闭惩罚。"
+  }}
+}}```
+
+注意示例中：
+- key_locations的brief包含具体特征和重要性描述
+- space_nodes展示入口和核心区域的节点结构
+- ability_branches展示不同修炼分支的特点
+- power_sources展示灵气和丹药两种来源
+- organizations包含主角、反派、中立阵营
+- legacy四个字段各300-500字，内容丰富具体
+</example>
+
+<output priority="P0">
+【输出格式】
+输出纯JSON（无markdown标记），结构如下：
+
+{{
+  "version": 2,
+  "meta": {{
+    "world_name": "世界名称（一句话，10-30字）",
+    "genre_scale": "作品规模（短篇/中篇/长篇/史诗）",
+    "creation_stage": "core"
+  }},
+  "physical": {{
+    "space": {{
+      "key_locations": [
+        {{ "name": "地点名", "type": "城市/宗门/秘境", "brief": "简介（20-50字）" }}
+      ],
+      "space_nodes": [
+        {{ "name": "节点名", "type": "入口/核心区域/禁区", "location": "所属区域", "properties": ["特性1", "特性2"] }}
+      ],
+      "space_channels": [
+        {{ "name": "通道名", "type": "固定/临时/秘密", "source": "起点", "destination": "终点", "conditions": "使用条件" }}
+      ]
+    }},
+    "time": {{
+      "current_period": "当前时代（50-100字）",
+      "history_epochs": [
+        {{ "name": "纪元名", "period": "时间跨度", "impact": "影响描述" }}
+      ]
+    }},
+    "power": {{
+      "system_name": "力量体系名称",
+      "levels": ["等级1", "等级2", "等级3"],
+      "cultivation_method": "获取方式（50字）",
+      "ability_branches": [
+        {{ "name": "分支名", "description": "特点描述", "key_skills": ["技能1"] }}
+      ],
+      "power_sources": [
+        {{ "name": "来源名", "type": "自然/人工/血脉", "acquisition": "获取方式" }}
+      ]
+    }},
+    "items": {{
+      "equipment_system": {{
+        "category": "装备",
+        "tiers": ["品阶列表"],
+        "crafting_rules": "制作规则"
+      }}
+    }}
+  }},
+  "social": {{
+    "power_structure": {{
+      "hierarchy_rule": "等级制度（50-100字）",
+      "key_organizations": [
+        {{ "name": "势力名", "type": "宗门/商会/家族", "brief": "简介", "power_level": "高/中/低" }}
+      ],
+      "power_fault_lines": [
+        {{ "name": "断层名", "type": "阶级冲突/资源争夺", "intensity": "高/中/低" }}
+      ]
+    }},
+    "economy": {{
+      "currency_system": ["货币类型"],
+      "trade_networks": [
+        {{ "name": "网络名", "type": "市场/拍卖/黑市", "main_goods": ["商品列表"] }}
+      ]
+    }},
+    "culture": {{
+      "values": ["核心价值观1", "核心价值观2"],
+      "taboos": ["禁忌1", "禁忌2"],
+      "core_culture": [
+        {{ "name": "文化名", "type": "能力文化/商业文化", "description": "描述" }}
+      ]
+    }},
+    "organizations": {{
+      "protagonist_factions": [
+        {{ "name": "势力名", "type": "组织类型", "brief": "简介" }}
+      ],
+      "antagonist_factions": [
+        {{ "name": "势力名", "type": "组织类型", "brief": "简介" }}
+      ]
+    }}
+  }},
+  "metaphor": null,
+  "interaction": null,
+  "legacy": {{
+    "time_period": "时间背景概述（300-500字）",
+    "location": "地点概述（300-500字）",
+    "atmosphere": "氛围概述（300-500字）",
+    "rules": "规则概述（300-500字）"
+  }}
+}}
+
+【约束条件】
+- key_locations：最多5个元素
+- space_nodes/space_channels/history_epochs：可选，各最多3个元素
+- ability_branches/power_sources：可选，各最多3个元素
+- power_fault_lines：可选，最多2个元素
+- trade_networks：可选，最多2个元素
+- protagonist_factions/antagonist_factions：各最多3个元素
+- legacy四个字段各300-500字，内容丰富
+- 所有字符串用双引号包裹
+- 无尾随逗号，以 }} 结尾
+- metaphor和interaction设为null
+- 参照<example>中的丰富度输出
+</output>
+
+<constraints>
+【必须遵守】
+✅ 简介契合：为简介情节提供合理背景
+✅ 类型适配：符合{genre}的特征
+✅ 主题贴合：支撑主题\"{theme}\"
+✅ 具象化：用具体细节而非空洞概念
+✅ 规模适当：根据章节数选择合适尺度
+✅ legacy完整：四个legacy字段各300-500字，内容丰富
+✅ 参照示例：按照<example>中的格式和丰富度输出
+
+【禁止事项】
+❌ 输出markdown或代码块标记
+❌ 数组超过限制数量
+❌ 使用过于宏大的时代设定
+❌ 模板化、空泛的表达（如"等级制度"、"简介"等纯描述词）
+❌ 遗漏legacy字段
+❌ hierarchy_rule为空字符串或空泛表达
+❌ brief字段少于20字或过于抽象
+</constraints>"""
+
+    # 世界构建提示词 V3 扩展阶段
+    WORLD_BUILDING_V3_EXTENDED = """<system>
+你是资深的世界观设计师，现在需要扩展已有的核心世界观结构。
+</system>
+
+<task>
+【设计任务 - 扩展阶段】
+基于已生成的核心世界观，补充隐喻维度和交互维度，并完善各维度细节。
+
+【阶段说明】
+这是三阶段生成流程的第二阶段（扩展），输入是核心阶段的JSON输出。
+</task>
+
+<input priority="P0">
+【已生成的核心世界观】
+{core_json}
+
+【项目信息】
+书名：{title}
+类型：{genre}
+主题：{theme}
+</input>
+
+<output priority="P0">
+【输出格式】
+输出纯JSON（无markdown标记），补充以下维度并合并到完整结构：
+
+{{
+  "version": 2,
+  "meta": {{
+    "world_name": "（保持核心阶段输出）",
+    "genre_scale": "（保持核心阶段输出）",
+    "creation_stage": "extended"
+  }},
+  "physical": {{
+    "space": {{
+      "world_map": "（可选：世界地图描述）",
+      "key_locations": "（保持核心阶段输出）",
+      "space_nodes": [
+        {{ "name": "空间节点名称", "type": "入口/核心区域/禁区/交通枢纽", "location": "所属区域", "properties": ["特性1"], "connections": ["连接节点"] }}
+      ],
+      "space_channels": [
+        {{ "name": "通道名称", "type": "固定/临时/秘密通道", "source": "起点", "destination": "终点", "conditions": "使用条件", "risks": "风险" }}
+      ],
+      "space_features": [
+        {{ "name": "特性名称", "type": "环境/规则/物理特性", "effect": "影响", "distribution": "分布范围" }}
+      ],
+      "movement_rules": "（保持核心阶段输出）"
+    }},
+    "time": {{
+      "current_period": "（保持核心阶段输出）",
+      "history_epochs": [
+        {{ "name": "纪元名称", "period": "时间跨度", "major_events": ["事件"], "impact": "影响", "legacy": "遗留" }}
+      ],
+      "history_events": [
+        {{ "year": "年份", "event_name": "事件名称", "epoch": "所属纪元", "description": "描述", "consequence": "后果", "related_characters": ["角色"] }}
+      ],
+      "time_nodes": [
+        {{ "name": "时间节点", "significance": "意义", "events": ["关联事件"] }}
+      ],
+      "timeflow": "时间流速特性"
+    }},
+    "power": {{
+      "system_name": "（保持核心阶段输出）",
+      "levels": "（保持核心阶段输出）",
+      "cultivation_method": "（保持核心阶段输出）",
+      "limitations": "（保持核心阶段输出）",
+      "ability_branches": [
+        {{ "name": "能力分支名称", "description": "描述", "key_skills": ["技能"], "advantages": ["优势"], "disadvantages": ["劣势"], "typical_practitioners": ["典型势力"] }}
+      ],
+      "power_sources": [
+        {{ "name": "力量来源", "type": "自然/人工/血脉/社会资源", "acquisition": "获取方式", "quality_levels": ["品质等级"], "distribution": "分布" }}
+      ],
+      "level_advances": [
+        {{ "level_name": "等级名称", "requirements": "晋升条件", "risks": "风险", "success_effects": ["成功效果"], "failure_effects": ["失败后果"] }}
+      ]
+    }},
+    "items": {{
+      "equipment_system": {{ "category": "装备", "tiers": ["等级"], "famous_items": [{{ "name": "名物", "effect": "效果", "rarity": "稀有度" }}], "crafting_rules": "制作规则" }},
+      "consumable_system": {{ "category": "消耗品", "tiers": ["等级"], "famous_items": [], "crafting_rules": "" }},
+      "tool_system": {{ "category": "工具", "tiers": [], "famous_items": [], "crafting_rules": "" }},
+      "structure_system": {{ "category": "结构", "tiers": [], "famous_items": [], "crafting_rules": "" }},
+      "creature_system": {{ "category": "生物", "tiers": [], "famous_items": [], "crafting_rules": "" }},
+      "rare_items": "（保持核心阶段输出）",
+      "common_items": "（补充常见物品）",
+      "creation_rules": "（保持核心阶段输出）"
+    }}
+  }},
+  "social": {{
+    "power_structure": {{
+      "hierarchy_rule": "（保持核心阶段输出）",
+      "key_organizations": "（保持核心阶段输出）",
+      "faction_classification": [
+        {{ "category": "阵营类别", "characteristics": "特征", "typical_organizations": ["典型势力"], "mutual_relations": "关系" }}
+      ],
+      "power_fault_lines": [
+        {{ "name": "断层名称", "type": "阶级冲突/资源争夺/理念分歧", "parties": ["涉及方"], "intensity": "高/中/低", "consequences": "后果" }}
+      ],
+      "power_balance": [
+        {{ "mechanism_name": "制衡机制", "type": "联盟/法律/武力/舆论", "participants": ["参与方"], "effectiveness": "有效性" }}
+      ],
+      "conflict_rules": "冲突规则"
+    }},
+    "economy": {{
+      "currency_system": "（保持核心阶段输出）",
+      "resource_distribution": "（保持核心阶段输出）",
+      "trade_networks": [
+        {{ "name": "贸易网络", "type": "公开市场/拍卖/黑市", "location": "位置", "main_goods": ["商品"], "rules": "规则", "participants": ["参与势力"] }}
+      ],
+      "economic_lifelines": [
+        {{ "name": "经济命脉", "type": "资源类型", "controlled_by": ["控制势力"], "importance": "重要程度", "distribution": "分布" }}
+      ],
+      "trade_rules": "交易规则"
+    }},
+    "culture": {{
+      "values": "（保持核心阶段输出）",
+      "taboos": "（保持核心阶段输出）",
+      "traditions": "（补充传统习俗）",
+      "language_style": "语言风格",
+      "core_culture": [
+        {{ "name": "核心文化", "type": "能力/商业/学术/宗教文化", "description": "描述", "practitioners": ["遵循者"], "significance": "意义" }}
+      ],
+      "religious_beliefs": [
+        {{ "name": "信仰", "type": "主流/边缘/禁忌信仰", "core_beliefs": ["教义"], "practices": ["仪式"], "influence": "影响" }}
+      ],
+      "cultural_heritage": [
+        {{ "name": "传承", "origin": "起源", "current_status": "现状", "preservation": "传承方式", "significance": "价值" }}
+      ]
+    }},
+    "organizations": {{
+      "protagonist_factions": [
+        {{ "name": "势力名称", "type": "组织类型", "brief": "简介", "power_level": "等级", "specialties": ["擅长领域"], "key_members": ["核心成员"] }}
+      ],
+      "antagonist_factions": [],
+      "neutral_factions": [],
+      "special_factions": []
+    }},
+    "relations": {{
+      "organization_relations": "（补充组织关系）",
+      "inter_personal_rules": "人际规则"
+    }}
+  }},
+  "metaphor": {{
+    "symbols": {{
+      "visual": ["视觉象征1", "视觉象征2"],
+      "colors": ["颜色象征1"],
+      "animal_symbols": [
+        {{ "animal": "动物", "symbolism": "象征含义", "usage_context": "使用场景", "cultural_notes": "文化背景" }}
+      ],
+      "nature_symbols": [
+        {{ "element": "自然元素", "symbolism": "象征含义", "manifestation": "体现", "narrative_usage": "叙事运用" }}
+      ],
+      "objects": ["物品象征1"]
+    }},
+    "themes": {{
+      "core_theme": "核心主题（与{theme}呼应，50-100字）",
+      "sub_themes": ["子主题1", "子主题2"],
+      "theme_evolution": "主题演化路径（50字）",
+      "theme_mappings": [
+        {{ "mapping_type": "环境-心理/建筑-困境/等级-人生/能力-地位", "physical_manifestation": "物理体现", "metaphor_meaning": "隐喻含义", "narrative_usage": "叙事运用", "examples": ["案例"] }}
+      ]
+    }},
+    "philosophy": {{
+      "core_philosophies": [
+        {{ "philosophy_name": "哲学观念", "core_concept": "核心概念", "world_manifestation": "世界观体现", "narrative_rules": ["叙事规则"], "conflicts": "冲突" }}
+      ]
+    }}
+  }},
+  "interaction": {{
+    "cross_rules": {{
+      "physical_social": "物理与社会交叉规则（50字）",
+      "social_metaphor": "社会与隐喻交叉规则（50字）",
+      "metaphor_physical": "隐喻与物理交叉规则（50字）"
+    }},
+    "evolution": {{
+      "time_driven": "时间驱动变化（30字）",
+      "event_driven": "事件驱动变化（30字）",
+      "character_driven": "角色驱动变化（30字）",
+      "faction_evolution": [
+        {{ "faction_name": "势力", "evolution_type": "增强/衰退/分裂/合并", "trigger": "触发原因", "current_state": "当前状态", "future_trend": "趋势" }}
+      ],
+      "resource_evolution": [
+        {{ "resource_name": "资源", "evolution_type": "增加/减少/枯竭/变异", "cause": "原因", "impact": "影响", "mitigation": "缓解措施" }}
+      ]
+    }},
+    "disruption_points": ["可打破的规则点1", "可打破的规则点2"],
+    "disruption_consequences": [
+      {{ "disruption_type": "规则突破/力量失衡/秩序崩塌", "immediate_effect": "直接后果", "long_term_effect": "长期影响", "affected_dimensions": ["受影响维度"], "narrative_usage": "叙事运用" }}
+    ],
+    "repair_mechanisms": ["规则修复机制1"]
+  }},
+  "legacy": {{
+    "time_period": "（保持核心阶段输出）",
+    "location": "（保持核心阶段输出）",
+    "atmosphere": "（保持核心阶段输出）",
+    "rules": "（保持核心阶段输出）"
+  }}
+}}
+
+【约束条件】
+- 各数组字段最多3个元素（faction_evolution/resource_evolution/disruption_consequences最多2个）
+- 保持核心阶段的physical和social核心内容不变
+- creation_stage改为"extended"
+</output>
+
+<constraints>
+【必须遵守】
+✅ 一致性：与核心阶段输出保持一致
+✅ 主题呼应：metaphor.themes与主题\"{theme}\"呼应
+✅ 交叉规则：interaction.cross_rules体现各维度关联
+✅ 具象化：用具体象征而非抽象概念
+✅ 通用化：根据{genre}类型适配具体内容（玄幻用修炼术语，科幻用科技术语等）
+
+【禁止事项】
+❌ 修改核心阶段的meta、legacy内容
+❌ 输出markdown或代码块标记
+❌ 数组超过限制数量
+❌ 与核心世界观矛盾的内容
+❌ 使用过于特定的修仙术语（需根据小说类型调整）
+</constraints>"""
+
+    # 世界构建提示词 - Markdown格式（单阶段生成）
+    WORLD_BUILDING_MARKDOWN = """<system>
+你是资深的世界观设计师，擅长为各类小说构建真实、自洽、多维度的世界观。
+你能根据小说类型（玄幻/科幻/都市/历史/奇幻/悬疑/武侠等）灵活调整世界观要素，使其既符合类型特征，又具有独特性。
+</system>
+
+<task>
+为小说《{title}》生成完整的世界设定文档，采用Markdown格式输出。
+文档需涵盖物理、社会、隐喻、交互四个维度，以及世界概述部分。
+</task>
+
+<input>
+【项目信息】
+书名：{title}
+类型：{genre}
+主题：{theme}
+简介：{description}
+章节数：{chapter_count}章
+叙事视角：{narrative_perspective}
+</input>
+
+<guidelines>
+【类型适配指导】
+
+**玄幻/仙侠/修真**：
+- 重点：修炼体系、灵气环境、门派势力、境界划分
+- 空间：层级世界（比如：下界/中界/上界、天下九州、大荒万界等）、秘境、禁地
+- 力量：修炼等级、功法传承、灵丹法宝
+- 社会：宗门架构、正邪对立、师徒体系
+
+**科幻**：
+- 重点：科技水平、星际文明、人工智能、能源体系
+- 空间：星系分区、空间站、殖民地
+- 力量：科技等级、基因改造、脑机接口
+- 社会：企业/政府/联盟架构、阶级分化
+
+**奇幻/魔法**：
+- 重点：魔法体系、种族关系、大陆格局
+- 空间：魔法区域、元素领地、神秘遗迹
+- 力量：魔法等级、元素属性、血脉传承
+- 社会：王国架构、种族联盟、魔法学院
+
+**都市/现代**：
+- 重点：城市环境、职场文化、科技水平、社会现状
+- 空间：城市分区、商圈、地标建筑
+- 力量：技能等级、职业体系、财富地位
+- 社会：公司/政府架构、阶层矛盾、行业规则
+
+**历史/古代**：
+- 重点：时代特征、礼教制度、阶级分化、战争格局
+- 空间：疆域划分、城池关卡、名山大川
+- 力量：武功等级、兵法传承、官职品级
+- 社会：王朝架构、世家体系、科举制度
+
+**悬疑/推理**：
+- 重点：社会阴暗面、人性复杂性、隐秘组织
+- 空间：城市角落、秘密场所、案发地点
+- 力量：技能等级、情报网络、心理操控
+- 社会：警察架构、犯罪组织、秘密势力
+
+**武侠**：
+- 重点：武功体系、江湖规矩、门派传承
+- 空间：江湖地盘、名山名水、秘境遗迹
+- 力量：武功等级、内功外功、兵器传承
+- 社会：门派架构、正邪对立、江湖规矩
+</guidelines>
+
+<output_format>
+## 输出结构（必须严格遵循）
+
+# 世界观设定
+
+## 基本信息
+- 世界名称：一句话描述（10-30字）
+- 作品规模：短篇/中篇/长篇/史诗
+
+## 物理维度
+
+### 空间架构
+#### 世界地图
+（按类型描述地理分区，如：东洲/西漠/南岭/北原/中土，或星系分区，或城市区域）
+
+#### 空间节点
+| 名称 | 类型 | 所属区域 | 特性描述 |
+|------|------|----------|----------|
+（列出3-5个关键节点：入口、核心区域、禁区）
+
+#### 空间通道
+| 名称 | 类型 | 起点 | 终点 | 使用条件 |
+|------|------|------|------|----------|
+（列出2-3个传送/通行方式）
+
+#### 空间特性
+- 重力/引力：描述特殊规则
+- 环境特性：灵气/科技/魔法浓度等
+- 特殊规则：某些区域的特殊限制
+
+### 时间架构
+#### 历史纪元
+| 纪元名 | 时间跨度 | 主要影响 |
+|--------|----------|----------|
+（列出2-4个重要纪元）
+
+#### 关键事件年表
+1. **事件名**（时间）：描述
+2. ...
+（列出5-10个关键事件）
+
+#### 时间流速
+（描述不同区域的时间流速差异，如无差异可省略）
+
+#### 时间节点
+- 天劫日/重大节日/周期性事件等
+
+### 力量体系
+#### 力量等级
+（列出等级划分，如：炼气→筑基→金丹→元婴→化神，或科技等级，或魔法等级）
+
+#### 力量路径
+| 路径名 | 特点 | 关键技能 |
+|--------|------|----------|
+（列出2-4条不同修炼/成长路径）
+
+#### 力量来源
+| 来源名 | 类型 | 获取方式 |
+|--------|------|----------|
+（列出2-3种力量/资源来源）
+
+#### 境界突破
+- 突破条件：描述
+- 失败后果：描述
+- 特殊机制：天劫/考验等
+
+### 物品体系
+#### 装备体系
+（描述装备分级和获取规则）
+
+#### 消耗品体系
+（描述丹药/药品/补给品分类）
+
+#### 辅助道具
+（描述符箓/工具/仪器等）
+
+#### 特殊物品
+（描述宠物/坐骑/阵法系统等，如无可省略）
+
+## 社会维度
+
+### 权力结构
+#### 等级制度
+（描述地位决定因素：修为/财富/血统/职位等）
+
+#### 组织架构
+（描述宗门/公司/政府/王国的层级结构）
+
+#### 权力断层线
+| 名称 | 类型 | 涉及方 | 紧张程度 |
+|------|------|--------|----------|
+（列出2-3个阶层矛盾或势力冲突）
+
+#### 权力制衡
+（描述监管机制、约束规则）
+
+### 经济体系
+#### 货币体系
+（列出货币类型和兑换规则）
+
+#### 资源分布
+（描述资源产地和垄断情况）
+
+#### 贸易网络
+| 名称 | 类型 | 位置 | 主要商品 |
+|------|------|------|----------|
+（列出2-3个市场/渠道）
+
+#### 经济命脉
+（描述关键资源控制权）
+
+### 文化体系
+#### 核心文化
+（列出3-5个核心价值观或理念）
+
+#### 宗教信仰
+（描述信仰体系和主要仪式）
+
+#### 文化禁忌
+（列出3-5个禁忌及其后果）
+
+#### 文化传承
+（描述传承方式和内容）
+
+### 组织体系
+#### 主角阵营
+| 名称 | 类型 | 简介 | 实力等级 |
+|------|------|------|----------|
+（列出主角所属或支持势力）
+
+#### 反派阵营
+| 名称 | 类型 | 简介 | 实力等级 |
+|------|------|------|----------|
+（列出敌对势力）
+
+#### 中立阵营
+| 名称 | 类型 | 简介 | 实力等级 |
+|------|------|------|----------|
+（列出第三方势力）
+
+#### 特殊阵营
+（列出隐世/神秘势力，如无可省略）
+
+## 隐喻维度
+
+### 符号系统
+#### 视觉符号
+| 符号 | 象征意义 |
+|------|----------|
+（列出3-5个物品/图像符号）
+
+#### 色彩符号
+| 颜色 | 含义 |
+|------|------|
+（列出3-5种颜色含义）
+
+#### 动物符号
+| 动物 | 象征意义 |
+|------|----------|
+（列出2-4种动物图腾）
+
+#### 自然符号
+| 自然元素 | 象征意义 |
+|----------|----------|
+（列出2-4种自然元素符号）
+
+### 主题映射
+#### 环境→心理
+（描述气候/环境变化如何映射心理状态）
+
+#### 建筑→困境
+（描述建筑风格如何暗示文明困境）
+
+#### 境界→人生
+（描述力量等级如何映射人生阶段）
+
+#### 地位→阶层
+（描述权力等级如何映射社会阶层）
+
+### 哲学内核
+#### 因果逻辑
+（描述因果报应机制）
+
+#### 平衡法则
+（描述阴阳/对立统一规则）
+
+#### 自然法则
+（描述顺应/逆天规则）
+
+#### 平等理念
+（描述众生/人人平等观念）
+
+#### 基础规则
+（描述五行/科技/魔法等底层规则）
+
+## 交互维度
+
+### 维度间交互规则
+#### 物理←→社会
+（描述环境与制度如何相互影响）
+
+#### 社会←→隐喻
+（描述文化与象征如何相互影响）
+
+#### 隐喻←→物理
+（描述规则与力量如何相互影响）
+
+### 动态演化机制
+#### 世界观演化
+（描述随剧情推进的世界变化）
+
+#### 势力消长
+（描述组织间的兴衰规律）
+
+#### 资源变化
+（描述资源稀缺性变化）
+
+### 破坏点与修复机制
+#### 世界观漏洞
+（列出可打破的规则）
+
+#### 破坏后果
+（描述打破规则的代价）
+
+#### 修复机制
+（描述弥补/恢复方法）
+
+## 世界概述
+
+### 时间背景
+（300-500字，描述当前时代背景、历史脉络、时代特征）
+
+### 地理环境
+（300-500字，描述主要地理特征、气候环境、地貌分布）
+
+### 氛围基调
+（300-500字，描述整体氛围、情绪基调、视觉印象）
+
+### 世界法则
+（300-500字，描述核心规则、行为约束、违规后果）
+</output_format>
+
+<constraints>
+【约束条件】
+
+1. **内容充实**：
+   - 每个表格至少填写指定数量的条目
+   - 世界概述四个字段各300-500字，不可敷衍
+   - 所有描述需具体、有画面感，避免空泛表达
+
+2. **逻辑自洽**：
+   - 各维度内容需相互呼应，形成完整世界观
+   - 力量等级与组织架构需匹配
+   - 经济体系与文化价值观需呼应
+
+3. **类型契合**：
+   - 内容需契合简介情节、符合类型特征
+   - 玄幻类侧重修炼体系，科幻类侧重科技体系
+   - 都市类贴近现实，奇幻类构建奇幻规则
+
+4. **格式规范**：
+   - 使用Markdown表格格式列出地点、势力、符号等
+   - 章节标题层级清晰（##维度 → ###子维度 → ####细节）
+   - 不要使用markdown代码块包裹输出内容，直接输出纯Markdown文本
+</constraints>
+
+<example>
+【示例片段 - 玄幻类型】
+
+# 世界观设定
+
+## 基本信息
+- 世界名称：灵域大陆
+- 作品规模：长篇
+
+## 物理维度
+
+### 空间架构
+#### 世界地图
+- **下界·凡尘境**：东洲青岚域（30国）、西漠荒芜域（18部族）...
+- **中界·修真境**：九霄云海域（浮空仙岛108座）...
+
+#### 空间节点
+| 名称 | 类型 | 所属区域 | 特性描述 |
+|------|------|----------|----------|
+| 天玄山门 | 入口 | 天玄山脉 | 灵气浓郁，剑气缭绕 |
+| 灵雾集市 | 核心区域 | 灵雾城 | 交易活跃，情报流通 |
+
+...
+
+## 世界概述
+
+### 时间背景
+灵气复苏后的第五纪元，修炼文明达到鼎盛。千年前天地灵气骤然涌动，开启了修炼新时代。各大宗门在灵脉争夺中崛起，形成了今日的正邪对立格局...（300字以上）
+</example>
+
+请严格按照以上结构输出完整的Markdown文档。"""
+
+    # 世界构建续写提示词 - Markdown格式
+    WORLD_BUILDING_MARKDOWN_CONTINUE = """<system>
+你正在为小说《{title}》生成世界观设定，上次因长度限制中断，请继续完成。
+</system>
+
+<context>
+上次已生成内容（末尾部分）：
+{previous_content_tail}
+
+中断位置：{last_section}
+缺失章节：{missing_sections}
+</context>
+
+<instruction>
+从"{last_section}"之后继续生成，直接输出Markdown文本。
+确保补全所有缺失章节，特别是"世界概述"四个字段（时间背景、地理环境、氛围基调、世界法则）各300-500字必须完整。
+不要重复已生成的内容，直接从中断处继续。
+</instruction>"""
+
+    # 世界构建提示词 V3 完整阶段
+    WORLD_BUILDING_V3_FULL = """<system>
+你是资深的世界观设计师，现在需要对扩展后的世界观进行一致性校验和完善。
+</system>
+
+<task>
+【设计任务 - 完整阶段】
+基于核心+扩展阶段的世界观，进行一致性校验，修复潜在问题，生成最终完整结构。
+
+【阶段说明】
+这是三阶段生成流程的第三阶段（完整），输入是扩展阶段的JSON输出。
+</task>
+
+<input priority="P0">
+【已生成的世界观】
+{extended_json}
+
+【项目信息】
+书名：{title}
+类型：{genre}
+主题：{theme}
+</input>
+
+<output priority="P0">
+【输出格式】
+输出纯JSON（无markdown标记），校验修复后的完整结构：
+
+{{
+  "version": 2,
+  "meta": {{
+    "world_name": "（保持不变）",
+    "genre_scale": "（保持不变）",
+    "creation_stage": "full"
+  }},
+  "physical": {{
+    "space": "（校验并完善：key_locations与organizations地点引用一致，space_nodes覆盖主要入口）",
+    "time": "（校验并完善：history_events时间线连贯，time_nodes覆盖关键转折）",
+    "power": "（校验并完善：levels与level_advances对应，ability_branches覆盖主要路径）",
+    "items": "（校验并完善：各system字段填充，与metaphor.symbols呼应）"
+  }},
+  "social": {{
+    "power_structure": "（校验并完善：key_organizations与organizations字段一致，power_fault_lines覆盖主要冲突）",
+    "economy": "（校验并完善：trade_networks与physical.space_nodes呼应，economic_lifelines覆盖核心资源）",
+    "culture": "（校验并完善：core_culture与power.system呼应，religious_beliefs覆盖信仰体系）",
+    "organizations": "（校验并完善：各阵营势力与power_structure.key_organizations引用一致）",
+    "relations": "（校验并完善：organization_relations覆盖势力关系网）"
+  }},
+  "metaphor": {{
+    "symbols": "（校验并完善：animal_symbols/nature_symbols与{genre}类型适配）",
+    "themes": "（校验并完善：theme_mappings覆盖主要隐喻关系）",
+    "philosophy": "（校验并完善：core_philosophies覆盖核心世界观观念）"
+  }},
+  "interaction": {{
+    "cross_rules": "（校验并完善：覆盖所有维度交叉）",
+    "evolution": "（校验并完善：faction_evolution与organizations呼应，resource_evolution与economic_lifelines呼应）",
+    "disruption_points": "（校验并完善）",
+    "disruption_consequences": "（校验并完善：覆盖主要破坏场景）",
+    "repair_mechanisms": "（校验并完善）"
+  }},
+  "legacy": {{
+    "time_period": "（基于完整结构重新生成300-500字概述）",
+    "location": "（基于完整结构重新生成300-500字概述）",
+    "atmosphere": "（基于完整结构重新生成300-500字概述）",
+    "rules": "（基于完整结构重新生成300-500字概述）"
+  }}
+}}
+
+【校验任务】
+1. 检查physical.key_locations与social.organizations各阵营势力是否有引用冲突
+2. 检查physical.space_nodes是否覆盖主要地点入口
+3. 检查physical.power.ability_branches与social.culture.core_culture是否呼应
+4. 检查social.economy.trade_networks与physical.space.space_channels是否呼应
+5. 检查metaphor.symbols.animal_symbols/nature_symbols是否与{genre}类型适配
+6. 检查interaction.evolution.faction_evolution与social.organizations是否呼应
+7. 确保legacy四个字段基于完整结构重新概述（而非直接复制）
+
+【约束条件】
+- 保持原有核心内容不变
+- 仅修复明显的不一致之处
+- creation_stage改为"full"
+- legacy字段必须重新生成概述
+</output>
+
+<constraints>
+【必须遵守】
+✅ 一致性校验：各维度引用无冲突
+✅ 完整性：所有维度和子字段都已填充
+✅ legacy概述：基于完整结构重新生成
+✅ 保持核心：不修改已生成的核心内容
+✅ 类型适配：确保所有字段与{genre}小说类型适配
+
+【禁止事项】
+❌ 输出markdown或代码块标记
+❌ 遗漏校验步骤
+❌ 直接复制扩展阶段的legacy字段
+❌ 破坏已生成内容的一致性
 </constraints>"""
 
     # 批量角色生成提示词 V2（RTCO框架）
@@ -375,7 +1465,7 @@ class PromptService:
 【必须遵守】
 ✅ 数量精确：数组包含{chapter_count}个章节对象
 ✅ 符合类型：情节符合{genre}类型特征
-✅ 主题贴合：体现主题"{theme}"
+✅ 主题贴合：体现主题\"{theme}\"
 ✅ 开篇定位：是开局而非完整故事
 ✅ 描述详细：每个summary 500-1000字
 
@@ -3184,7 +4274,7 @@ class PromptService:
     async def get_chapter_regeneration_prompt(cls, chapter_number: int, title: str, word_count: int, content: str,
                                         modification_instructions: str, project_context: Dict[str, Any],
                                         style_content: str, target_word_count: int,
-                                        user_id: str = None, db = None) -> str:
+                                        user_id: Optional[str] = None, db = None) -> str:
         """
         获取章节重写提示词（支持用户自定义）
         
@@ -3205,11 +4295,11 @@ class PromptService:
         """
         # 获取系统提示词模板（支持用户自定义）
         if user_id and db:
-            system_template = await cls.get_template("CHAPTER_REGENERATION_SYSTEM", user_id, db)
+            system_template = await cls.get_template("CHAPTER_REGENERATION_SYSTEM", user_id, db) or cls.CHAPTER_REGENERATION_SYSTEM
         else:
             system_template = cls.CHAPTER_REGENERATION_SYSTEM
-        
-        prompt_parts = [system_template]
+
+        prompt_parts: list[str] = [system_template]
         
         # 原始章节信息
         prompt_parts.append(f"""## 📖 原始章节信息
@@ -3312,7 +4402,7 @@ class PromptService:
     async def get_mcp_tool_test_prompts(
         cls,
         plugin_name: str,
-        user_id: str = None,
+        user_id: Optional[str] = None,
         db = None
     ) -> Dict[str, str]:
         """
@@ -3328,16 +4418,16 @@ class PromptService:
         """
         # 获取用户自定义或系统默认的user提示词
         if user_id and db:
-            user_template = await cls.get_template("MCP_TOOL_TEST", user_id, db)
+            user_template = await cls.get_template("MCP_TOOL_TEST", user_id, db) or cls.MCP_TOOL_TEST
         else:
             user_template = cls.MCP_TOOL_TEST
-        
+
         # 获取用户自定义或系统默认的system提示词
         if user_id and db:
-            system_template = await cls.get_template("MCP_TOOL_TEST_SYSTEM", user_id, db)
+            system_template = await cls.get_template("MCP_TOOL_TEST_SYSTEM", user_id, db) or cls.MCP_TOOL_TEST_SYSTEM
         else:
             system_template = cls.MCP_TOOL_TEST_SYSTEM
-        
+
         return {
             "user": cls.format_prompt(user_template, plugin_name=plugin_name),
             "system": system_template
@@ -3348,8 +4438,8 @@ class PromptService:
     @classmethod
     async def get_template_with_fallback(cls,
                                         template_key: str,
-                                        user_id: str = None,
-                                        db = None) -> str:
+                                        user_id: Optional[str] = None,
+                                        db = None) -> Optional[str]:
         """
         获取提示词模板（优先用户自定义，支持降级）
         
@@ -3372,7 +4462,7 @@ class PromptService:
     async def get_template(cls,
                           template_key: str,
                           user_id: str,
-                          db) -> str:
+                          db) -> Optional[str]:
         """
         获取提示词模板（优先用户自定义）
         
@@ -3432,6 +4522,30 @@ class PromptService:
                 "category": "世界构建",
                 "description": "用于生成小说世界观设定，包括时间背景、地理位置、氛围基调和世界规则",
                 "parameters": ["title", "theme", "genre", "description"]
+            },
+            "WORLD_BUILDING_V2": {
+                "name": "世界构建(V2)",
+                "category": "世界构建",
+                "description": "V2版本世界构建，生成核心结构(地点、势力、力量体系)和概述字段",
+                "parameters": ["title", "theme", "genre", "description", "chapter_count", "narrative_perspective"]
+            },
+            "WORLD_BUILDING_V3_CORE": {
+                "name": "世界构建(V3-核心阶段)",
+                "category": "世界构建",
+                "description": "V3三阶段生成第1阶段：生成物理维度和社会维度的核心结构",
+                "parameters": ["title", "theme", "genre", "description", "chapter_count", "narrative_perspective"]
+            },
+            "WORLD_BUILDING_V3_EXTENDED": {
+                "name": "世界构建(V3-扩展阶段)",
+                "category": "世界构建",
+                "description": "V3三阶段生成第2阶段：基于核心结构扩展隐喻维度和交互维度",
+                "parameters": ["core_json", "title", "theme", "genre"]
+            },
+            "WORLD_BUILDING_V3_FULL": {
+                "name": "世界构建(V3-完整阶段)",
+                "category": "世界构建",
+                "description": "V3三阶段生成第3阶段：校验一致性并完善所有维度",
+                "parameters": ["extended_json", "title", "theme", "genre"]
             },
             "BOOK_IMPORT_REVERSE_PROJECT_SUGGESTION": {
                 "name": "拆书导入-反向项目提炼",
@@ -3686,7 +4800,7 @@ class PromptService:
         return templates
     
     @classmethod
-    def get_system_template_info(cls, template_key: str) -> dict:
+    def get_system_template_info(cls, template_key: str) -> Optional[dict]:
         """
         获取指定系统模板的信息
         

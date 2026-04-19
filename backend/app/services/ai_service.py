@@ -492,10 +492,29 @@ class AIService:
 
             # 检查是否需要续写
             if auto_continue and finish_reason == "length" and continue_count < max_continue_rounds:
+                # 检查结尾是否是正常文本（不是重复乱码）
+                last_50 = accumulated_content[-50:] if len(accumulated_content) >= 50 else accumulated_content[-len(accumulated_content):]
+
+                # 计算重复率（检测乱码）
+                if len(last_50) >= 10:
+                    first_char = last_50[0]
+                    repeat_ratio = last_50.count(first_char) / len(last_50)
+                    if repeat_ratio > 0.85:  # 85%以上是同一字符
+                        logger.warning(f"⚠️ 结尾异常（{repeat_ratio:.0%}重复字符'{first_char}'），放弃续写")
+                        break
+
+                # 检查结尾是否有正常的JSON结构标志
+                # 如果结尾不是有效的JSON部分（如 `"`、`}`、`]`、`,` 等），可能已损坏
+                last_10 = accumulated_content[-10:].strip()
+                valid_json_end_chars = ['"', '}', ']', ',', ':', '\n', ' ', 'e', 'd', 's']  # 常见JSON结尾字符
+                if last_10 and not any(last_10.endswith(c) for c in valid_json_end_chars):
+                    logger.warning(f"⚠️ 结尾非JSON格式（'{last_10}'），放弃续写")
+                    break
+
                 continue_count += 1
                 logger.info(f"🔄 内容被截断(length)，自动续写 第{continue_count}次，已累积: {len(accumulated_content)}字")
-                # 构建续写提示词
-                current_prompt = f"请继续完成之前的内容，从以下位置继续写（不要重复已有内容）：\n\n【已生成内容的结尾部分】\n{accumulated_content[-500:]}\n\n【续写要求】\n请直接继续写，不要重新开始，保持风格和内容的连贯性。"
+                # 构建更智能的续写提示词
+                current_prompt = f"之前的JSON内容被截断，请继续完成。确保输出完整的闭合JSON结构。\n\n【已生成内容的有效结尾】\n{accumulated_content[-400:]}\n\n【续写要求】\n1. 从上述结尾的**前一个完整元素**继续\n2. 确保所有括号正确闭合\n3. 不要重复已有内容\n4. 直接输出JSON，不要加markdown标记"
             else:
                 # 不需要续写或达到最大续写次数
                 if finish_reason == "length" and continue_count >= max_continue_rounds:

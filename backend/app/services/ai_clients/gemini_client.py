@@ -142,38 +142,46 @@ class GeminiClient:
         try:
             async with self.client.stream("POST", url, json=payload) as response:
                 response.raise_for_status()
+                buffer = ""  # 用于手动解析的缓冲区
                 try:
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            import json
-                            try:
-                                data = json.loads(line[6:])
-                                candidates = data.get("candidates", [])
-                                if candidates and len(candidates) > 0:
-                                    parts = candidates[0].get("content", {}).get("parts", [])
-                                    if parts and len(parts) > 0:
-                                        text = ""
-                                        function_calls = []
-                                        for part in parts:
-                                            if "text" in part:
-                                                text += part["text"]
-                                            elif "functionCall" in part:
-                                                fc = part["functionCall"]
-                                                function_calls.append({
-                                                    "id": f"call_{fc['name']}",
-                                                    "type": "function",
-                                                    "function": {
-                                                        "name": fc["name"],
-                                                        "arguments": fc.get("args", {})
-                                                    }
-                                                })
-                                        
-                                        if text:
-                                            yield {"content": text}
-                                        if function_calls:
-                                            yield {"tool_calls": function_calls}
-                            except json.JSONDecodeError:
-                                continue
+                    async for chunk_bytes in response.aiter_bytes():
+                        chunk_text = chunk_bytes.decode('utf-8')
+                        buffer += chunk_text
+
+                        # 按换行符分割处理
+                        while '\n' in buffer:
+                            line, buffer = buffer.split('\n', 1)
+
+                            if line.startswith("data: "):
+                                import json
+                                try:
+                                    data = json.loads(line[6:])
+                                    candidates = data.get("candidates", [])
+                                    if candidates and len(candidates) > 0:
+                                        parts = candidates[0].get("content", {}).get("parts", [])
+                                        if parts and len(parts) > 0:
+                                            text = ""
+                                            function_calls = []
+                                            for part in parts:
+                                                if "text" in part:
+                                                    text += part["text"]
+                                                elif "functionCall" in part:
+                                                    fc = part["functionCall"]
+                                                    function_calls.append({
+                                                        "id": f"call_{fc['name']}",
+                                                        "type": "function",
+                                                        "function": {
+                                                            "name": fc["name"],
+                                                            "arguments": fc.get("args", {})
+                                                        }
+                                                    })
+
+                                            if text:
+                                                yield {"content": text}
+                                            if function_calls:
+                                                yield {"tool_calls": function_calls}
+                                except json.JSONDecodeError:
+                                    continue
                 except GeneratorExit:
                     # 生成器被关闭，这是正常的清理过程
                     logger.debug("Gemini 流式响应生成器被关闭(GeneratorExit)")

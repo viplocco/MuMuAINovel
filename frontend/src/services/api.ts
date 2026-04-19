@@ -941,7 +941,7 @@ export const wizardStreamApi = {
     data: {
       project_id: string;
       count?: number;
-      world_context?: Record<string, string>;
+      world_context?: Record<string, string | any[]>;
       theme?: string;
       genre?: string;
       requirements?: string;

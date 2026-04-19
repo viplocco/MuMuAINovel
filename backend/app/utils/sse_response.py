@@ -216,7 +216,20 @@ class WizardProgressTracker:
     async def done(self) -> str:
         """发送完成信号"""
         return await SSEResponse.send_done()
-    
+
+    async def stage_data(self, stage_name: str, data: Dict[str, Any], progress: int = None) -> str:
+        """
+        发送阶段中间数据（用于流式显示各阶段生成内容）
+
+        Args:
+            stage_name: 阶段名称
+            data: 阶段数据
+            progress: 进度百分比（可选，默认使用当前进度）
+        """
+        if progress is None:
+            progress = self.current_progress
+        return await SSEResponse.send_stage_data(stage_name, data, progress)
+
     async def heartbeat(self) -> str:
         """发送心跳"""
         return await SSEResponse.send_heartbeat()
@@ -309,7 +322,24 @@ class SSEResponse:
             "type": "result",
             "data": data
         })
-    
+
+    @staticmethod
+    async def send_stage_data(stage_name: str, stage_data: Dict[str, Any], progress: int) -> str:
+        """
+        发送阶段中间数据（用于流式显示各阶段生成内容）
+
+        Args:
+            stage_name: 阶段名称（如 "核心维度", "扩展维度"）
+            stage_data: 阶段数据
+            progress: 当前进度百分比
+        """
+        return SSEResponse.format_sse({
+            "type": "stage_data",
+            "stage_name": stage_name,
+            "data": stage_data,
+            "progress": progress
+        })
+
     @staticmethod
     async def send_event(event: str, data: Dict[str, Any]) -> str:
         """

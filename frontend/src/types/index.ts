@@ -137,6 +137,9 @@ export interface Project {
   world_location?: string;
   world_atmosphere?: string;
   world_rules?: string;
+  world_setting_data?: string;  // 世界设定结构化数据(JSON字符串) - 向后兼容
+  world_setting_markdown?: string;  // 世界设定Markdown内容 - 新增
+  world_setting_format?: 'json' | 'markdown';  // 数据格式标识 - 新增
   chapter_count?: number;
   narrative_perspective?: string;
   character_count?: number;
@@ -171,6 +174,9 @@ export interface ProjectUpdate {
   world_location?: string;
   world_atmosphere?: string;
   world_rules?: string;
+  world_setting_data?: string;  // 世界设定结构化数据(JSON字符串) - 向后兼容
+  world_setting_markdown?: string;  // 世界设定Markdown内容 - 新增
+  world_setting_format?: 'json' | 'markdown';  // 数据格式标识 - 新增
   chapter_count?: number;
   narrative_perspective?: string;
   character_count?: number;
@@ -201,12 +207,449 @@ export interface ProjectWizardRequest {
   };
 }
 
+// 世界设定元素类型
+export interface WorldSettingElement {
+  name: string;
+  type: string;
+  brief: string;
+}
+
 export interface WorldBuildingResponse {
   project_id: string;
   time_period: string;
   location: string;
   atmosphere: string;
   rules: string;
+  // JSON格式数据 - 向后兼容
+  world_setting_data?: string;
+  // Markdown格式数据 - 新增
+  world_setting_markdown?: string;
+  world_setting_format?: 'json' | 'markdown';
+  // 元素列表
+  key_organizations?: WorldSettingElement[];
+  key_locations?: WorldSettingElement[];
+  creation_stage?: 'core' | 'extended' | 'full' | 'markdown';
+  // 续写次数
+  continue_count?: number;
+}
+
+// ========== V3 世界设定多维度类型定义 ==========
+
+// 力量等级元素
+export interface PowerLevelElement {
+  name: string;
+  type?: string;
+  brief: string;
+  power_level?: string;  // 高/中/低
+}
+
+// ========== 新增：V3 世界设定扩展元素 ==========
+
+// 空间节点元素（通用）
+export interface SpaceNodeElement {
+  name: string;           // 地点名称
+  type: string;           // 类型（入口/核心区域/禁区/交通枢纽）
+  location: string;       // 所属区域
+  properties?: string[];  // 区域特性
+  connections?: string[]; // 连接的其他节点
+}
+
+// 空间通道元素（通用）
+export interface SpaceChannelElement {
+  name: string;           // 通道名称
+  type: string;           // 固定通道/临时通道/秘密通道
+  source: string;         // 起点
+  destination: string;    // 终点
+  conditions?: string;    // 使用条件
+  risks?: string;         // 风险描述
+}
+
+// 空间特性元素（通用）
+export interface SpaceFeatureElement {
+  name: string;           // 特性名称
+  type: string;           // 环境特性/规则特性/物理特性
+  effect: string;         // 影响
+  distribution?: string;  // 分布范围
+}
+
+// 历史纪元元素（通用）
+export interface HistoryEpochElement {
+  name: string;           // 纪元名称
+  period: string;         // 时间跨度
+  major_events?: string[]; // 主要事件
+  impact: string;         // 对当前时代的影响
+  legacy?: string;        // 遗留痕迹
+}
+
+// 关键事件年表元素（通用 - 完整结构）
+export interface HistoryEventElement {
+  year: number | string;  // 年份或相对时间
+  event_name: string;     // 事件名称
+  epoch: string;          // 所属纪元
+  description: string;    // 事件描述
+  consequence?: string;   // 后果影响
+  related_characters?: string[]; // 相关角色
+}
+
+// 能力分支元素（通用）
+export interface AbilityBranchElement {
+  name: string;           // 分支名称
+  description: string;    // 分支理念和特点
+  key_skills?: string[];  // 核心技能
+  advantages?: string[];  // 优势
+  disadvantages?: string[]; // 劣势/限制
+  typical_practitioners?: string[]; // 典型从业者/势力
+}
+
+// 力量来源元素（通用）
+export interface PowerSourceElement {
+  name: string;           // 来源名称
+  type: string;           // 自然来源/人工来源/血脉传承/社会资源
+  acquisition: string;    // 获取方式
+  quality_levels?: string[]; // 品质等级
+  distribution?: string;  // 分布情况
+}
+
+// 等级晋升规则元素（通用）
+export interface LevelAdvanceElement {
+  level_name: string;     // 等级名称
+  requirements: string;   // 晋升条件
+  risks?: string;         // 晋升风险/失败后果
+  success_effects?: string[]; // 晋升成功效果
+  failure_effects?: string[]; // 晋升失败后果
+}
+
+// 物品体系元素（通用）
+export interface ItemSystemElement {
+  category: string;       // 分类名称
+  tiers?: string[];       // 品阶等级
+  famous_items?: { name: string; effect: string; rarity?: string }[];
+  crafting_rules?: string; // 制作/获取规则
+}
+
+// 贸易网络元素（通用）
+export interface TradeNetworkElement {
+  name: string;           // 网络/市场名称
+  type: string;           // 公开市场/拍卖/黑市/线上平台
+  location?: string;      // 位置
+  main_goods?: string[];  // 主要交易物品
+  rules?: string;         // 交易规则
+  participants?: string[]; // 参与势力/商家
+}
+
+// 经济命脉元素（通用）
+export interface EconomicLifelineElement {
+  name: string;           // 资源/产业名称
+  type: string;           // 资源类型
+  controlled_by?: string[]; // 控制势力/企业
+  importance?: string;    // 重要程度
+  distribution?: string;  // 分布情况
+}
+
+// 势力分类元素（通用）
+export interface FactionClassificationElement {
+  category: string;       // 正派/反派/中立/特殊
+  characteristics: string; // 特征描述
+  typical_organizations?: string[]; // 典型势力
+  mutual_relations?: string; // 相互关系
+}
+
+// 阵营势力元素（通用）
+export interface FactionOrganizationElement {
+  name: string;           // 势力名称
+  type: string;           // 组织类型
+  brief: string;          // 简介
+  power_level?: string;   // 势力等级
+  specialties?: string[]; // 擅长领域
+  key_members?: string[]; // 核心成员
+}
+
+// 权力断层线元素（通用）
+export interface PowerFaultLineElement {
+  name: string;           // 断层名称
+  type: string;           // 阶级冲突/资源争夺/理念分歧/新旧对抗
+  parties?: string[];     // 涉及方
+  intensity: string;      // 冲突强度（高/中/低）
+  consequences?: string;  // 可能后果
+}
+
+// 权力制衡元素（通用）
+export interface PowerBalanceElement {
+  mechanism_name: string; // 制衡机制名称
+  type: string;           // 联盟制约/法律约束/武力威慑/舆论监督
+  participants?: string[]; // 参与方
+  effectiveness?: string; // 有效性
+}
+
+// 核心文化元素（通用）
+export interface CoreCultureElement {
+  name: string;           // 文化名称
+  type: string;           // 能力文化/商业文化/学术文化/宗教文化
+  description: string;    // 文化描述
+  practitioners?: string[]; // 遵循者
+  significance?: string;  // 文化意义
+}
+
+// 宗教信仰元素（通用）
+export interface ReligiousBeliefElement {
+  name: string;           // 信仰名称
+  type: string;           // 主流信仰/边缘信仰/禁忌信仰
+  core_beliefs?: string[]; // 核心教义
+  practices?: string[];   // 仪式实践
+  influence?: string;     // 社会影响
+}
+
+// 文化传承元素（通用）
+export interface CulturalHeritageElement {
+  name: string;           // 传承名称
+  origin: string;         // 起源时代/势力
+  current_status: string; // 当前状况
+  preservation?: string;  // 传承方式
+  significance?: string;  // 价值意义
+}
+
+// 动物符号元素（通用）
+export interface AnimalSymbolElement {
+  animal: string;         // 动物名称
+  symbolism: string;      // 象征含义
+  usage_context?: string; // 使用场景
+  cultural_notes?: string; // 文化背景
+}
+
+// 自然符号元素（通用）
+export interface NatureSymbolElement {
+  element: string;        // 自然元素
+  symbolism: string;      // 象征含义
+  manifestation?: string; // 在世界中的体现
+  narrative_usage?: string; // 叙事运用
+}
+
+// 主题映射元素（通用）
+export interface ThemeMappingElement {
+  mapping_type: string;   // 环境-心理/建筑-困境/等级-人生/能力-地位
+  physical_manifestation: string; // 物理维度体现
+  metaphor_meaning: string; // 隐喻含义
+  narrative_usage?: string; // 叙事运用方式
+  examples?: string[];    // 具体案例
+}
+
+// 哲学内核元素（通用 - 完整结构）
+export interface PhilosophyCoreElement {
+  philosophy_name: string; // 哲学名称
+  core_concept: string;    // 核心概念阐述
+  world_manifestation?: string; // 在世界观中的体现
+  narrative_rules?: string[]; // 对叙事的约束规则
+  conflicts?: string;       // 与其他观念的冲突
+}
+
+// 势力演化元素（通用）
+export interface FactionEvolutionElement {
+  faction_name: string;   // 演化的势力
+  evolution_type: string; // 增强/衰退/分裂/合并/消失
+  trigger: string;        // 触发原因
+  current_state: string;  // 当前状态
+  future_trend?: string;  // 未来趋势
+}
+
+// 资源演化元素（通用）
+export interface ResourceEvolutionElement {
+  resource_name: string;  // 资源名称
+  evolution_type: string; // 增加/减少/枯竭/变异
+  cause: string;          // 原因
+  impact: string;         // 影响
+  mitigation?: string;    // 缓解措施
+}
+
+// 破坏后果元素（通用）
+export interface DisruptionConsequenceElement {
+  disruption_type: string;  // 规则突破/力量失衡/秩序崩塌
+  immediate_effect: string; // 直接后果
+  long_term_effect?: string; // 长期影响
+  affected_dimensions?: string[]; // 受影响维度
+  narrative_usage?: string; // 叙事运用
+}
+
+// 阵营组织体系（通用）
+export interface FactionOrganizations {
+  protagonist_factions?: FactionOrganizationElement[];  // 主角阵营
+  antagonist_factions?: FactionOrganizationElement[];   // 反派阵营
+  neutral_factions?: FactionOrganizationElement[];      // 中立阵营
+  special_factions?: FactionOrganizationElement[];      // 特殊阵营
+}
+
+// 物理维度 - 空间子维度（扩展）
+export interface PhysicalSpace {
+  world_map?: { name: string; regions: string[] };
+  key_locations: PowerLevelElement[];
+  space_nodes?: SpaceNodeElement[];      // 新增：空间节点
+  space_channels?: SpaceChannelElement[]; // 新增：空间通道
+  space_features?: SpaceFeatureElement[]; // 新增：空间特性
+  movement_rules?: string;
+}
+
+// 物理维度 - 时间子维度（扩展）
+export interface PhysicalTime {
+  current_period: string;
+  history_epochs?: HistoryEpochElement[];   // 新增：历史纪元
+  history_events?: HistoryEventElement[];   // 扩展：关键事件年表（完整结构）
+  time_nodes?: { name: string; epoch: string; event: string; consequence?: string }[]; // 新增：时间节点
+  timeflow?: string;
+}
+
+// 物理维度 - 力量子维度（扩展）
+export interface PhysicalPower {
+  system_name: string;
+  levels: string[];
+  cultivation_method?: string;
+  limitations?: string;
+  ability_branches?: AbilityBranchElement[]; // 新增：能力分支
+  power_sources?: PowerSourceElement[];      // 新增：力量来源
+  level_advances?: LevelAdvanceElement[];    // 新增：等级晋升规则
+}
+
+// 物理维度 - 物品子维度（扩展）
+export interface PhysicalItems {
+  equipment_system?: ItemSystemElement;      // 新增：装备体系
+  consumable_system?: ItemSystemElement;     // 新增：消耗品体系
+  tool_system?: ItemSystemElement;           // 新增：工具体系
+  structure_system?: ItemSystemElement;      // 新增：结构体系
+  creature_system?: ItemSystemElement;       // 新增：生物体系
+  common_items?: string[];
+  rare_items?: string[];
+  creation_rules?: string;
+}
+
+// 物理维度（扩展）
+export interface PhysicalDimension {
+  space: PhysicalSpace;
+  time: PhysicalTime;
+  power: PhysicalPower;
+  items?: PhysicalItems;
+}
+
+// 社会维度 - 权力结构子维度（扩展）
+export interface SocialPowerStructure {
+  hierarchy_rule: string;
+  key_organizations: PowerLevelElement[];
+  faction_classification?: FactionClassificationElement[]; // 新增：势力分类
+  power_fault_lines?: PowerFaultLineElement[];             // 新增：权力断层线
+  power_balance?: PowerBalanceElement[];                   // 新增：权力制衡
+  conflict_rules?: string;
+}
+
+// 社会维度 - 经济子维度（扩展）
+export interface SocialEconomy {
+  currency_system?: string[];
+  trade_rules?: string;
+  resource_distribution?: string;
+  trade_networks?: TradeNetworkElement[];      // 新增：贸易网络
+  economic_lifelines?: EconomicLifelineElement[]; // 新增：经济命脉
+}
+
+// 社会维度 - 文化子维度（扩展）
+export interface SocialCulture {
+  values: string[];
+  taboos: string[];
+  traditions?: string[];
+  language_style?: string;
+  core_culture?: CoreCultureElement[];         // 新增：核心文化
+  religious_beliefs?: ReligiousBeliefElement[]; // 新增：宗教信仰
+  cultural_heritage?: CulturalHeritageElement[]; // 新增：文化传承
+}
+
+// 社会维度 - 关系子维度
+export interface SocialRelations {
+  organization_relations?: string[];
+  inter_personal_rules?: string;
+}
+
+// 社会维度（扩展）
+export interface SocialDimension {
+  power_structure: SocialPowerStructure;
+  economy?: SocialEconomy;
+  culture: SocialCulture;
+  organizations?: FactionOrganizations;  // 新增：阵营组织体系
+  relations?: SocialRelations;
+}
+
+// 隐喻维度 - 象征子维度（扩展）
+export interface MetaphorSymbols {
+  visual?: string[];
+  colors?: string[];
+  objects?: string[];
+  animal_symbols?: AnimalSymbolElement[];  // 新增：动物符号
+  nature_symbols?: NatureSymbolElement[];  // 新增：自然符号
+}
+
+// 隐喻维度 - 主题子维度（扩展）
+export interface MetaphorThemes {
+  core_theme: string;
+  sub_themes?: string[];
+  theme_evolution?: string;
+  theme_mappings?: ThemeMappingElement[];  // 新增：主题映射
+}
+
+// 隐喻维度 - 哲学元素（保留兼容）
+export interface PhilosophyElement {
+  name: string;
+  school?: string;
+  influence?: string;
+}
+
+// 隐喻维度（扩展）
+export interface MetaphorDimension {
+  symbols?: MetaphorSymbols;
+  themes?: MetaphorThemes;
+  philosophy?: PhilosophyElement[];          // 保留兼容
+  core_philosophies?: PhilosophyCoreElement[]; // 新增：哲学内核（完整结构）
+}
+
+// 交互维度 - 交叉规则子维度
+export interface InteractionCrossRules {
+  physical_social?: string;
+  social_metaphor?: string;
+  metaphor_physical?: string;
+}
+
+// 交互维度 - 演化子维度（扩展）
+export interface InteractionEvolution {
+  time_driven?: string;
+  event_driven?: string;
+  character_driven?: string;
+  faction_evolution?: FactionEvolutionElement[];  // 新增：势力演化
+  resource_evolution?: ResourceEvolutionElement[]; // 新增：资源演化
+}
+
+// 交互维度（扩展）
+export interface InteractionDimension {
+  cross_rules?: InteractionCrossRules;
+  evolution?: InteractionEvolution;
+  disruption_points?: string[];
+  disruption_consequences?: DisruptionConsequenceElement[]; // 新增：破坏后果
+  repair_mechanisms?: string[];
+}
+
+// Legacy字段（兼容原有4字段）
+export interface LegacyFields {
+  time_period: string;
+  location: string;
+  atmosphere: string;
+  rules: string;
+}
+
+// V3 世界设定完整结构
+export interface WorldSettingV3Data {
+  version: 2;
+  meta: {
+    world_name: string;
+    genre_scale?: string;
+    creation_stage: 'core' | 'extended' | 'full';
+  };
+  physical: PhysicalDimension;
+  social: SocialDimension;
+  metaphor: MetaphorDimension | null;
+  interaction: InteractionDimension | null;
+  legacy: LegacyFields;
 }
 
 // 大纲类型定义

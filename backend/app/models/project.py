@@ -30,6 +30,9 @@ class Project(Base):
     world_location = Column(Text, comment="地理位置")
     world_atmosphere = Column(Text, comment="氛围基调")
     world_rules = Column(Text, comment="世界规则")
+    world_setting_data = Column(Text, comment="世界设定结构化数据(JSON)")
+    world_setting_markdown = Column(Text, comment="世界设定Markdown内容")
+    world_setting_format = Column(String(10), default="json", comment="数据格式: json/markdown")
     
     # 项目配置
     chapter_count = Column(Integer, comment="章节数量")

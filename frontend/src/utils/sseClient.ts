@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export interface SSEMessage {
-  type: 'progress' | 'chunk' | 'result' | 'error' | 'done' | 'task_created' | 'task_started';
+  type: 'progress' | 'chunk' | 'result' | 'error' | 'done' | 'task_created' | 'task_started' | 'stage_data';
   message?: string;
   progress?: number;
   word_count?: number;
@@ -10,11 +10,13 @@ export interface SSEMessage {
   error?: string;
   code?: number;
   task_id?: string;
+  stage_name?: string;  // 阶段名称（用于 stage_data）
 }
 
 export interface SSEClientOptions {
   onProgress?: (message: string, progress: number, status: string, wordCount?: number) => void;
   onChunk?: (content: string) => void;
+  onStageData?: (stageName: string, data: any, progress: number) => void;  // 阶段数据回调
   onResult?: (data: any) => void;
   onError?: (error: string, code?: number) => void;
   onComplete?: () => void;
@@ -269,6 +271,14 @@ export class SSEPostClient {
           resolve({ content: this.accumulatedContent });
         } else {
           resolve(true);
+        }
+        break;
+
+      case 'stage_data':
+        // 阶段数据（用于流式显示各阶段生成内容）
+        console.log('📊 SSE Stage data:', message.stage_name, message.progress);
+        if (this.options.onStageData && message.stage_name && message.data) {
+          this.options.onStageData(message.stage_name, message.data, message.progress || 0);
         }
         break;
 

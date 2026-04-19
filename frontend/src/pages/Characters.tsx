@@ -198,6 +198,11 @@ export default function Characters() {
     }
   };
 
+  // 切换Tab时重置分页 - 必须在早期返回之前调用
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab]);
+
   if (!currentProject) return null;
 
   const handleDeleteCharacter = async (id: string) => {
@@ -688,11 +693,6 @@ export default function Characters() {
 
   // 分页处理后的列表
   const paginatedList = displayList.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-  // 切换Tab时重置分页
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [activeTab]);
 
   const isMobile = window.innerWidth <= 768;
 

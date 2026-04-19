@@ -264,3 +264,173 @@ body {
   min-height: 36px;
 }
 
+/* Markdown 内容渲染样式 */
+.markdown-content {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  color: var(--color-text-primary);
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.markdown-content h1 {
+  font-size: 20px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 8px;
+}
+
+.markdown-content h2 {
+  font-size: 18px;
+}
+
+.markdown-content h3 {
+  font-size: 16px;
+}
+
+.markdown-content p {
+  margin-bottom: 12px;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 20px;
+  margin-bottom: 12px;
+}
+
+.markdown-content li {
+  margin-bottom: 4px;
+}
+
+.markdown-content code {
+  background: var(--color-bg-layout);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+
+.markdown-content pre {
+  background: var(--color-bg-layout);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-content blockquote {
+  border-left: 4px solid var(--color-primary);
+  padding-left: 12px;
+  margin-left: 0;
+  color: var(--color-text-secondary);
+}
+
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  font-size: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--color-border);
+  padding: 10px 14px;
+  text-align: left;
+  line-height: 1.5;
+}
+
+.markdown-content th {
+  background: var(--color-primary-bg, rgba(0, 0, 0, 0.04));
+  font-weight: 600;
+  color: var(--color-text-primary);
+  border-bottom: 2px solid var(--color-primary, #1890ff);
+}
+
+.markdown-content td {
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* 首列加粗突出 */
+.markdown-content td:first-child {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.markdown-content tr:nth-child(even) td {
+  background: var(--color-bg-layout, rgba(0, 0, 0, 0.02));
+}
+
+.markdown-content tr:hover td {
+  background: var(--color-hover-bg, rgba(0, 0, 0, 0.06));
+}
+
+/* 暗色主题表格样式 */
+[data-theme-resolved='dark'] .markdown-content th {
+  background: rgba(255, 255, 255, 0.08);
+  border-bottom: 2px solid var(--color-primary);
+}
+
+[data-theme-resolved='dark'] .markdown-content td {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme-resolved='dark'] .markdown-content td:first-child {
+  color: var(--color-text-primary);
+}
+
+[data-theme-resolved='dark'] .markdown-content tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme-resolved='dark'] .markdown-content tr:hover td {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 移动端表格响应式 */
+@media (max-width: 768px) {
+  .markdown-content table {
+    font-size: 12px;
+    border-radius: 0;
+  }
+
+  .markdown-content th,
+  .markdown-content td {
+    padding: 8px 10px;
+  }
+}
+
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 16px 0;
+}
+
+.markdown-content a {
+  color: var(--color-primary);
+}
+
+.markdown-content strong {
+  font-weight: 600;
+}
+
+.markdown-content em {
+  font-style: italic;
+}
+

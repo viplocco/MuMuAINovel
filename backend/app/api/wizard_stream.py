@@ -1,4 +1,5 @@
 """项目创建向导流式API - 使用SSE避免超时"""
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -18,6 +19,8 @@ from app.models.project_default_style import ProjectDefaultStyle
 from app.services.ai_service import AIService
 from app.services.prompt_service import prompt_service, PromptService
 from app.services.plot_expansion_service import PlotExpansionService
+from app.services.json_helper import clean_json_response, safe_parse_json_v3_world_setting
+from app.utils.world_setting_helper import normalize_world_setting_data
 from app.logger import get_logger
 from app.utils.sse_response import SSEResponse, create_sse_response, WizardProgressTracker
 from app.api.settings import get_user_ai_service
@@ -31,16 +34,24 @@ async def world_building_generator(
     db: AsyncSession,
     user_ai_service: AIService
 ) -> AsyncGenerator[str, None]:
-    """世界构建流式生成器 - 支持MCP工具增强"""
+    """世界构建流式生成器 - V3三阶段渐进生成"""
     # 标记数据库会话是否已提交
     db_committed = False
     # 初始化标准进度追踪器
     tracker = WizardProgressTracker("世界观")
-    
+
+    # V3 三阶段进度配置
+    STAGE_CORE_START = 20
+    STAGE_CORE_END = 40
+    STAGE_EXTENDED_START = 40
+    STAGE_EXTENDED_END = 60
+    STAGE_FULL_START = 60
+    STAGE_FULL_END = 85
+
     try:
         # 发送开始消息
         yield await tracker.start()
-        
+
         # 提取参数
         title = data.get("title")
         description = data.get("description")
@@ -55,144 +66,322 @@ async def world_building_generator(
         model = data.get("model")
         enable_mcp = data.get("enable_mcp", True)  # 默认启用MCP
         user_id = data.get("user_id")  # 从中间件注入
-        
+
         if not title or not description or not theme or not genre:
             yield await tracker.error("title、description、theme 和 genre 是必需的参数", 400)
             return
-        
-        # 获取基础提示词（支持自定义）
-        yield await tracker.preparing("准备AI提示词...")
-        template = await PromptService.get_template_with_fallback("WORLD_BUILDING", user_id, db)
-        base_prompt = PromptService.format_prompt(
-            template,
-            title=title,
-            theme=theme,
-            genre=genre or "通用类型",
-            description=description or "暂无简介"
-        )
-        
+
         # 设置用户信息以启用MCP
         if user_id:
             user_ai_service.user_id = user_id
             user_ai_service.db_session = db
-        
-        # ===== 流式生成世界观（带重试机制） =====
-        MAX_WORLD_RETRIES = 3  # 最多重试3次
-        world_retry_count = 0
-        world_generation_success = False
-        world_data = {}
-        estimated_total = 1000
-        
-        while world_retry_count < MAX_WORLD_RETRIES and not world_generation_success:
+
+        # ===== 阶段1：核心维度生成 (0-40%) =====
+        yield await SSEResponse.send_progress(
+            "【阶段1/3】生成核心维度（物理+社会）...",
+            STAGE_CORE_START,
+            "processing"
+        )
+
+        # 获取核心阶段提示词
+        template_core = await PromptService.get_template_with_fallback("WORLD_BUILDING_V3_CORE", user_id, db)
+        if not template_core:
+            yield await tracker.error("核心阶段模板未找到", 500)
+            return
+        prompt_core = PromptService.format_prompt(
+            template_core,
+            title=title,
+            theme=theme,
+            genre=genre or "通用类型",
+            description=description or "暂无简介",
+            chapter_count=chapter_count or 10,
+            narrative_perspective=narrative_perspective or "第三人称"
+        )
+
+        MAX_WORLD_RETRIES = 3
+        core_json = None
+
+        for retry in range(MAX_WORLD_RETRIES):
             try:
-                # 重试时重置生成进度
-                if world_retry_count > 0:
-                    tracker.reset_generating_progress()
-                
-                yield await tracker.generating(
-                    current_chars=0,
-                    estimated_total=estimated_total,
-                    retry_count=world_retry_count,
-                    max_retries=MAX_WORLD_RETRIES
-                )
-                
-                # 流式生成世界观
                 accumulated_text = ""
                 chunk_count = 0
-                
+
                 async for chunk in user_ai_service.generate_text_stream(
-                    prompt=base_prompt,
+                    prompt=prompt_core,
                     provider=provider,
                     model=model,
                     tool_choice="required",
                 ):
                     chunk_count += 1
                     accumulated_text += chunk
-                    
-                    # 发送内容块
                     yield await tracker.generating_chunk(chunk)
-                    
-                    # 定期更新进度
-                    current_len = len(accumulated_text)
+
+                    # 阶段内进度更新 (20-40%)
+                    progress = STAGE_CORE_START + int((STAGE_CORE_END - STAGE_CORE_START) * min(len(accumulated_text) / 2000, 1.0))
                     if chunk_count % 10 == 0:
-                        yield await tracker.generating(
-                            current_chars=current_len,
-                            estimated_total=estimated_total,
-                            retry_count=world_retry_count,
-                            max_retries=MAX_WORLD_RETRIES
+                        yield await SSEResponse.send_progress(
+                            f"【阶段1/3】生成核心维度... ({len(accumulated_text)}字)",
+                            progress,
+                            "processing"
                         )
-                    
-                    # 每20个块发送心跳
                     if chunk_count % 20 == 0:
                         yield await tracker.heartbeat()
-                
-                # 检查是否返回空响应
+
                 if not accumulated_text or not accumulated_text.strip():
-                    logger.warning(f"⚠️ AI返回空世界观（尝试{world_retry_count+1}/{MAX_WORLD_RETRIES}）")
-                    world_retry_count += 1
-                    if world_retry_count < MAX_WORLD_RETRIES:
-                        yield await tracker.retry(world_retry_count, MAX_WORLD_RETRIES, "AI返回为空")
+                    if retry < MAX_WORLD_RETRIES - 1:
+                        yield await tracker.retry(retry + 1, MAX_WORLD_RETRIES, "AI返回为空")
                         continue
                     else:
-                        # 达到最大重试次数，使用默认值
-                        logger.error("❌ 世界观生成多次返回空响应")
-                        world_data = {
-                            "time_period": "AI多次返回为空，请稍后重试",
-                            "location": "AI多次返回为空，请稍后重试",
-                            "atmosphere": "AI多次返回为空，请稍后重试",
-                            "rules": "AI多次返回为空，请稍后重试"
-                        }
-                        world_generation_success = True  # 标记为成功以继续流程
-                        break
-                
-                # 解析结果 - 使用统一的JSON清洗方法
-                yield await tracker.parsing("解析世界观数据...")
-                
-                try:
-                    logger.info(f"🔍 开始清洗JSON，原始长度: {len(accumulated_text)}")
-                    logger.info(f"   原始内容预览: {accumulated_text[:300]}...")
-                    
-                    # ✅ 使用 AIService 的统一清洗方法
-                    cleaned_text = user_ai_service._clean_json_response(accumulated_text)
-                    logger.info(f"✅ JSON清洗完成，清洗后长度: {len(cleaned_text)}")
-                    logger.info(f"   清洗后预览: {cleaned_text[:300]}...")
-                    
-                    world_data = json.loads(cleaned_text)
-                    logger.info(f"✅ 世界观JSON解析成功（尝试{world_retry_count+1}/{MAX_WORLD_RETRIES}）")
-                    world_generation_success = True  # 解析成功，标记完成
-                            
-                except json.JSONDecodeError as e:
-                    logger.error(f"❌ 世界构建JSON解析失败（尝试{world_retry_count+1}/{MAX_WORLD_RETRIES}）: {e}")
-                    logger.error(f"   原始内容长度: {len(accumulated_text)}")
-                    logger.error(f"   原始内容预览: {accumulated_text[:200]}")
-                    world_retry_count += 1
-                    if world_retry_count < MAX_WORLD_RETRIES:
-                        yield await tracker.retry(world_retry_count, MAX_WORLD_RETRIES, "JSON解析失败")
-                        continue
-                    else:
-                        # 达到最大重试次数，使用默认值
-                        world_data = {
-                            "time_period": "AI返回格式错误，请重试",
-                            "location": "AI返回格式错误，请重试",
-                            "atmosphere": "AI返回格式错误，请重试",
-                            "rules": "AI返回格式错误，请重试"
-                        }
-                        world_generation_success = True  # 标记为成功以继续流程
-                        
+                        raise ValueError("核心阶段多次返回空响应")
+
+                # 解析核心阶段JSON - 使用安全解析函数
+                core_json = safe_parse_json_v3_world_setting(accumulated_text)
+                if core_json and core_json.get("legacy"):
+                    logger.info(f"✅ 核心阶段JSON解析成功（版本: {core_json.get('version')}）")
+                else:
+                    logger.warning("⚠️ 核心阶段解析部分成功，使用降级数据")
+                break
+
             except Exception as e:
-                logger.error(f"❌ 世界构建生成异常（尝试{world_retry_count+1}/{MAX_WORLD_RETRIES}）: {type(e).__name__}: {e}")
-                world_retry_count += 1
-                if world_retry_count < MAX_WORLD_RETRIES:
-                    yield await tracker.retry(world_retry_count, MAX_WORLD_RETRIES, "生成异常")
+                logger.error(f"❌ 核心阶段JSON解析失败: {e}")
+                if retry < MAX_WORLD_RETRIES - 1:
+                    yield await tracker.retry(retry + 1, MAX_WORLD_RETRIES, "JSON解析失败")
                     continue
                 else:
-                    # 最后一次重试仍失败，抛出异常
-                    logger.error(f"   accumulated_text 长度: {len(accumulated_text) if 'accumulated_text' in locals() else 'N/A'}")
-                    raise
-        
-        # 保存到数据库
+                    # 最终降级：使用默认结构
+                    core_json = safe_parse_json_v3_world_setting("")
+                    logger.warning("⚠️ 核心阶段最终降级，使用默认结构")
+                    break
+
+        # ===== 阶段1完成：发送核心维度数据 =====
+        if core_json:
+            # 规范化数据，确保字段结构一致
+            from app.utils.world_setting_helper import normalize_world_setting_data
+            core_json_normalized = normalize_world_setting_data(core_json)
+
+            # 提取核心维度数据用于前端实时显示
+            legacy = core_json_normalized.get("legacy", {})
+            physical = core_json_normalized.get("physical", {})
+            social = core_json_normalized.get("social", {})
+            stage1_data = {
+                "time_period": legacy.get("time_period", ""),
+                "location": legacy.get("location", ""),
+                "atmosphere": legacy.get("atmosphere", ""),
+                "rules": legacy.get("rules", ""),
+                "physical": physical,
+                "social": social,
+            }
+            yield await tracker.stage_data("核心维度", stage1_data, STAGE_CORE_END)
+            logger.info("📤 已发送核心维度数据用于前端实时显示")
+            # 更新 core_json 为规范化后的版本
+            core_json = core_json_normalized
+
+        # ===== 阶段2：扩展维度生成 (40-60%) =====
+        yield await SSEResponse.send_progress(
+            "【阶段2/3】生成扩展维度（隐喻+交互）...",
+            STAGE_EXTENDED_START,
+            "processing"
+        )
+
+        extended_json = None
+        template_extended = await PromptService.get_template_with_fallback("WORLD_BUILDING_V3_EXTENDED", user_id, db)
+        if not template_extended:
+            yield await tracker.error("扩展阶段模板未找到", 500)
+            return
+        prompt_extended = PromptService.format_prompt(
+            template_extended,
+            core_json=json.dumps(core_json, ensure_ascii=False),
+            title=title,
+            theme=theme,
+            genre=genre or "通用类型"
+        )
+
+        for retry in range(MAX_WORLD_RETRIES):
+            try:
+                accumulated_text = ""
+                chunk_count = 0
+
+                async for chunk in user_ai_service.generate_text_stream(
+                    prompt=prompt_extended,
+                    provider=provider,
+                    model=model,
+                    tool_choice="required",
+                ):
+                    chunk_count += 1
+                    accumulated_text += chunk
+                    yield await tracker.generating_chunk(chunk)
+
+                    # 阶段内进度更新 (40-60%)
+                    progress = STAGE_EXTENDED_START + int((STAGE_EXTENDED_END - STAGE_EXTENDED_START) * min(len(accumulated_text) / 1500, 1.0))
+                    if chunk_count % 10 == 0:
+                        yield await SSEResponse.send_progress(
+                            f"【阶段2/3】生成扩展维度... ({len(accumulated_text)}字)",
+                            progress,
+                            "processing"
+                        )
+                    if chunk_count % 20 == 0:
+                        yield await tracker.heartbeat()
+
+                if not accumulated_text or not accumulated_text.strip():
+                    if retry < MAX_WORLD_RETRIES - 1:
+                        yield await tracker.retry(retry + 1, MAX_WORLD_RETRIES, "AI返回为空")
+                        continue
+                    else:
+                        # 扩展阶段失败时，使用核心阶段数据继续
+                        extended_json = core_json
+                        logger.warning("⚠️ 扩展阶段多次返回空响应，使用核心阶段数据")
+                        break
+
+                # 解析扩展阶段JSON - 使用安全解析函数
+                extended_json = safe_parse_json_v3_world_setting(accumulated_text)
+                if extended_json and extended_json.get("metaphor") or extended_json.get("interaction"):
+                    logger.info(f"✅ 扩展阶段JSON解析成功")
+                else:
+                    # 扩展阶段部分失败，合并核心阶段数据
+                    if core_json:
+                        for key in ["physical", "social", "legacy"]:
+                            if key in core_json and key not in extended_json:
+                                extended_json[key] = core_json[key]
+                    logger.warning("⚠️ 扩展阶段解析部分成功，合并核心阶段数据")
+                break
+
+            except Exception as e:
+                logger.error(f"❌ 扩展阶段JSON解析失败: {e}")
+                if retry < MAX_WORLD_RETRIES - 1:
+                    yield await tracker.retry(retry + 1, MAX_WORLD_RETRIES, "JSON解析失败")
+                    continue
+                else:
+                    # 解析失败时，使用核心阶段数据继续
+                    extended_json = core_json
+                    logger.warning("⚠️ 扩展阶段JSON解析失败，使用核心阶段数据")
+                    break
+
+        # ===== 阶段2完成：发送扩展维度数据 =====
+        if extended_json:
+            # 规范化数据，确保字段结构一致
+            from app.utils.world_setting_helper import normalize_world_setting_data
+            extended_json_normalized = normalize_world_setting_data(extended_json)
+
+            metaphor = extended_json_normalized.get("metaphor", {})
+            interaction = extended_json_normalized.get("interaction", {})
+            stage2_data = {
+                "metaphor": metaphor,
+                "interaction": interaction,
+            }
+            yield await tracker.stage_data("扩展维度", stage2_data, STAGE_EXTENDED_END)
+            logger.info("📤 已发送扩展维度数据用于前端实时显示")
+            # 更新 extended_json 为规范化后的版本
+            extended_json = extended_json_normalized
+
+        # ===== 阶段3：完整阶段校验 (60-85%) =====
+        yield await SSEResponse.send_progress(
+            "【阶段3/3】校验一致性并完善...",
+            STAGE_FULL_START,
+            "processing"
+        )
+
+        final_json = None
+        template_full = await PromptService.get_template_with_fallback("WORLD_BUILDING_V3_FULL", user_id, db)
+        if not template_full:
+            yield await tracker.error("完整阶段模板未找到", 500)
+            return
+        prompt_full = PromptService.format_prompt(
+            template_full,
+            extended_json=json.dumps(extended_json, ensure_ascii=False),
+            title=title,
+            theme=theme,
+            genre=genre or "通用类型"
+        )
+
+        for retry in range(MAX_WORLD_RETRIES):
+            try:
+                accumulated_text = ""
+                chunk_count = 0
+
+                async for chunk in user_ai_service.generate_text_stream(
+                    prompt=prompt_full,
+                    provider=provider,
+                    model=model,
+                    tool_choice="required",
+                ):
+                    chunk_count += 1
+                    accumulated_text += chunk
+                    yield await tracker.generating_chunk(chunk)
+
+                    # 阶段内进度更新 (60-85%)
+                    progress = STAGE_FULL_START + int((STAGE_FULL_END - STAGE_FULL_START) * min(len(accumulated_text) / 1000, 1.0))
+                    if chunk_count % 10 == 0:
+                        yield await SSEResponse.send_progress(
+                            f"【阶段3/3】校验一致性... ({len(accumulated_text)}字)",
+                            progress,
+                            "processing"
+                        )
+                    if chunk_count % 20 == 0:
+                        yield await tracker.heartbeat()
+
+                if not accumulated_text or not accumulated_text.strip():
+                    if retry < MAX_WORLD_RETRIES - 1:
+                        yield await tracker.retry(retry + 1, MAX_WORLD_RETRIES, "AI返回为空")
+                        continue
+                    else:
+                        # 完整阶段失败时，使用扩展阶段数据继续
+                        final_json = extended_json
+                        if final_json:
+                            final_json["meta"]["creation_stage"] = "extended"  # 标记为扩展阶段
+                        logger.warning("⚠️ 完整阶段多次返回空响应，使用扩展阶段数据")
+                        break
+
+                # 解析完整阶段JSON - 使用安全解析函数
+                final_json = safe_parse_json_v3_world_setting(accumulated_text)
+                if final_json:
+                    # 合并扩展阶段数据（确保完整性）
+                    if extended_json:
+                        for key in ["physical", "social", "metaphor", "interaction"]:
+                            if key in extended_json and key not in final_json:
+                                final_json[key] = extended_json[key]
+                        # 确保 legacy 完整
+                        if "legacy" in extended_json and "legacy" in final_json:
+                            for legacy_key in ["time_period", "location", "atmosphere", "rules"]:
+                                if final_json["legacy"].get(legacy_key) == "未设定":
+                                    final_json["legacy"][legacy_key] = extended_json["legacy"].get(legacy_key, "未设定")
+                    final_json["meta"]["creation_stage"] = "full"
+                    logger.info(f"✅ 完整阶段JSON解析成功")
+                else:
+                    # 使用扩展阶段数据
+                    final_json = extended_json
+                    if final_json:
+                        final_json["meta"]["creation_stage"] = "extended"
+                    logger.warning("⚠️ 完整阶段解析失败，使用扩展阶段数据")
+                break
+
+            except Exception as e:
+                logger.error(f"❌ 完整阶段JSON解析失败: {e}")
+                if retry < MAX_WORLD_RETRIES - 1:
+                    yield await tracker.retry(retry + 1, MAX_WORLD_RETRIES, "JSON解析失败")
+                    continue
+                else:
+                    # 解析失败时，使用扩展阶段数据继续
+                    final_json = extended_json
+                    if final_json:
+                        final_json["meta"]["creation_stage"] = "extended"
+                    logger.warning("⚠️ 完整阶段JSON解析失败，使用扩展阶段数据")
+                    break
+
+        # 确保final_json有效
+        if not final_json:
+            final_json = core_json if core_json else {
+                "version": 2,
+                "meta": {"world_name": title, "genre_scale": "中篇", "creation_stage": "core"},
+                "physical": {"space": {"key_locations": []}, "time": {"current_period": "未设定"}, "power": {"system_name": "无", "levels": [], "cultivation_method": "无"}},
+                "social": {"power_structure": {"hierarchy_rule": "未设定", "key_organizations": []}, "culture": {"values": [], "taboos": []}},
+                "metaphor": None,
+                "interaction": None,
+                "legacy": {"time_period": "生成失败", "location": "生成失败", "atmosphere": "生成失败", "rules": "生成失败"}
+            }
+
+        # ===== 保存到数据库 =====
         yield await tracker.saving("保存世界观到数据库...")
-        
+
         # 确保user_id存在
         if not user_id:
             yield await SSEResponse.send_error("用户ID缺失，无法创建项目", 401)
@@ -206,31 +395,39 @@ async def world_building_generator(
             genre_schema = ATTRIBUTE_DEFINITIONS_BY_GENRE.get(genre, DEFAULT_ATTRIBUTES)
             attribute_schema_json = json_module.dumps(genre_schema, ensure_ascii=False)
 
+        # 规范化 final_json，确保所有字段都存在
+        final_json = normalize_world_setting_data(final_json)
+
+        # 从final_json提取legacy字段（兼容V2/V3结构）
+        legacy = final_json.get("legacy", {})
+        summary = final_json.get("summary", {})  # V2兼容
+
         project = Project(
-            user_id=user_id,  # 添加user_id字段
+            user_id=user_id,
             title=title,
             description=description,
             theme=theme,
             genre=genre,
-            world_time_period=world_data.get("time_period"),
-            world_location=world_data.get("location"),
-            world_atmosphere=world_data.get("atmosphere"),
-            world_rules=world_data.get("rules"),
+            world_time_period=legacy.get("time_period") or summary.get("time_period"),
+            world_location=legacy.get("location") or summary.get("location"),
+            world_atmosphere=legacy.get("atmosphere") or summary.get("atmosphere"),
+            world_rules=legacy.get("rules") or summary.get("rules"),
+            world_setting_data=json.dumps(final_json, ensure_ascii=False),
             narrative_perspective=narrative_perspective,
             target_words=target_words,
             chapter_count=chapter_count,
             character_count=character_count,
-            outline_mode=outline_mode,  # 设置大纲模式
+            outline_mode=outline_mode,
             wizard_status="incomplete",
             wizard_step=1,
             status="planning",
-            attribute_schema=attribute_schema_json  # 添加能力属性配置
+            attribute_schema=attribute_schema_json
         )
         db.add(project)
         await db.commit()
         await db.refresh(project)
-        
-        # 自动设置默认写作风格为第一个全局预设风格
+
+        # 自动设置默认写作风格
         try:
             result = await db.execute(
                 select(WritingStyle).where(
@@ -239,7 +436,7 @@ async def world_building_generator(
                 ).limit(1)
             )
             first_style = result.scalar_one_or_none()
-            
+
             if first_style:
                 default_style = ProjectDefaultStyle(
                     project_id=project.id,
@@ -248,47 +445,323 @@ async def world_building_generator(
                 db.add(default_style)
                 await db.commit()
                 logger.info(f"为项目 {project.id} 自动设置默认风格: {first_style.name}")
-            else:
-                logger.warning(f"未找到order_index=1的全局预设风格，项目 {project.id} 未设置默认风格")
         except Exception as e:
-            logger.warning(f"设置默认写作风格失败: {e}，不影响项目创建")
-        
-        # 更新向导步骤状态为1（世界观已完成）
-        # wizard_step: 0=未开始, 1=世界观已完成, 2=职业体系已完成, 3=角色已完成, 4=大纲已完成
+            logger.warning(f"设置默认写作风格失败: {e}")
+
         project.wizard_step = 1  # type: ignore[reportAttributeAccessIssue]
         await db.commit()
-        
-        # ===== 世界观生成完成 =====
+
         db_committed = True
-        
         yield await tracker.complete()
-        
+
         # 发送世界观结果
+        physical = final_json.get("physical", {})
+        social = final_json.get("social", {})
+        key_locations = physical.get("space", {}).get("key_locations", [])
+        key_organizations = social.get("power_structure", {}).get("key_organizations", [])
+
         yield await tracker.result({
             "project_id": project.id,
-            "time_period": world_data.get("time_period"),
-            "location": world_data.get("location"),
-            "atmosphere": world_data.get("atmosphere"),
-            "rules": world_data.get("rules")
+            "time_period": legacy.get("time_period") or summary.get("time_period"),
+            "location": legacy.get("location") or summary.get("location"),
+            "atmosphere": legacy.get("atmosphere") or summary.get("atmosphere"),
+            "rules": legacy.get("rules") or summary.get("rules"),
+            "world_setting_data": json.dumps(final_json, ensure_ascii=False),
+            "key_organizations": key_organizations,
+            "key_locations": key_locations,
+            "creation_stage": final_json.get("meta", {}).get("creation_stage", "core")
         })
-        
-        # 发送世界观完成信号
+
         yield await tracker.done()
-        
-        logger.info(f"✅ 世界观生成完成，项目ID: {project.id}")
-        
+        logger.info(f"✅ 世界观V3生成完成，项目ID: {project.id}")
+
     except GeneratorExit:
-        # SSE连接断开，回滚未提交的事务
         logger.warning("世界构建生成器被提前关闭")
         if not db_committed and db.in_transaction():
             await db.rollback()
-            logger.info("世界构建事务已回滚（GeneratorExit）")
+            logger.info("世界构建事务已回滚")
     except Exception as e:
         logger.error(f"世界构建流式生成失败: {str(e)}")
-        # 异常时回滚事务
         if not db_committed and db.in_transaction():
             await db.rollback()
-            logger.info("世界构建事务已回滚（异常）")
+            logger.info("世界构建事务已回滚")
+        yield await tracker.error(f"生成失败: {str(e)}")
+
+
+async def world_building_generator_md(
+    data: Dict[str, Any],
+    db: AsyncSession,
+    user_ai_service: AIService
+) -> AsyncGenerator[str, None]:
+    """
+    世界构建流式生成器 - Markdown单阶段生成版本
+
+    直接生成Markdown格式，支持自动续写机制，避免token超限中断
+    """
+    from app.utils.markdown_helper import (
+        check_markdown_complete,
+        get_last_complete_section,
+        get_section_outline,
+        extract_legacy_from_markdown,
+        clean_ai_markdown_output,
+        remove_duplicate_content,
+        REQUIRED_SECTIONS,
+    )
+
+    db_committed = False
+    tracker = WizardProgressTracker("世界观")
+    MAX_CONTINUE_RETRIES = 3  # 最多续写3次
+
+    try:
+        yield await tracker.start()
+
+        # 提取参数
+        title = data.get("title")
+        description = data.get("description")
+        theme = data.get("theme")
+        genre = data.get("genre")
+        narrative_perspective = data.get("narrative_perspective")
+        target_words = data.get("target_words")
+        chapter_count = data.get("chapter_count")
+        character_count = data.get("character_count")
+        outline_mode = data.get("outline_mode", "one-to-many")
+        provider = data.get("provider")
+        model = data.get("model")
+        enable_mcp = data.get("enable_mcp", True)
+        user_id = data.get("user_id")
+
+        if not title or not description or not theme or not genre:
+            yield await tracker.error("title、description、theme 和 genre 是必需的参数", 400)
+            return
+
+        # 设置用户信息以启用MCP
+        if user_id:
+            user_ai_service.user_id = user_id
+            user_ai_service.db_session = db
+
+        # 获取Markdown提示词模板
+        template = await PromptService.get_template_with_fallback("WORLD_BUILDING_MARKDOWN", user_id, db)
+        if not template:
+            yield await tracker.error("Markdown模板未找到", 500)
+            return
+
+        prompt = PromptService.format_prompt(
+            template,
+            title=title,
+            theme=theme,
+            genre=genre or "通用类型",
+            description=description or "暂无简介",
+            chapter_count=chapter_count or 10,
+            narrative_perspective=narrative_perspective or "第三人称"
+        )
+
+        # ===== 单阶段Markdown生成 =====
+        yield await SSEResponse.send_progress(
+            "正在生成世界观设定（Markdown格式）...",
+            20,
+            "processing"
+        )
+
+        accumulated_markdown = ""
+        continue_count = 0
+
+        while continue_count <= MAX_CONTINUE_RETRIES:
+            # 构建提示词（首次生成或续写）
+            if continue_count == 0:
+                current_prompt = prompt
+            else:
+                # 续写提示词
+                continue_template = await PromptService.get_template_with_fallback(
+                    "WORLD_BUILDING_MARKDOWN_CONTINUE", user_id, db
+                )
+                if not continue_template:
+                    # 如果续写模板不存在，直接结束
+                    logger.warning("续写模板未找到，停止续写")
+                    break
+
+                # 获取缺失章节
+                is_complete, missing = check_markdown_complete(accumulated_markdown)
+                last_section = get_last_complete_section(accumulated_markdown)
+                section_outline = get_section_outline(accumulated_markdown)
+
+                current_prompt = PromptService.format_prompt(
+                    continue_template,
+                    title=title,
+                    previous_content_tail=accumulated_markdown[-3000:] if len(accumulated_markdown) > 3000 else accumulated_markdown,
+                    last_section=last_section,
+                    missing_sections="\n".join(missing),
+                    section_outline=section_outline
+                )
+
+                yield await SSEResponse.send_progress(
+                    f"续写中（第{continue_count}次）...",
+                    70 + continue_count * 5,
+                    "processing"
+                )
+                yield await tracker.retry(continue_count, MAX_CONTINUE_RETRIES, "内容不完整，自动续写")
+
+            # 流式生成
+            chunk_count = 0
+            try:
+                async for chunk in user_ai_service.generate_text_stream(
+                    prompt=current_prompt,
+                    provider=provider,
+                    model=model,
+                ):
+                    chunk_count += 1
+
+                    # 清洗首次生成的chunk（去除AI可能添加的前言）
+                    if continue_count == 0 and chunk_count == 1:
+                        chunk = clean_ai_markdown_output(chunk)
+
+                    accumulated_markdown += chunk
+                    yield await tracker.generating_chunk(chunk)
+
+                    # 进度更新
+                    is_complete, missing = check_markdown_complete(accumulated_markdown)
+                    if is_complete:
+                        progress = 85
+                    else:
+                        # 根据已完成章节数量计算进度
+                        completed_count = len([s for s in REQUIRED_SECTIONS if s in accumulated_markdown])
+                        progress = 20 + int(65 * completed_count / len(REQUIRED_SECTIONS))
+
+                    if chunk_count % 20 == 0:
+                        yield await SSEResponse.send_progress(
+                            f"生成中（{len(accumulated_markdown)}字）...",
+                            min(progress, 80),
+                            "processing"
+                        )
+                    if chunk_count % 30 == 0:
+                        yield await tracker.heartbeat()
+
+            except Exception as e:
+                logger.error(f"生成异常: {e}")
+                if continue_count < MAX_CONTINUE_RETRIES:
+                    continue_count += 1
+                    continue
+                else:
+                    yield await tracker.error(f"生成失败: {str(e)}")
+                    return
+
+            # 检查完整性
+            is_complete, missing = check_markdown_complete(accumulated_markdown)
+            logger.info(f"生成状态: 完整={is_complete}, 缺失={missing}, 字数={len(accumulated_markdown)}")
+
+            if is_complete:
+                break
+
+            # 不完整，需要续写
+            continue_count += 1
+            if continue_count > MAX_CONTINUE_RETRIES:
+                logger.warning(f"达到最大续写次数({MAX_CONTINUE_RETRIES})，停止续写")
+                yield await SSEResponse.send_progress(
+                    f"生成完成（部分内容可能不完整）",
+                    80,
+                    "processing"
+                )
+                break
+
+        # ===== 提取legacy字段 =====
+        legacy = extract_legacy_from_markdown(accumulated_markdown)
+        logger.info(f"提取的legacy字段: time_period={len(legacy.get('time_period', ''))}字, "
+                   f"location={len(legacy.get('location', ''))}字, "
+                   f"atmosphere={len(legacy.get('atmosphere', ''))}字, "
+                   f"rules={len(legacy.get('rules', ''))}字")
+
+        # ===== 保存到数据库 =====
+        yield await tracker.saving("保存世界观到数据库...")
+
+        if not user_id:
+            yield await SSEResponse.send_error("用户ID缺失，无法创建项目", 401)
+            return
+
+        # 根据类型初始化能力属性配置
+        attribute_schema_json = None
+        if genre:
+            from app.constants.attribute_definitions import ATTRIBUTE_DEFINITIONS_BY_GENRE, DEFAULT_ATTRIBUTES
+            import json as json_module
+            genre_schema = ATTRIBUTE_DEFINITIONS_BY_GENRE.get(genre, DEFAULT_ATTRIBUTES)
+            attribute_schema_json = json_module.dumps(genre_schema, ensure_ascii=False)
+
+        project = Project(
+            user_id=user_id,
+            title=title,
+            description=description,
+            theme=theme,
+            genre=genre,
+            # Legacy 4字段
+            world_time_period=legacy.get("time_period", ""),
+            world_location=legacy.get("location", ""),
+            world_atmosphere=legacy.get("atmosphere", ""),
+            world_rules=legacy.get("rules", ""),
+            # Markdown格式存储
+            world_setting_markdown=accumulated_markdown,
+            world_setting_format="markdown",
+            narrative_perspective=narrative_perspective,
+            target_words=target_words,
+            chapter_count=chapter_count,
+            character_count=character_count,
+            outline_mode=outline_mode,
+            wizard_status="incomplete",
+            wizard_step=1,
+            status="planning",
+            attribute_schema=attribute_schema_json
+        )
+        db.add(project)
+        await db.commit()
+        await db.refresh(project)
+
+        # 自动设置默认写作风格
+        try:
+            result = await db.execute(
+                select(WritingStyle).where(
+                    WritingStyle.user_id.is_(None),
+                    WritingStyle.order_index == 1
+                ).limit(1)
+            )
+            first_style = result.scalar_one_or_none()
+
+            if first_style:
+                default_style = ProjectDefaultStyle(
+                    project_id=project.id,
+                    style_id=first_style.id
+                )
+                db.add(default_style)
+                await db.commit()
+                logger.info(f"为项目 {project.id} 自动设置默认风格: {first_style.name}")
+        except Exception as e:
+            logger.warning(f"设置默认写作风格失败: {e}")
+
+        project.wizard_step = 1
+        await db.commit()
+
+        db_committed = True
+        yield await tracker.complete()
+
+        # 发送结果
+        yield await tracker.result({
+            "project_id": project.id,
+            "time_period": legacy.get("time_period", ""),
+            "location": legacy.get("location", ""),
+            "atmosphere": legacy.get("atmosphere", ""),
+            "rules": legacy.get("rules", ""),
+            "world_setting_markdown": accumulated_markdown,
+            "world_setting_format": "markdown",
+            "continue_count": continue_count,
+        })
+
+        yield await tracker.done()
+        logger.info(f"✅ 世界观Markdown生成完成，项目ID: {project.id}, 续写次数: {continue_count}")
+
+    except GeneratorExit:
+        logger.warning("Markdown生成器被提前关闭")
+        if not db_committed and db.in_transaction():
+            await db.rollback()
+    except Exception as e:
+        logger.error(f"Markdown生成失败: {str(e)}")
+        if not db_committed and db.in_transaction():
+            await db.rollback()
         yield await tracker.error(f"生成失败: {str(e)}")
 
 
@@ -302,12 +775,14 @@ async def generate_world_building_stream(
     """
     使用SSE流式生成世界构建，避免超时
     前端使用EventSource接收实时进度和结果
+    默认使用Markdown生成，向后兼容JSON格式
     """
     # 从中间件注入user_id到data中
     if hasattr(request.state, 'user_id'):
         data['user_id'] = request.state.user_id
-    
-    return create_sse_response(world_building_generator(data, db, user_ai_service))
+
+    # 使用Markdown生成器
+    return create_sse_response(world_building_generator_md(data, db, user_ai_service))
 
 
 async def career_system_generator(
@@ -361,9 +836,9 @@ async def career_system_generator(
         stage_attr_example = ""
         numeric_attr_example = ""
 
-        if project.attribute_schema:
+        if project.attribute_schema is not None:  # type: ignore
             try:
-                schema = json.loads(project.attribute_schema)
+                schema = json.loads(project.attribute_schema)  # type: ignore
                 attributes = schema.get("attributes", {})
                 display_order = schema.get("display_order", list(attributes.keys()))
 
@@ -412,6 +887,9 @@ async def career_system_generator(
         # 获取职业生成提示词模板（支持用户自定义）
         yield await tracker.preparing("准备AI提示词...")
         template = await PromptService.get_template_with_fallback("CAREER_SYSTEM_GENERATION", user_id, db)
+        if not template:
+            yield await tracker.error("职业生成模板未找到", 500)
+            return
         career_prompt = PromptService.format_prompt(
             template,
             title=project.title,
@@ -434,8 +912,11 @@ async def career_system_generator(
         
         while career_retry_count < MAX_CAREER_RETRIES and not career_generation_success:
             try:
-                # 重试时重置生成进度
+                # 重试时使用指数退避延迟
                 if career_retry_count > 0:
+                    delay = min(0.5 * (2 ** career_retry_count), 10.0)  # 0.5, 1, 2, 4, 8, 10秒
+                    logger.warning(f"⚠️ 职业体系重试 {career_retry_count}/{MAX_CAREER_RETRIES-1}，等待 {delay}s")
+                    await asyncio.sleep(delay)
                     tracker.reset_generating_progress()
                 
                 yield await tracker.generating(
@@ -444,15 +925,23 @@ async def career_system_generator(
                     retry_count=career_retry_count,
                     max_retries=MAX_CAREER_RETRIES
                 )
-                
+
+                # 重试时添加格式纠正提示
+                current_career_prompt = career_prompt
+                if career_retry_count > 0:
+                    format_correction = "\n\n【重要格式提醒】上次输出JSON格式有误，请确保：\n1. 使用英文双引号（不是中文引号""''）\n2. 字段间有逗号分隔\n3. 数组和对象正确闭合\n4. 输出纯JSON，不要加markdown标记\n5. 确保JSON完整，不要中途截断"
+                    current_career_prompt = career_prompt + format_correction
+                    logger.info(f"📝 重试时添加格式纠正提示")
+
                 # 使用流式生成职业体系
                 career_response = ""
                 chunk_count = 0
-                
+
                 async for chunk in user_ai_service.generate_text_stream(
-                    prompt=career_prompt,
+                    prompt=current_career_prompt,
                     provider=provider,
                     model=model,
+                    max_tokens=12000,  # 职业体系JSON需要较大空间，非DeepSeek模型可使用
                 ):
                     chunk_count += 1
                     career_response += chunk
@@ -766,8 +1255,8 @@ async def characters_generator(
         )
         careers = career_result.scalars().all()
         
-        main_careers = [c for c in careers if c.type == "main"]
-        sub_careers = [c for c in careers if c.type == "sub"]
+        main_careers = [c for c in careers if c.type == "main"]  # type: ignore[reportGeneralTypeIssues]
+        sub_careers = [c for c in careers if c.type == "sub"]  # type: ignore[reportGeneralTypeIssues]
         
         # 构建职业上下文
         careers_context = ""
@@ -815,11 +1304,14 @@ async def characters_generator(
             retry_count = 0
             batch_success = False
             batch_error_message = ""
-            
+
             while retry_count < MAX_RETRIES and not batch_success:
                 try:
-                    # 重试时重置生成进度
+                    # 重试时使用指数退避延迟
                     if retry_count > 0:
+                        delay = min(0.5 * (2 ** retry_count), 10.0)  # 0.5, 1, 2, 4, 8, 10秒
+                        logger.warning(f"⚠️ 批次{batch_idx+1}重试 {retry_count}/{MAX_RETRIES-1}，等待 {delay}s")
+                        await asyncio.sleep(delay)
                         tracker.reset_generating_progress()
                     
                     yield await tracker.generating(
@@ -829,7 +1321,7 @@ async def characters_generator(
                         retry_count=retry_count,
                         max_retries=MAX_RETRIES
                     )
-                    
+
                     # 构建批次要求 - 包含已生成角色信息保持连贯
                     existing_chars_context = ""
                     if all_characters:
@@ -837,7 +1329,7 @@ async def characters_generator(
                         for char in all_characters:
                             existing_chars_context += f"- {char.get('name')}: {char.get('role_type', '未知')}, {char.get('personality', '暂无')[:50]}...\n"
                         existing_chars_context += "\n请确保新角色与已有角色形成合理的关系网络和互动。\n"
-                    
+
                     # 构建精确的批次要求,明确告诉AI要生成的数量
                     if batch_idx == 0:
                         if current_batch_size == 1:
@@ -850,9 +1342,12 @@ async def characters_generator(
                             batch_requirements += "\n可以包含组织或反派(antagonist)"
                         else:
                             batch_requirements += "\n主要是配角(supporting)和反派(antagonist)"
-                    
+
                     # 获取自定义提示词模板
                     template = await PromptService.get_template_with_fallback("CHARACTERS_BATCH_GENERATION", user_id, db)
+                    if not template:
+                        yield await tracker.error("角色批量生成模板未找到", 500)
+                        return
                     # 构建基础提示词
                     base_prompt = PromptService.format_prompt(
                         template,
@@ -865,19 +1360,25 @@ async def characters_generator(
                         genre=genre or project.genre or "",
                         requirements=batch_requirements + careers_context  # 添加职业上下文
                     )
-                    
+
+                    # 重试时添加格式纠正提示
                     prompt = base_prompt
-                    
+                    if retry_count > 0:
+                        format_correction = "\n\n【重要格式提醒】上次输出JSON格式有误，请确保：\n1. 使用英文双引号（不是中文引号""''）\n2. 字段间有逗号分隔\n3. 数组正确闭合（必须有5个对象）\n4. 输出纯JSON数组，不要加markdown标记"
+                        prompt = base_prompt + format_correction
+                        logger.info(f"📝 批次{batch_idx+1}重试时添加格式纠正提示")
+
                     # 流式生成（带字数统计）
                     accumulated_text = ""
                     chunk_count = 0
-                    
+
                     estimated_total = BATCH_SIZE * 800
-                    
+
                     async for chunk in user_ai_service.generate_text_stream(
                         prompt=prompt,
                         provider=provider,
                         model=model,
+                        max_tokens=12000,  # 角色JSON需要较大空间
                         tool_choice="required",
                     ):
                         chunk_count += 1
@@ -1440,6 +1941,9 @@ async def outline_generator(
         
         # 获取自定义提示词模板
         template = await PromptService.get_template_with_fallback("OUTLINE_CREATE", user_id, db)
+        if not template:
+            yield await tracker.error("大纲生成模板未找到", 500)
+            return
         outline_prompt = PromptService.format_prompt(
             template,
             title=project.title,
@@ -1457,17 +1961,18 @@ async def outline_generator(
             requirements=outline_requirements
         )
         
-        # 流式生成大纲
+        # 流式生成大纲 - 设置足够大的 max_tokens 避免截断
         estimated_total = 1000
         accumulated_text = ""
         chunk_count = 0
-        
+
         yield await tracker.generating(current_chars=0, estimated_total=estimated_total)
-        
+
         async for chunk in user_ai_service.generate_text_stream(
             prompt=outline_prompt,
             provider=provider,
             model=model,
+            max_tokens=8000,  # 增加max_tokens避免JSON被截断
         ):
             chunk_count += 1
             accumulated_text += chunk
@@ -1487,18 +1992,38 @@ async def outline_generator(
             if chunk_count % 20 == 0:
                 yield await tracker.heartbeat()
         
-        # 解析大纲结果 - 使用统一的JSON清洗方法
+        # 解析大纲结果 - 使用统一的JSON清洗方法，添加重试机制
         yield await tracker.parsing("解析大纲数据...")
-        
-        try:
-            cleaned_text = user_ai_service._clean_json_response(accumulated_text)
-            outline_data = json.loads(cleaned_text)
-            if not isinstance(outline_data, list):
-                outline_data = [outline_data]
-        except json.JSONDecodeError as e:
-            logger.error(f"大纲JSON解析失败: {e}")
-            yield await tracker.error("大纲生成失败，请重试")
-            return
+
+        MAX_RETRIES = 2
+        outline_data = None
+
+        for retry in range(MAX_RETRIES):
+            try:
+                cleaned_text = user_ai_service._clean_json_response(accumulated_text)
+                outline_data = json.loads(cleaned_text)
+                if not isinstance(outline_data, list):
+                    outline_data = [outline_data]
+                logger.info(f"✅ 大纲JSON解析成功（尝试{retry+1}/{MAX_RETRIES}）")
+                break
+            except json.JSONDecodeError as e:
+                logger.warning(f"⚠️ 大纲JSON解析失败（尝试{retry+1}/{MAX_RETRIES}): {e}")
+                if retry < MAX_RETRIES - 1:
+                    # 重试：重新生成大纲
+                    yield await tracker.generating(message="重新生成大纲...")
+                    accumulated_text = ""
+                    async for chunk in user_ai_service.generate_text_stream(
+                        prompt=outline_prompt,
+                        provider=provider,
+                        model=model,
+                        max_tokens=8000,
+                    ):
+                        accumulated_text += chunk
+                        yield await tracker.generating_chunk(chunk)
+                else:
+                    logger.error(f"大纲JSON解析失败，已重试{MAX_RETRIES}次: {e}")
+                    yield await tracker.error("大纲生成失败，请重试")
+                    return
         
         # 保存大纲到数据库
         yield await tracker.saving("保存大纲到数据库...")
@@ -1532,7 +2057,7 @@ async def outline_generator(
                 project_id=proj_id,
                 outline_data_list=outline_data[:outline_count],
                 db=db,
-                user_id=uid,
+                user_id=uid,  # type: ignore[reportArgumentType]
                 enable_mcp=enable_mcp
             )
             if char_check_result["created_count"] > 0:
@@ -1557,7 +2082,7 @@ async def outline_generator(
                 project_id=proj_id,
                 outline_data_list=outline_data[:outline_count],
                 db=db,
-                user_id=uid,
+                user_id=uid,  # type: ignore[reportArgumentType]
                 enable_mcp=enable_mcp
             )
             if org_check_result["created_count"] > 0:
@@ -1677,187 +2202,474 @@ async def generate_outline_stream(
     return create_sse_response(outline_generator(data, db, user_ai_service))
 
 
-async def world_building_regenerate_generator(
+async def world_building_regenerate_generator_v3(
     project_id: str,
     data: Dict[str, Any],
     db: AsyncSession,
     user_ai_service: AIService
 ) -> AsyncGenerator[str, None]:
-    """世界观重新生成流式生成器"""
-    db_committed = False
-    # 初始化标准进度追踪器
+    """世界观重新生成流式生成器 - V3三阶段渐进生成"""
     tracker = WizardProgressTracker("世界观")
-    
+
+    STAGE_CORE_START, STAGE_CORE_END = 20, 40
+    STAGE_EXTENDED_START, STAGE_EXTENDED_END = 40, 60
+    STAGE_FULL_START, STAGE_FULL_END = 60, 85
+    MAX_RETRIES = 3
+
     try:
         yield await tracker.start("开始重新生成世界观...")
-        
-        # 获取项目信息
         yield await tracker.loading("加载项目信息...")
-        result = await db.execute(
-            select(Project).where(Project.id == project_id)
-        )
+        result = await db.execute(select(Project).where(Project.id == project_id))
         project = result.scalar_one_or_none()
         if not project:
             yield await tracker.error("项目不存在", 404)
             return
-        
-        # 提取参数
+
         provider = data.get("provider")
         model = data.get("model")
-        enable_mcp = data.get("enable_mcp", True)
         user_id = data.get("user_id")
-        
-        # 获取基础提示词（支持自定义）
-        yield await tracker.preparing("准备AI提示词...")
-        template = await PromptService.get_template_with_fallback("WORLD_BUILDING", user_id, db)
-        base_prompt = PromptService.format_prompt(
-            template,
-            title=project.title,
-            theme=project.theme or "未设定",
-            genre=project.genre or "通用",
-            description=project.description or "暂无简介"
-        )
-        
-        # 设置用户信息以启用MCP
         if user_id:
             user_ai_service.user_id = user_id
             user_ai_service.db_session = db
-        
-        # ===== 流式生成世界观（带重试机制） =====
-        MAX_WORLD_RETRIES = 3  # 最多重试3次
-        world_retry_count = 0
-        world_generation_success = False
-        world_data = {}
-        estimated_total = 1000
-        
-        while world_retry_count < MAX_WORLD_RETRIES and not world_generation_success:
+
+        # ===== 阶段1：核心维度 =====
+        yield await SSEResponse.send_progress("【阶段1/3】生成核心维度（物理+社会）...", STAGE_CORE_START, "processing")
+        template_core = await PromptService.get_template_with_fallback("WORLD_BUILDING_V3_CORE", user_id, db)
+        if not template_core:
+            yield await tracker.error("核心阶段模板未找到", 500)
+            return
+        prompt_core = PromptService.format_prompt(template_core, title=project.title, theme=project.theme or "未设定", genre=project.genre or "通用", description=project.description or "暂无简介", chapter_count=project.chapter_count or 10, narrative_perspective=project.narrative_perspective or "第三人称")
+
+        core_json = None
+        for retry in range(MAX_RETRIES):
             try:
-                # 重试时重置生成进度
-                if world_retry_count > 0:
-                    tracker.reset_generating_progress()
-                
-                yield await tracker.generating(
-                    current_chars=0,
-                    estimated_total=estimated_total,
-                    message="重新生成世界观",
-                    retry_count=world_retry_count,
-                    max_retries=MAX_WORLD_RETRIES
+                accumulated = ""
+                count = 0
+                async for chunk in user_ai_service.generate_text_stream(prompt=prompt_core, provider=provider, model=model, tool_choice="required"):
+                    count += 1
+                    accumulated += chunk
+                    if count % 20 == 0:
+                        yield await tracker.heartbeat()
+                    if count % 40 == 0:
+                        progress = min(STAGE_CORE_START + int((STAGE_CORE_END - STAGE_CORE_START) * len(accumulated) / 2000), STAGE_CORE_END - 5)
+                        yield await SSEResponse.send_progress(f"【阶段1】生成核心... ({len(accumulated)}字)", progress, "processing")
+
+                if accumulated.strip():
+                    core_json = safe_parse_json_v3_world_setting(accumulated)
+                    if core_json and core_json.get("legacy"):
+                        logger.info(f"✅ 核心阶段解析成功")
+                        break
+                    else:
+                        logger.warning("⚠️ 核心阶段部分成功，继续重试")
+                        if retry < MAX_RETRIES - 1:
+                            continue
+                        else:
+                            # 最终降级
+                            core_json = safe_parse_json_v3_world_setting("")
+                            break
+            except Exception as e:
+                logger.error(f"❌ 核心阶段异常(retry {retry+1}): {e}")
+                if retry < MAX_RETRIES - 1:
+                    yield await tracker.retry(retry + 1, MAX_RETRIES, str(e)[:50])
+                    continue
+
+        if not core_json:
+            # 最终降级：使用默认结构
+            core_json = safe_parse_json_v3_world_setting("")
+            yield await tracker.retry(MAX_RETRIES, MAX_RETRIES, "使用降级数据继续")
+            logger.warning("⚠️ 核心阶段最终降级")
+
+        # ===== 阶段1完成：发送核心维度数据 =====
+        if core_json:
+            from app.utils.world_setting_helper import normalize_world_setting_data
+            core_json_normalized = normalize_world_setting_data(core_json)
+            legacy = core_json_normalized.get("legacy", {})
+            physical = core_json_normalized.get("physical", {})
+            social = core_json_normalized.get("social", {})
+            stage1_data = {
+                "time_period": legacy.get("time_period", ""),
+                "location": legacy.get("location", ""),
+                "atmosphere": legacy.get("atmosphere", ""),
+                "rules": legacy.get("rules", ""),
+                "physical": physical,
+                "social": social,
+            }
+            yield await tracker.stage_data("核心维度", stage1_data, STAGE_CORE_END)
+            logger.info("📤 已发送核心维度数据用于前端实时显示")
+            core_json = core_json_normalized
+
+        # ===== 阶段2：扩展维度 =====
+        yield await SSEResponse.send_progress("【阶段2/3】生成扩展维度（隐喻+交互）...", STAGE_EXTENDED_START, "processing")
+        template_extended = await PromptService.get_template_with_fallback("WORLD_BUILDING_V3_EXTENDED", user_id, db)
+        if not template_extended:
+            yield await tracker.error("扩展阶段模板未找到", 500)
+            return
+        prompt_extended = PromptService.format_prompt(template_extended, core_json=json.dumps(core_json, ensure_ascii=False), title=project.title, theme=project.theme or "未设定", genre=project.genre or "通用")
+
+        extended_json = None
+        for retry in range(MAX_RETRIES):
+            try:
+                accumulated = ""
+                count = 0
+                async for chunk in user_ai_service.generate_text_stream(prompt=prompt_extended, provider=provider, model=model, tool_choice="required"):
+                    count += 1
+                    accumulated += chunk
+                    if count % 20 == 0:
+                        yield await tracker.heartbeat()
+                    if count % 40 == 0:
+                        progress = min(STAGE_EXTENDED_START + int((STAGE_EXTENDED_END - STAGE_EXTENDED_START) * len(accumulated) / 1500), STAGE_EXTENDED_END - 5)
+                        yield await SSEResponse.send_progress(f"【阶段2】生成扩展... ({len(accumulated)}字)", progress, "processing")
+
+                if accumulated.strip():
+                    extended_json = safe_parse_json_v3_world_setting(accumulated)
+                    # 检查是否有有效的隐喻/交互数据（非空对象）
+                    has_metaphor = extended_json.get("metaphor") and (
+                        extended_json.get("metaphor", {}).get("themes", {}).get("core_theme") or
+                        extended_json.get("metaphor", {}).get("symbols", {}).get("visual") or
+                        extended_json.get("metaphor", {}).get("core_philosophies")
+                    )
+                    has_interaction = extended_json.get("interaction") and (
+                        extended_json.get("interaction", {}).get("cross_rules", {}).get("physical_social") or
+                        extended_json.get("interaction", {}).get("evolution", {}).get("time_driven") or
+                        extended_json.get("interaction", {}).get("disruption_points")
+                    )
+                    if extended_json and (has_metaphor or has_interaction):
+                        logger.info(f"✅ 扩展阶段解析成功，有隐喻或交互数据")
+                        break
+                    else:
+                        # 合并核心数据
+                        if core_json:
+                            for key in ["physical", "social", "legacy"]:
+                                if key in core_json and key not in extended_json:
+                                    extended_json[key] = core_json[key]
+                        logger.warning("⚠️ 扩展阶段部分成功，合并核心数据")
+                        break
+                else:
+                    extended_json = core_json
+                    logger.warning("⚠️ 扩展阶段返回空，降级使用核心数据")
+                    break
+            except Exception as e:
+                logger.error(f"❌ 扩展阶段异常(retry {retry+1}): {e}")
+                if retry < MAX_RETRIES - 1:
+                    continue
+                extended_json = core_json
+                break
+
+        # ===== 阶段2完成：发送扩展维度数据 =====
+        if extended_json:
+            from app.utils.world_setting_helper import normalize_world_setting_data
+            extended_json_normalized = normalize_world_setting_data(extended_json)
+            metaphor = extended_json_normalized.get("metaphor", {})
+            interaction = extended_json_normalized.get("interaction", {})
+            stage2_data = {
+                "metaphor": metaphor,
+                "interaction": interaction,
+            }
+            yield await tracker.stage_data("扩展维度", stage2_data, STAGE_EXTENDED_END)
+            logger.info("📤 已发送扩展维度数据用于前端实时显示")
+            extended_json = extended_json_normalized
+
+        # ===== 阶段3：完整校验 =====
+        yield await SSEResponse.send_progress("【阶段3/3】校验一致性并完善...", STAGE_FULL_START, "processing")
+        template_full = await PromptService.get_template_with_fallback("WORLD_BUILDING_V3_FULL", user_id, db)
+        if not template_full:
+            yield await tracker.error("完整阶段模板未找到", 500)
+            return
+        prompt_full = PromptService.format_prompt(template_full, extended_json=json.dumps(extended_json, ensure_ascii=False), title=project.title, theme=project.theme or "未设定", genre=project.genre or "通用")
+
+        final_json = None
+        for retry in range(MAX_RETRIES):
+            try:
+                accumulated = ""
+                count = 0
+                async for chunk in user_ai_service.generate_text_stream(prompt=prompt_full, provider=provider, model=model, tool_choice="required"):
+                    count += 1
+                    accumulated += chunk
+                    if count % 20 == 0:
+                        yield await tracker.heartbeat()
+                    if count % 40 == 0:
+                        progress = min(STAGE_FULL_START + int((STAGE_FULL_END - STAGE_FULL_START) * len(accumulated) / 1000), STAGE_FULL_END - 5)
+                        yield await SSEResponse.send_progress(f"【阶段3】校验一致性... ({len(accumulated)}字)", progress, "processing")
+
+                if accumulated.strip():
+                    final_json = safe_parse_json_v3_world_setting(accumulated)
+                    if final_json:
+                        # 合并扩展数据（改进：检查是否有有效内容）
+                        if extended_json:
+                            for key in ["physical", "social"]:
+                                if key in extended_json and key not in final_json:
+                                    final_json[key] = extended_json[key]
+                            # 隐喻维度：如果final为空对象，用extended的值替换
+                            if "metaphor" in extended_json:
+                                extended_metaphor = extended_json["metaphor"]
+                                final_metaphor = final_json.get("metaphor", {})
+                                # 检查extended是否有有效内容
+                                has_extended_metaphor = (
+                                    extended_metaphor.get("themes", {}).get("core_theme") or
+                                    extended_metaphor.get("symbols", {}).get("visual") or
+                                    extended_metaphor.get("core_philosophies")
+                                )
+                                # 检查final是否有有效内容
+                                has_final_metaphor = (
+                                    final_metaphor.get("themes", {}).get("core_theme") or
+                                    final_metaphor.get("symbols", {}).get("visual") or
+                                    final_metaphor.get("core_philosophies")
+                                )
+                                if has_extended_metaphor and not has_final_metaphor:
+                                    final_json["metaphor"] = extended_metaphor
+                                    logger.info("✅ 合并隐喻维度数据")
+                            # 交互维度：同样检查是否有有效内容
+                            if "interaction" in extended_json:
+                                extended_interaction = extended_json["interaction"]
+                                final_interaction = final_json.get("interaction", {})
+                                has_extended_interaction = (
+                                    extended_interaction.get("cross_rules", {}).get("physical_social") or
+                                    extended_interaction.get("evolution", {}).get("time_driven") or
+                                    extended_interaction.get("disruption_points")
+                                )
+                                has_final_interaction = (
+                                    final_interaction.get("cross_rules", {}).get("physical_social") or
+                                    final_interaction.get("evolution", {}).get("time_driven") or
+                                    final_interaction.get("disruption_points")
+                                )
+                                if has_extended_interaction and not has_final_interaction:
+                                    final_json["interaction"] = extended_interaction
+                                    logger.info("✅ 合并交互维度数据")
+                            if "legacy" in extended_json and "legacy" in final_json:
+                                for legacy_key in ["time_period", "location", "atmosphere", "rules"]:
+                                    if final_json["legacy"].get(legacy_key) == "未设定":
+                                        final_json["legacy"][legacy_key] = extended_json["legacy"].get(legacy_key, "未设定")
+                        if "meta" in final_json:
+                            final_json["meta"]["creation_stage"] = "full"
+                        logger.info(f"✅ 完整阶段解析成功")
+                        break
+                else:
+                    final_json = extended_json
+                    if final_json and "meta" in final_json:
+                        final_json["meta"]["creation_stage"] = "extended"
+                    break
+            except Exception as e:
+                logger.error(f"❌ 完整阶段异常(retry {retry+1}): {e}")
+                if retry < MAX_RETRIES - 1:
+                    continue
+                final_json = extended_json
+                if final_json and "meta" in final_json:
+                    final_json["meta"]["creation_stage"] = "extended"
+                break
+
+        if not final_json:
+            final_json = extended_json if extended_json else core_json
+            if final_json and "meta" in final_json:
+                final_json["meta"]["creation_stage"] = "core"
+            else:
+                final_json = safe_parse_json_v3_world_setting("")
+
+        # 规范化数据，确保所有字段都存在
+        final_json = normalize_world_setting_data(final_json)
+
+        yield await tracker.saving("生成完成...", 0.5)
+        yield await tracker.complete()
+
+        legacy = final_json.get("legacy", {})
+        physical = final_json.get("physical", {})
+        social = final_json.get("social", {})
+        yield await tracker.result({
+            "time_period": legacy.get("time_period"), "location": legacy.get("location"),
+            "atmosphere": legacy.get("atmosphere"), "rules": legacy.get("rules"),
+            "world_setting_data": json.dumps(final_json, ensure_ascii=False),
+            "key_locations": physical.get("space", {}).get("key_locations", []),
+            "key_organizations": social.get("power_structure", {}).get("key_organizations", []),
+            "creation_stage": final_json.get("meta", {}).get("creation_stage", "full")
+        })
+        yield await tracker.done()
+        logger.info(f"✅ 世界观V3重新生成完成")
+    except Exception as e:
+        logger.error(f"重新生成失败: {e}")
+        yield await tracker.error(f"生成失败: {str(e)}")
+
+
+async def world_building_regenerate_generator_md(
+    project_id: str,
+    data: Dict[str, Any],
+    db: AsyncSession,
+    user_ai_service: AIService
+) -> AsyncGenerator[str, None]:
+    """
+    世界观重新生成流式生成器 - Markdown单阶段版本
+
+    支持自动续写机制，直接生成Markdown格式
+    """
+    from app.utils.markdown_helper import (
+        check_markdown_complete,
+        get_last_complete_section,
+        get_section_outline,
+        extract_legacy_from_markdown,
+        clean_ai_markdown_output,
+        REQUIRED_SECTIONS,
+    )
+
+    tracker = WizardProgressTracker("世界观")
+    MAX_CONTINUE_RETRIES = 3
+
+    try:
+        yield await tracker.start("开始重新生成世界观...")
+        yield await tracker.loading("加载项目信息...")
+
+        result = await db.execute(select(Project).where(Project.id == project_id))
+        project = result.scalar_one_or_none()
+        if not project:
+            yield await tracker.error("项目不存在", 404)
+            return
+
+        provider = data.get("provider")
+        model = data.get("model")
+        user_id = data.get("user_id")
+
+        if user_id:
+            user_ai_service.user_id = user_id
+            user_ai_service.db_session = db
+
+        # ===== Markdown单阶段生成 =====
+        yield await SSEResponse.send_progress(
+            "正在重新生成世界观设定...",
+            20,
+            "processing"
+        )
+
+        template = await PromptService.get_template_with_fallback(
+            "WORLD_BUILDING_MARKDOWN", user_id, db
+        )
+        if not template:
+            yield await tracker.error("Markdown模板未找到", 500)
+            return
+
+        prompt = PromptService.format_prompt(
+            template,
+            title=project.title,
+            theme=project.theme or "未设定",
+            genre=project.genre or "通用类型",
+            description=project.description or "暂无简介",
+            chapter_count=project.chapter_count or 10,
+            narrative_perspective=project.narrative_perspective or "第三人称"
+        )
+
+        accumulated_markdown = ""
+        continue_count = 0
+
+        while continue_count <= MAX_CONTINUE_RETRIES:
+            if continue_count == 0:
+                current_prompt = prompt
+            else:
+                # 续写提示词
+                continue_template = await PromptService.get_template_with_fallback(
+                    "WORLD_BUILDING_MARKDOWN_CONTINUE", user_id, db
                 )
-                
-                # 流式生成世界观
-                accumulated_text = ""
-                chunk_count = 0
-                
+                if not continue_template:
+                    logger.warning("续写模板未找到，停止续写")
+                    break
+
+                is_complete, missing = check_markdown_complete(accumulated_markdown)
+                last_section = get_last_complete_section(accumulated_markdown)
+                section_outline = get_section_outline(accumulated_markdown)
+
+                current_prompt = PromptService.format_prompt(
+                    continue_template,
+                    title=project.title,
+                    previous_content_tail=accumulated_markdown[-3000:] if len(accumulated_markdown) > 3000 else accumulated_markdown,
+                    last_section=last_section,
+                    missing_sections="\n".join(missing),
+                    section_outline=section_outline
+                )
+
+                yield await SSEResponse.send_progress(
+                    f"续写中（第{continue_count}次）...",
+                    70 + continue_count * 5,
+                    "processing"
+                )
+                yield await tracker.retry(continue_count, MAX_CONTINUE_RETRIES, "内容不完整，自动续写")
+
+            chunk_count = 0
+            try:
                 async for chunk in user_ai_service.generate_text_stream(
-                    prompt=base_prompt,
+                    prompt=current_prompt,
                     provider=provider,
                     model=model,
-                    tool_choice="required",
                 ):
                     chunk_count += 1
-                    accumulated_text += chunk
-                    
+                    if continue_count == 0 and chunk_count == 1:
+                        chunk = clean_ai_markdown_output(chunk)
+                    accumulated_markdown += chunk
                     yield await tracker.generating_chunk(chunk)
-                    
-                    # 定期更新进度
-                    current_len = len(accumulated_text)
-                    if chunk_count % 10 == 0:
-                        yield await tracker.generating(
-                            current_chars=current_len,
-                            estimated_total=estimated_total,
-                            message="重新生成世界观",
-                            retry_count=world_retry_count,
-                            max_retries=MAX_WORLD_RETRIES
-                        )
-                    
+
+                    is_complete, missing = check_markdown_complete(accumulated_markdown)
+                    completed_count = len([s for s in REQUIRED_SECTIONS if s in accumulated_markdown])
+                    progress = 20 + int(65 * completed_count / len(REQUIRED_SECTIONS))
+
                     if chunk_count % 20 == 0:
+                        yield await SSEResponse.send_progress(
+                            f"生成中（{len(accumulated_markdown)}字）...",
+                            min(progress, 80),
+                            "processing"
+                        )
+                    if chunk_count % 30 == 0:
                         yield await tracker.heartbeat()
-                
-                # 检查是否返回空响应
-                if not accumulated_text or not accumulated_text.strip():
-                    logger.warning(f"⚠️ AI返回空世界观（尝试{world_retry_count+1}/{MAX_WORLD_RETRIES}）")
-                    world_retry_count += 1
-                    if world_retry_count < MAX_WORLD_RETRIES:
-                        yield await tracker.retry(world_retry_count, MAX_WORLD_RETRIES, "AI返回为空")
-                        continue
-                    else:
-                        # 达到最大重试次数，使用默认值
-                        logger.error("❌ 世界观重新生成多次返回空响应")
-                        world_data = {
-                            "time_period": "AI多次返回为空，请稍后重试",
-                            "location": "AI多次返回为空，请稍后重试",
-                            "atmosphere": "AI多次返回为空，请稍后重试",
-                            "rules": "AI多次返回为空，请稍后重试"
-                        }
-                        world_generation_success = True
-                        break
-                
-                # 解析结果 - 使用统一的JSON清洗方法
-                yield await tracker.parsing("解析AI返回结果...")
-                
-                try:
-                    logger.info(f"🔍 开始清洗JSON，原始长度: {len(accumulated_text)}")
-                    cleaned_text = user_ai_service._clean_json_response(accumulated_text)
-                    logger.info(f"✅ JSON清洗完成，清洗后长度: {len(cleaned_text)}")
-                    
-                    world_data = json.loads(cleaned_text)
-                    logger.info(f"✅ 世界观重新生成JSON解析成功（尝试{world_retry_count+1}/{MAX_WORLD_RETRIES}）")
-                    world_generation_success = True
-                            
-                except json.JSONDecodeError as e:
-                    logger.error(f"❌ 世界构建JSON解析失败（尝试{world_retry_count+1}/{MAX_WORLD_RETRIES}）: {e}")
-                    logger.error(f"   原始内容长度: {len(accumulated_text)}")
-                    logger.error(f"   原始内容预览: {accumulated_text[:200]}")
-                    world_retry_count += 1
-                    if world_retry_count < MAX_WORLD_RETRIES:
-                        yield await tracker.retry(world_retry_count, MAX_WORLD_RETRIES, "JSON解析失败")
-                        continue
-                    else:
-                        # 达到最大重试次数，使用默认值
-                        world_data = {
-                            "time_period": "AI返回格式错误，请重试",
-                            "location": "AI返回格式错误，请重试",
-                            "atmosphere": "AI返回格式错误，请重试",
-                            "rules": "AI返回格式错误，请重试"
-                        }
-                        world_generation_success = True
-                        
+
             except Exception as e:
-                logger.error(f"❌ 世界观重新生成异常（尝试{world_retry_count+1}/{MAX_WORLD_RETRIES}）: {type(e).__name__}: {e}")
-                world_retry_count += 1
-                if world_retry_count < MAX_WORLD_RETRIES:
-                    yield await tracker.retry(world_retry_count, MAX_WORLD_RETRIES, "生成异常")
+                logger.error(f"重新生成异常: {e}")
+                if continue_count < MAX_CONTINUE_RETRIES:
+                    continue_count += 1
                     continue
                 else:
-                    # 最后一次重试仍失败，抛出异常
-                    logger.error(f"   accumulated_text 长度: {len(accumulated_text) if 'accumulated_text' in locals() else 'N/A'}")
-                    raise
-        
-        # 不保存到数据库，仅返回生成结果供用户预览
-        yield await tracker.saving("生成完成，等待用户确认...", 0.5)
-        
+                    yield await tracker.error(f"生成失败: {str(e)}")
+                    return
+
+            is_complete, missing = check_markdown_complete(accumulated_markdown)
+            logger.info(f"重新生成状态: 完整={is_complete}, 缺失={missing}")
+
+            if is_complete:
+                break
+
+            continue_count += 1
+            if continue_count > MAX_CONTINUE_RETRIES:
+                logger.warning(f"达到最大续写次数({MAX_CONTINUE_RETRIES})")
+                yield await SSEResponse.send_progress(
+                    "生成完成（部分内容可能不完整）",
+                    80,
+                    "processing"
+                )
+                break
+
+        # ===== 提取legacy字段 =====
+        legacy = extract_legacy_from_markdown(accumulated_markdown)
+
+        # ===== 更新项目 =====
+        yield await tracker.saving("更新世界观...")
+
+        project.world_time_period = legacy.get("time_period", "")
+        project.world_location = legacy.get("location", "")
+        project.world_atmosphere = legacy.get("atmosphere", "")
+        project.world_rules = legacy.get("rules", "")
+        project.world_setting_markdown = accumulated_markdown
+        project.world_setting_format = "markdown"
+        project.wizard_step = 1
+        await db.commit()
+
         yield await tracker.complete()
-        
-        # 发送最终结果（不包含project_id，表示未保存）
+
         yield await tracker.result({
-            "time_period": world_data.get("time_period"),
-            "location": world_data.get("location"),
-            "atmosphere": world_data.get("atmosphere"),
-            "rules": world_data.get("rules")
+            "time_period": legacy.get("time_period"),
+            "location": legacy.get("location"),
+            "atmosphere": legacy.get("atmosphere"),
+            "rules": legacy.get("rules"),
+            "world_setting_markdown": accumulated_markdown,
+            "world_setting_format": "markdown",
+            "continue_count": continue_count,
         })
-        
         yield await tracker.done()
-        
-    except GeneratorExit:
-        logger.warning("世界观重新生成器被提前关闭")
-        if not db_committed and db.in_transaction():
-            await db.rollback()
-            logger.info("世界观重新生成事务已回滚（GeneratorExit）")
+        logger.info(f"✅ 世界观Markdown重新生成完成，项目ID: {project_id}")
+
     except Exception as e:
-        logger.error(f"世界观重新生成失败: {str(e)}")
-        if not db_committed and db.in_transaction():
-            await db.rollback()
-            logger.info("世界观重新生成事务已回滚（异常）")
+        logger.error(f"Markdown重新生成失败: {e}")
         yield await tracker.error(f"生成失败: {str(e)}")
 
 
@@ -1872,8 +2684,8 @@ async def regenerate_world_building_stream(
     """
     使用SSE流式重新生成世界观，避免超时
     前端使用EventSource接收实时进度和结果
+    默认使用Markdown生成
     """
-    # 从中间件注入user_id到data中
     if hasattr(request.state, 'user_id'):
         data['user_id'] = request.state.user_id
-    return create_sse_response(world_building_regenerate_generator(project_id, data, db, user_ai_service))
+    return create_sse_response(world_building_regenerate_generator_md(project_id, data, db, user_ai_service))

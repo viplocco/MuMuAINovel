@@ -90,6 +90,10 @@ class ImportExportService:
             "world_location": project.world_location,
             "world_atmosphere": project.world_atmosphere,
             "world_rules": project.world_rules,
+            # 世界设定数据（兼容两种格式）
+            "world_setting_data": project.world_setting_data,  # JSON格式 - 向后兼容
+            "world_setting_markdown": project.world_setting_markdown,  # Markdown格式 - 新增
+            "world_setting_format": project.world_setting_format or "json",  # 数据格式标识
             "chapter_count": project.chapter_count,
             "narrative_perspective": project.narrative_perspective,
             "character_count": project.character_count,
@@ -734,6 +738,10 @@ class ImportExportService:
                 world_location=project_data.get("world_location"),
                 world_atmosphere=project_data.get("world_atmosphere"),
                 world_rules=project_data.get("world_rules"),
+                # 世界设定数据（兼容两种格式）
+                world_setting_data=project_data.get("world_setting_data"),  # JSON格式
+                world_setting_markdown=project_data.get("world_setting_markdown"),  # Markdown格式
+                world_setting_format=project_data.get("world_setting_format") or "json",  # 数据格式
                 chapter_count=project_data.get("chapter_count"),
                 narrative_perspective=project_data.get("narrative_perspective"),
                 character_count=project_data.get("character_count"),

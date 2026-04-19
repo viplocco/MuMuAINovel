@@ -93,13 +93,13 @@ class OrganizationMember(Base):
     character_id = Column(String(36), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True, comment="角色ID")
     
     # 职位信息
-    position = Column(String(100), nullable=False, comment="职位名称")
+    position = Column(String(200), nullable=False, comment="职位名称")  # 增加长度限制
     rank = Column(Integer, default=0, comment="职位等级")
-    
+
     # 成员状态
     status = Column(String(20), default="active", comment="状态：active/retired/expelled/deceased")
-    joined_at = Column(String(100), comment="加入时间（故事时间）")
-    left_at = Column(String(100), comment="离开时间（故事时间）")
+    joined_at = Column(Text, comment="加入时间（故事时间）- 改为Text不限制长度")
+    left_at = Column(Text, comment="离开时间（故事时间）- 改为Text不限制长度")
     
     # 成员属性
     loyalty = Column(Integer, default=50, comment="忠诚度：0-100")

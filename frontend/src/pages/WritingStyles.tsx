@@ -35,7 +35,9 @@ export default function WritingStyles() {
   const [loading, setLoading] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [editingStyle, setEditingStyle] = useState<WritingStyle | null>(null);
+  const [detailStyle, setDetailStyle] = useState<WritingStyle | null>(null);
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
 
@@ -159,6 +161,11 @@ export default function WritingStyles() {
     setIsCreateModalOpen(true);
   };
 
+  const handleShowDetail = (style: WritingStyle) => {
+    setDetailStyle(style);
+    setIsDetailModalOpen(true);
+  };
+
   const getStyleTypeColor = (styleType: string) => {
     return styleType === 'preset' ? 'blue' : 'purple';
   };
@@ -273,7 +280,10 @@ export default function WritingStyles() {
                     </Popconfirm>,
                   ]}
                 >
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  <div
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', cursor: 'pointer' }}
+                    onClick={() => handleShowDetail(style)}
+                  >
                     <Space style={{ marginBottom: 12 }} wrap>
                       <Text strong style={{ fontSize: 16 }}>{style.name}</Text>
                       <Tag color={getStyleTypeColor(style.style_type)}>
@@ -426,6 +436,71 @@ export default function WritingStyles() {
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 风格详情 Modal */}
+      <Modal
+        title={detailStyle?.name || '风格详情'}
+        open={isDetailModalOpen}
+        onCancel={() => {
+          setIsDetailModalOpen(false);
+          setDetailStyle(null);
+        }}
+        footer={[
+          <Button key="close" onClick={() => {
+            setIsDetailModalOpen(false);
+            setDetailStyle(null);
+          }}>
+            关闭
+          </Button>,
+          detailStyle?.user_id !== null && (
+            <Button key="edit" type="primary" onClick={() => {
+              setIsDetailModalOpen(false);
+              handleEdit(detailStyle!);
+            }}>
+              编辑
+            </Button>
+          ),
+        ]}
+        centered
+        width={isMobile ? 'calc(100vw - 32px)' : 700}
+        style={isMobile ? { maxWidth: 'calc(100vw - 32px)', margin: '0 16px' } : undefined}
+      >
+        {detailStyle && (
+          <div style={{ marginTop: 16 }}>
+            <Space style={{ marginBottom: 16 }} wrap>
+              <Tag color={getStyleTypeColor(detailStyle.style_type)}>
+                {getStyleTypeLabel(detailStyle.style_type)}
+              </Tag>
+              {detailStyle.is_default && <Tag color="gold">默认</Tag>}
+            </Space>
+
+            {detailStyle.description && (
+              <div style={{ marginBottom: 16 }}>
+                <Text strong style={{ marginBottom: 8, display: 'block' }}>风格描述</Text>
+                <Paragraph style={{ fontSize: 14, color: token.colorTextSecondary }}>
+                  {detailStyle.description}
+                </Paragraph>
+              </div>
+            )}
+
+            <div>
+              <Text strong style={{ marginBottom: 8, display: 'block' }}>提示词内容</Text>
+              <Paragraph
+                style={{
+                  fontSize: 13,
+                  backgroundColor: token.colorFillAlter,
+                  padding: 16,
+                  borderRadius: 8,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {detailStyle.prompt_content}
+              </Paragraph>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
