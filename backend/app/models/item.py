@@ -1,4 +1,5 @@
-"""物品管理数据模型"""
+"""
+物品管理数据模型"""
 from sqlalchemy import Column, String, Text, Integer, Float, DateTime, ForeignKey, Boolean, JSON, Index
 from sqlalchemy.sql import func
 from app.database import Base
@@ -13,10 +14,13 @@ class Item(Base):
     - appeared: 已出现（未被任何人持有）
     - owned: 被持有
     - equipped: 已装备
+    - borrowed: 借用中（暂时持有但会归还）
+    - stored: 存储中（放入仓库/宝库）
     - consumed: 已消耗
     - destroyed: 已销毁
     - lost: 已丢失
     - sealed: 被封印
+    - pending: 待获取（已知但未获得）
     """
     __tablename__ = "items"
 
@@ -65,9 +69,14 @@ class Item(Base):
     notes = Column(Text, comment="创作备注")
     is_plot_critical = Column(Boolean, default=False, comment="是否剧情关键物品")
 
+    # === 伏笔关联（新增） ===
+    related_foreshadow_id = Column(String(36), ForeignKey("foreshadows.id", ondelete="SET NULL"), comment="关联伏笔ID")
+    is_foreshadow_item = Column(Boolean, default=False, comment="是否伏笔关联物品")
+
     # === 上下文管理 ===
     last_mentioned_chapter = Column(Integer, comment="最后被提及的章节号")
-    mention_count = Column(Integer, default=0, comment="累计提及次数")
+    mention_count = Column(Integer, default=0, comment="累计提及次数（主名称）")
+    alias_mention_count = Column(Integer, default=0, comment="别名提及次数（累计）")
     # 默认值设为 0.3（忽略阈值），真实值应在创建时计算
     context_priority = Column(Float, default=0.3, comment="上下文优先级(0.0-1.0)，越低越不重要")
 
@@ -79,6 +88,7 @@ class Item(Base):
         Index('idx_item_project_status', 'project_id', 'status'),
         Index('idx_item_category', 'category_id'),
         Index('idx_item_owner', 'owner_character_id'),
+        Index('idx_item_foreshadow', 'related_foreshadow_id'),
     )
 
     def __repr__(self):
@@ -112,8 +122,12 @@ class Item(Base):
             "tags": self.tags or [],
             "notes": self.notes,
             "is_plot_critical": self.is_plot_critical,
+            # === 新增字段 ===
+            "is_foreshadow_item": self.is_foreshadow_item or False,
+            "related_foreshadow_id": self.related_foreshadow_id,
             "last_mentioned_chapter": self.last_mentioned_chapter,
             "mention_count": self.mention_count or 0,
+            "alias_mention_count": self.alias_mention_count or 0,
             # 注意：context_priority 可能为 0.0（已销毁/消耗），不能用 `or` 语法
             "context_priority": self.context_priority if self.context_priority is not None else 0.3,
             "created_at": self.created_at.isoformat() if self.created_at else None,

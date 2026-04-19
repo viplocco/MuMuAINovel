@@ -1348,14 +1348,16 @@ async def characters_generator(
                     if not template:
                         yield await tracker.error("角色批量生成模板未找到", 500)
                         return
-                    # 构建基础提示词
+                    # 构建基础提示词 - 使用 world_setting_markdown
+                    world_setting = project.world_setting_markdown or ""
+                    if not world_setting:
+                        # 兜底：如果没有 world_setting_markdown，拼接分散字段
+                        world_setting = f"时间背景：{world_context.get('time_period', '未设定')}\n地理位置：{world_context.get('location', '未设定')}\n氛围基调：{world_context.get('atmosphere', '未设定')}\n世界规则：{world_context.get('rules', '未设定')}"
+
                     base_prompt = PromptService.format_prompt(
                         template,
                         count=current_batch_size,  # 传递精确数量
-                        time_period=world_context.get("time_period", ""),
-                        location=world_context.get("location", ""),
-                        atmosphere=world_context.get("atmosphere", ""),
-                        rules=world_context.get("rules", ""),
+                        world_setting=world_setting,
                         theme=theme or project.theme or "",
                         genre=genre or project.genre or "",
                         requirements=batch_requirements + careers_context  # 添加职业上下文
@@ -1944,6 +1946,13 @@ async def outline_generator(
         if not template:
             yield await tracker.error("大纲生成模板未找到", 500)
             return
+
+        # 构建 world_setting - 使用 world_setting_markdown
+        world_setting = project.world_setting_markdown or ""
+        if not world_setting:
+            # 兜底：如果没有 world_setting_markdown，拼接分散字段
+            world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
         outline_prompt = PromptService.format_prompt(
             template,
             title=project.title,
@@ -1952,10 +1961,7 @@ async def outline_generator(
             chapter_count=outline_count,
             narrative_perspective=narrative_perspective,
             target_words=target_words // 10,  # 开局约占总字数的1/10
-            time_period=project.world_time_period or "未设定",
-            location=project.world_location or "未设定",
-            atmosphere=project.world_atmosphere or "未设定",
-            rules=project.world_rules or "未设定",
+            world_setting=world_setting,
             characters_info=characters_info or "暂无角色信息",
             mcp_references="",
             requirements=outline_requirements

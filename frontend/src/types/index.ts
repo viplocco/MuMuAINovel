@@ -1685,7 +1685,7 @@ export const PROMPT_CATEGORIES: Record<string, string> = {
 
 // ==================== 物品管理类型定义 ====================
 
-export type ItemStatus = 'appeared' | 'owned' | 'equipped' | 'consumed' | 'destroyed' | 'lost' | 'sealed';
+export type ItemStatus = 'appeared' | 'owned' | 'equipped' | 'borrowed' | 'stored' | 'consumed' | 'destroyed' | 'lost' | 'sealed' | 'pending';
 export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'artifact';
 
 export interface Item {
@@ -1715,9 +1715,13 @@ export interface Item {
   tags?: string[];
   notes?: string;
   is_plot_critical: boolean;
+  // === 伏笔关联字段（新增） ===
+  is_foreshadow_item?: boolean;
+  related_foreshadow_id?: string;
   // 上下文管理字段
   last_mentioned_chapter?: number;   // 最后被提及的章节号
-  mention_count?: number;            // 累计提及次数
+  mention_count?: number;            // 累计提及次数（主名称）
+  alias_mention_count?: number;      // 别名提及次数（累计）
   context_priority?: number;         // 上下文优先级 (0.0-1.0)
   created_at: string;
   updated_at: string;

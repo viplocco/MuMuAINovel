@@ -389,3 +389,114 @@ async def delete_user(
     except Exception as e:
         logger.error(f"删除用户失败: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"删除用户失败: {str(e)}")
+
+
+# ==================== 装饰管理 API ====================
+
+from app.models.system_config import SystemDecorationConfig
+from typing import Literal
+
+# 装饰类型验证
+VALID_DECORATION_TYPES = ['spring-festival', 'spring', 'summer', 'autumn', 'winter', 'auto', 'none']
+
+
+class DecorationConfigResponse(BaseModel):
+    """装饰配置响应"""
+    id: str
+    decoration_type: str
+    force_enabled: bool
+    description: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+class UpdateDecorationConfigRequest(BaseModel):
+    """更新装饰配置请求"""
+    decoration_type: str = Field(
+        ...,
+        description="装饰类型: spring-festival, spring, summer, autumn, winter, auto, none"
+    )
+    force_enabled: bool = Field(
+        default=False,
+        description="是否强制启用(覆盖用户本地设置)"
+    )
+    description: Optional[str] = Field(None, description="装饰说明")
+
+
+@router.get("/decoration-config", response_model=DecorationConfigResponse)
+async def get_decoration_config(
+    admin: User = Depends(check_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取系统装饰配置（仅管理员）
+
+    返回当前全局装饰设置
+    """
+    result = await db.execute(
+        select(SystemDecorationConfig).limit(1)
+    )
+    config = result.scalar_one_or_none()
+
+    if not config:
+        # 如果不存在，创建默认配置
+        config = SystemDecorationConfig(
+            id="default_decoration_config",
+            decoration_type='auto',
+            force_enabled=False
+        )
+        db.add(config)
+        await db.commit()
+        await db.refresh(config)
+
+    return config.to_dict()
+
+
+@router.put("/decoration-config", response_model=DecorationConfigResponse)
+async def update_decoration_config(
+    data: UpdateDecorationConfigRequest,
+    admin: User = Depends(check_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    更新系统装饰配置（仅管理员）
+
+    管理员可以：
+    - 设置全局装饰类型
+    - 强制启用特定装饰（覆盖用户本地设置）
+    """
+    # 验证装饰类型
+    if data.decoration_type not in VALID_DECORATION_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效的装饰类型，可选值: {', '.join(VALID_DECORATION_TYPES)}"
+        )
+
+    result = await db.execute(
+        select(SystemDecorationConfig).limit(1)
+    )
+    config = result.scalar_one_or_none()
+
+    if not config:
+        config = SystemDecorationConfig(
+            id="default_decoration_config",
+            decoration_type=data.decoration_type,
+            force_enabled=data.force_enabled,
+            description=data.description,
+            updated_by=admin.user_id
+        )
+        db.add(config)
+    else:
+        config.decoration_type = data.decoration_type
+        config.force_enabled = data.force_enabled
+        if data.description is not None:
+            config.description = data.description
+        config.updated_by = admin.user_id
+
+    await db.commit()
+    await db.refresh(config)
+
+    logger.info(f"管理员 {admin.user_id} 更新了系统装饰配置: type={data.decoration_type}, force={data.force_enabled}")
+
+    return config.to_dict()

@@ -21,10 +21,13 @@ const STATUS_CONFIG: Record<ItemStatus, { text: string; color: string }> = {
   appeared: { text: '未归属', color: 'default' },
   owned: { text: '被持有', color: 'green' },
   equipped: { text: '已装备', color: 'blue' },
+  borrowed: { text: '借用中', color: 'cyan' },
+  stored: { text: '存储中', color: 'geekblue' },
   consumed: { text: '已消耗', color: 'orange' },
   destroyed: { text: '已销毁', color: 'red' },
   lost: { text: '已丢失', color: 'default' },
   sealed: { text: '被封印', color: 'purple' },
+  pending: { text: '待获取', color: 'volcano' },
 };
 
 // 稀有度显示配置
@@ -354,58 +357,115 @@ export default function Items() {
     }
   };
 
-  // 修复不一致数据
-  const handleFixInconsistent = async () => {
-    setFixLoading(true);
-    const hideLoading = getMessageInstance().loading('正在修复不一致数据...', 0);
-    try {
-      const result = await itemApi.fixInconsistentItems(currentProject?.id);
-      hideLoading();
-      if (result.success) {
-        if (result.fixed_count > 0) {
-          getMessageInstance().success(`修复完成！已修复 ${result.fixed_count} 个持有者不为空但状态为'未归属'的物品`);
-          // 刷新物品列表
-          fetchItems(pagination.current, pagination.pageSize, searchKeyword);
-        } else {
-          getMessageInstance().info('数据一致性良好，无需修复');
+  // 修复不一致数据 - 显示确认弹窗
+  const handleFixInconsistent = () => {
+    Modal.confirm({
+      title: '修复不一致数据',
+      icon: <ToolOutlined />,
+      content: (
+        <div>
+          <p><strong>将要执行的操作：</strong></p>
+          <ul style={{ paddingLeft: 20 }}>
+            <li>扫描当前项目中所有物品</li>
+            <li>查找持有者不为空但状态为「未归属」的物品</li>
+            <li>将这些物品的状态修正为「被持有」</li>
+          </ul>
+          <p><strong>预期效果：</strong></p>
+          <ul style={{ paddingLeft: 20 }}>
+            <li>确保物品状态与持有者信息一致</li>
+            <li>避免AI生成时出现数据混乱</li>
+          </ul>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginTop: 12 }}
+            message="此操作仅修复数据不一致的问题，不会影响其他正常物品"
+          />
+        </div>
+      ),
+      okText: '确认执行',
+      cancelText: '取消',
+      onOk: async () => {
+        setFixLoading(true);
+        const hideLoading = getMessageInstance().loading('正在修复不一致数据...', 0);
+        try {
+          const result = await itemApi.fixInconsistentItems(currentProject?.id);
+          hideLoading();
+          if (result.success) {
+            if (result.fixed_count > 0) {
+              getMessageInstance().success(`修复完成！已修复 ${result.fixed_count} 个持有者不为空但状态为'未归属'的物品`);
+              fetchItems(pagination.current, pagination.pageSize, searchKeyword);
+            } else {
+              getMessageInstance().info('数据一致性良好，无需修复');
+            }
+          } else {
+            getMessageInstance().warning(result.message);
+          }
+        } catch (error: any) {
+          hideLoading();
+          const errorDetail = error?.response?.data?.detail || error?.message || '修复失败';
+          getMessageInstance().error(`修复失败: ${errorDetail}`);
+        } finally {
+          setFixLoading(false);
         }
-      } else {
-        getMessageInstance().warning(result.message);
-      }
-    } catch (error: any) {
-      hideLoading();
-      const errorDetail = error?.response?.data?.detail || error?.message || '修复失败';
-      getMessageInstance().error(`修复失败: ${errorDetail}`);
-    } finally {
-      setFixLoading(false);
-    }
+      },
+    });
   };
 
-  // 批量重算优先级
-  const handleRecalculatePriority = async () => {
+  // 批量重算优先级 - 显示确认弹窗
+  const handleRecalculatePriority = () => {
     if (!currentProject?.id) return;
-    setRecalculateLoading(true);
-    const hideLoading = getMessageInstance().loading('正在重算物品优先级...', 0);
-    try {
-      const result = await itemApi.recalculatePriority(currentProject.id);
-      hideLoading();
-      if (result.success) {
-        const { updated_count, priority_distribution } = result;
-        getMessageInstance().success(
-          `重算完成！已更新 ${updated_count} 个物品\n` +
-          `高优先级: ${priority_distribution.high}, 中: ${priority_distribution.medium}, ` +
-          `低: ${priority_distribution.low}, 忽略: ${priority_distribution.ignored}`
-        );
-        // 刷新物品列表
-        fetchItems(pagination.current, pagination.pageSize, searchKeyword);
-      }
-    } catch (error: any) {
-      hideLoading();
-      const errorDetail = error?.response?.data?.detail || error?.message || '重算失败';
-      getMessageInstance().error(`重算失败: ${errorDetail}`);
-    } finally {
-      setRecalculateLoading(false);
-    }
+    Modal.confirm({
+      title: '重算物品优先级',
+      icon: <SyncOutlined />,
+      content: (
+        <div>
+          <p><strong>将要执行的操作：</strong></p>
+          <ul style={{ paddingLeft: 20 }}>
+            <li>扫描当前项目中所有物品</li>
+            <li>基于多维度权重重新计算每个物品的上下文优先级</li>
+            <li>权重维度包括：持有者重要性、物品类别、稀有度、提及次数、伏笔关联等</li>
+          </ul>
+          <p><strong>预期效果：</strong></p>
+          <ul style={{ paddingLeft: 20 }}>
+            <li>物品列表将按优先级从高到低排序</li>
+            <li>AI生成章节时会优先注入高优先级物品信息</li>
+            <li>确保物品重要性评分与当前剧情进展匹配</li>
+          </ul>
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginTop: 12 }}
+            message="此操作会更新所有物品的优先级评分，可能需要数秒至数十秒"
+          />
+        </div>
+      ),
+      okText: '确认执行',
+      cancelText: '取消',
+      onOk: async () => {
+        setRecalculateLoading(true);
+        const hideLoading = getMessageInstance().loading('正在重算物品优先级...', 0);
+        try {
+          const result = await itemApi.recalculatePriority(currentProject.id);
+          hideLoading();
+          if (result.success) {
+            const { updated_count, priority_distribution } = result;
+            getMessageInstance().success(
+              `重算完成！已更新 ${updated_count} 个物品\n` +
+              `高优先级: ${priority_distribution.high}, 中: ${priority_distribution.medium}, ` +
+              `低: ${priority_distribution.low}, 忽略: ${priority_distribution.ignored}`
+            );
+            fetchItems(pagination.current, pagination.pageSize, searchKeyword);
+          }
+        } catch (error: any) {
+          hideLoading();
+          const errorDetail = error?.response?.data?.detail || error?.message || '重算失败';
+          getMessageInstance().error(`重算失败: ${errorDetail}`);
+        } finally {
+          setRecalculateLoading(false);
+        }
+      },
+    });
   };
 
   // 表格列定义
@@ -483,9 +543,7 @@ export default function Items() {
         if (priority === undefined || priority === null) return '-';
         const config = getPriorityConfig(priority);
         return (
-          <Tooltip title={`优先级: ${priority.toFixed(2)}`}>
-            <Tag color={config.color}>{config.text}</Tag>
-          </Tooltip>
+          <Tag color={config.color}>{priority.toFixed(2)}</Tag>
         );
       },
     },
@@ -536,10 +594,13 @@ export default function Items() {
     { key: 'owned', label: `被持有 (${getStatusCount('owned')})` },
     { key: 'appeared', label: `未归属 (${getStatusCount('appeared')})` },
     { key: 'equipped', label: `已装备 (${getStatusCount('equipped')})` },
+    { key: 'borrowed', label: `借用中 (${getStatusCount('borrowed')})` },
+    { key: 'stored', label: `存储中 (${getStatusCount('stored')})` },
     { key: 'consumed', label: `已消耗 (${getStatusCount('consumed')})` },
     { key: 'destroyed', label: `已销毁 (${getStatusCount('destroyed')})` },
     { key: 'lost', label: `已丢失 (${getStatusCount('lost')})` },
     { key: 'sealed', label: `被封印 (${getStatusCount('sealed')})` },
+    { key: 'pending', label: `待获取 (${getStatusCount('pending')})` },
   ];
 
   // 扁平化分类列表

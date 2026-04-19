@@ -1619,6 +1619,20 @@ async def analyze_chapter_background(
         else:
             logger.debug("📋 分析结果中无伏笔信息，跳过伏笔自动更新")
 
+        # 🧹 清理章节旧的物品记录（重新分析前需要清理）
+        try:
+            async with write_lock:
+                clean_item_result = await item_service.clean_chapter_item_records(
+                    db=db_session,
+                    project_id=project_id,
+                    chapter_id=chapter_id
+                )
+            total_cleaned = sum(clean_item_result.values())
+            if total_cleaned > 0:
+                logger.info(f"🧹 重新分析前清理了 {total_cleaned} 条旧物品记录: {clean_item_result}")
+        except Exception as clean_item_error:
+            logger.warning(f"⚠️ 清理旧物品记录失败（继续分析）: {str(clean_item_error)}")
+
         # 🎁 同步物品信息（使用前面已合并到 analysis_result 的物品数据）
         if analysis_result.get('items'):
             try:
@@ -3869,15 +3883,19 @@ async def regenerate_chapter_stream(
             else:
                 logger.info("ℹ️ 未指定写作风格，使用默认提示词")
             
+            # 构建 world_setting - 使用 world_setting_markdown
+            world_setting = project.world_setting_markdown if project else ""
+            if not world_setting:
+                # 兜底：如果没有 world_setting_markdown，拼接分散字段
+                world_setting = f"时间背景：{project.world_time_period if project else '未设定'}\n地理位置：{project.world_location if project else '未设定'}\n氛围基调：{project.world_atmosphere if project else '未设定'}\n世界规则：{project.world_rules if project else '未设定'}"
+
             # 构建项目上下文
             project_context = {
                 'project_title': project.title if project else '未知',
                 'genre': project.genre if project else '未设定',
                 'theme': project.theme if project else '未设定',
                 'narrative_perspective': project.narrative_perspective if project else '第三人称',
-                'time_period': project.world_time_period if project else '未设定',
-                'location': project.world_location if project else '未设定',
-                'atmosphere': project.world_atmosphere if project else '未设定',
+                'world_setting': world_setting,
                 'characters_info': characters_info_with_careers,
                 'chapter_outline': outline.content if outline else chapter.summary or '暂无大纲',
                 'previous_context': ''  # 可以后续扩展添加前置章节上下文

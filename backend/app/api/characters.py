@@ -907,16 +907,20 @@ async def generate_character_stream(
             else:
                 careers_info = "\n\n⚠️ 项目中暂无职业设定"
             
+            # 构建 world_setting - 使用 world_setting_markdown
+            world_setting = project.world_setting_markdown or ""
+            if not world_setting:
+                # 兜底：如果没有 world_setting_markdown，拼接分散字段
+                world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
             # 构建项目上下文
             project_context = f"""
 项目信息：
 - 书名：{project.title}
 - 主题：{project.theme or '未设定'}
 - 类型：{project.genre or '未设定'}
-- 时间背景：{project.world_time_period or '未设定'}
-- 地理位置：{project.world_location or '未设定'}
-- 氛围基调：{project.world_atmosphere or '未设定'}
-- 世界规则：{project.world_rules or '未设定'}
+- 世界设定：
+{world_setting}
 {existing_chars_info}
 {careers_info}
 """

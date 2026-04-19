@@ -218,6 +218,12 @@ async def generate_career_system(
             if not existing_careers_text:
                 existing_careers_text = "\n当前还没有任何职业，这是第一次创建职业体系。"
             
+            # 构建 world_setting - 使用 world_setting_markdown
+            world_setting = project.world_setting_markdown or ""
+            if not world_setting:
+                # 兜底：如果没有 world_setting_markdown，拼接分散字段
+                world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
             # 构建项目上下文
             yield await tracker.loading("分析项目世界观...", 0.6)
 
@@ -226,10 +232,8 @@ async def generate_career_system(
 - 书名：{project.title}
 - 类型：{project.genre or '未设定'}
 - 主题：{project.theme or '未设定'}
-- 时间背景：{project.world_time_period or '未设定'}
-- 地理位置：{project.world_location or '未设定'}
-- 氛围基调：{project.world_atmosphere or '未设定'}
-- 世界规则：{project.world_rules or '未设定'}
+- 世界设定：
+{world_setting}
 """
 
             # 解析项目的属性配置

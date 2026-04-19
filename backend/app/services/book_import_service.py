@@ -1749,6 +1749,12 @@ class BookImportService:
         attr_example_name = numeric_attr_example or "属性名"
         stage_example = stage_attr_example or "第一阶段"
 
+        # 构建 world_setting - 使用 world_setting_markdown
+        world_setting = project.world_setting_markdown or ""
+        if not world_setting:
+            # 兜底：如果没有 world_setting_markdown，拼接分散字段
+            world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
         await _notify("💼 正在准备职业体系提示词...", 0.2)
         template = await PromptService.get_template("CAREER_SYSTEM_GENERATION", user_id, db)
         prompt = PromptService.format_prompt(
@@ -1757,10 +1763,7 @@ class BookImportService:
             genre=project.genre or "未设定",
             theme=project.theme or "未设定",
             description=project.description or "暂无简介",
-            time_period=project.world_time_period or "未设定",
-            location=project.world_location or "未设定",
-            atmosphere=project.world_atmosphere or "未设定",
-            rules=project.world_rules or "未设定",
+            world_setting=world_setting,
             attribute_schema_info=attribute_schema_info,
             attr_example_name=attr_example_name,
             stage_example=stage_example,
@@ -1898,13 +1901,16 @@ class BookImportService:
                 careers_context += "- 可用副职业：" + "、".join([c.name for c in sub_careers]) + "\n"
             requirements += careers_context
 
+        # 构建 world_setting - 使用 world_setting_markdown
+        world_setting = project.world_setting_markdown or ""
+        if not world_setting:
+            # 兜底：如果没有 world_setting_markdown，拼接分散字段
+            world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
         prompt = PromptService.format_prompt(
             template,
             count=target_count,
-            time_period=project.world_time_period or "未设定",
-            location=project.world_location or "未设定",
-            atmosphere=project.world_atmosphere or "未设定",
-            rules=project.world_rules or "未设定",
+            world_setting=world_setting,
             theme=project.theme or "未设定",
             genre=project.genre or "未设定",
             requirements=requirements,

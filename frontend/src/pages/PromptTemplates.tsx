@@ -423,7 +423,12 @@ export default function PromptTemplates() {
                     <Card
                       hoverable
                       variant="borderless"
-                      style={promptTemplateCardStyles.templateCard}
+                      style={{
+                        ...promptTemplateCardStyles.templateCard,
+                        // 禁用状态的视觉效果
+                        opacity: (!template.is_system_default && !template.is_active) ? 0.6 : 1,
+                        filter: (!template.is_system_default && !template.is_active) ? 'grayscale(30%)' : 'none',
+                      }}
                       styles={{ body: { padding: 0, overflow: 'hidden' } }}
                       {...promptTemplateCardHoverHandlers}
                     >
@@ -431,7 +436,9 @@ export default function PromptTemplates() {
                       <div style={{
                         background: template.is_system_default
                           ? token.colorFillTertiary
-                          : token.colorPrimary,
+                          : template.is_active
+                            ? token.colorPrimary
+                            : token.colorTextDisabled,
                         padding: isMobile ? '16px' : '20px',
                         position: 'relative'
                       }}>
@@ -470,13 +477,20 @@ export default function PromptTemplates() {
                           {template.description || '暂无描述'}
                         </Paragraph>
 
+                        {/* 启用状态标签 - 更清晰的显示 */}
                         <Space wrap style={{ marginBottom: 16 }}>
                           <Tag
                             icon={<CheckCircleOutlined />}
-                            color={template.is_system_default || template.is_active ? 'success' : 'default'}
+                            color={template.is_system_default ? 'blue' : (template.is_active ? 'success' : 'error')}
+                            style={{ fontWeight: template.is_active || template.is_system_default ? 600 : 400 }}
                           >
                             {template.is_system_default ? '始终启用' : (template.is_active ? '已启用' : '已禁用')}
                           </Tag>
+                          {!template.is_system_default && !template.is_active && (
+                            <Tag color="warning" style={{ fontSize: 11 }}>
+                              此模板不会被执行
+                            </Tag>
+                          )}
                         </Space>
 
                         <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 16 }}>
@@ -534,6 +548,40 @@ export default function PromptTemplates() {
         } : undefined}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          {/* 启用状态开关 - 仅对自定义模板显示 */}
+          {!editingTemplate?.is_system_default && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 16px',
+              background: token.colorBgLayout,
+              borderRadius: 8,
+              marginBottom: 8
+            }}>
+              <Space>
+                <CheckCircleOutlined style={{ color: editingTemplate?.is_active ? token.colorSuccess : token.colorTextDisabled }} />
+                <Text strong>启用状态</Text>
+              </Space>
+              <Switch
+                checked={editingTemplate?.is_active ?? true}
+                onChange={(checked) => setEditingTemplate(prev => prev ? { ...prev, is_active: checked } : null)}
+                checkedChildren="启用"
+                unCheckedChildren="禁用"
+              />
+            </div>
+          )}
+
+          {/* 系统默认模板提示 */}
+          {editingTemplate?.is_system_default && (
+            <Alert
+              message="这是系统默认模板。编辑后将创建您的自定义副本。"
+              type="info"
+              showIcon
+              style={{ borderRadius: 8, marginBottom: 8 }}
+            />
+          )}
+
           <div>
             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>模板名称</label>
             <Input

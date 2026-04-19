@@ -150,6 +150,12 @@ class PlotExpansionService:
         # 获取策略说明文字
         strategy_instruction = get_strategy_instruction(expansion_strategy)
 
+        # 构建 world_setting - 使用 world_setting_markdown
+        project_world_setting = project.world_setting_markdown or ""
+        if not project_world_setting:
+            # 兜底：如果没有 world_setting_markdown，拼接分散字段
+            project_world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
         # 获取自定义提示词模板
         template = await PromptService.get_template("OUTLINE_EXPAND_SINGLE", project.user_id, db)
         # 格式化提示词
@@ -159,9 +165,7 @@ class PlotExpansionService:
             project_genre=project.genre or '通用',
             project_theme=project.theme or '未设定',
             project_narrative_perspective=project.narrative_perspective or '第三人称',
-            project_world_time_period=project.world_time_period or '未设定',
-            project_world_location=project.world_location or '未设定',
-            project_world_atmosphere=project.world_atmosphere or '未设定',
+            project_world_setting=project_world_setting,
             characters_info=characters_info or '暂无角色',
             outline_order_index=outline.order_index,
             outline_title=outline.title,
@@ -220,7 +224,13 @@ class PlotExpansionService:
             f"{char.personality[:100] if char.personality else '暂无描述'}"
             for char in characters
         ])
-        
+
+        # 构建 world_setting - 使用 world_setting_markdown
+        project_world_setting = project.world_setting_markdown or ""
+        if not project_world_setting:
+            # 兜底：如果没有 world_setting_markdown，拼接分散字段
+            project_world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
         # 获取大纲上下文
         context_info = await self._get_outline_context(outline, project.id, db)
 
@@ -288,9 +298,7 @@ class PlotExpansionService:
                 project_genre=project.genre or '通用',
                 project_theme=project.theme or '未设定',
                 project_narrative_perspective=project.narrative_perspective or '第三人称',
-                project_world_time_period=project.world_time_period or '未设定',
-                project_world_location=project.world_location or '未设定',
-                project_world_atmosphere=project.world_atmosphere or '未设定',
+                project_world_setting=project_world_setting,
                 characters_info=characters_info or '暂无角色',
                 outline_order_index=outline.order_index,
                 outline_title=outline.title,

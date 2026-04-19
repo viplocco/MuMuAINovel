@@ -2,46 +2,50 @@
 
 包含跨 API 模块共享的通用函数和工具。
 """
-from fastapi import HTTPException, Request
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException, Request, APIRouter
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy import select
 from typing import Optional
 
 from app.models.project import Project
+from app.models.system_config import SystemDecorationConfig
+from app.database import get_engine
 from app.logger import get_logger
 
 logger = get_logger(__name__)
 
+router = APIRouter(prefix="/common", tags=["公共接口"])
+
 
 async def verify_project_access(
-    project_id: str, 
-    user_id: Optional[str], 
+    project_id: str,
+    user_id: Optional[str],
     db: AsyncSession
 ) -> Project:
     """
     验证用户是否有权访问指定项目
-    
+
     统一的项目访问验证函数，确保：
     1. 用户已登录
     2. 项目存在
     3. 用户有权访问该项目
-    
+
     Args:
         project_id: 项目ID
         user_id: 用户ID（从 request.state.user_id 获取）
         db: 数据库会话
-        
+
     Returns:
         Project: 验证通过后返回项目对象
-        
+
     Raises:
-        HTTPException: 
+        HTTPException:
             - 401: 用户未登录
             - 404: 项目不存在或用户无权访问
     """
     if not user_id:
         raise HTTPException(status_code=401, detail="未登录")
-    
+
     result = await db.execute(
         select(Project).where(
             Project.id == project_id,
@@ -49,23 +53,23 @@ async def verify_project_access(
         )
     )
     project = result.scalar_one_or_none()
-    
+
     if not project:
         logger.warning(f"项目访问被拒绝: project_id={project_id}, user_id={user_id}")
         raise HTTPException(status_code=404, detail="项目不存在或无权访问")
-    
+
     return project
 
 
 def get_user_id(request: Request) -> Optional[str]:
     """
     从请求中获取用户ID
-    
+
     这是一个便捷函数，用于从 request.state 中提取 user_id。
-    
+
     Args:
         request: FastAPI 请求对象
-        
+
     Returns:
         用户ID，如果未登录则返回 None
     """
@@ -79,22 +83,60 @@ async def verify_project_access_from_request(
 ) -> Project:
     """
     从请求中验证项目访问权限（便捷函数）
-    
+
     结合 get_user_id 和 verify_project_access，简化调用。
-    
+
     Args:
         project_id: 项目ID
         request: FastAPI 请求对象
         db: 数据库会话
-        
+
     Returns:
         Project: 验证通过后返回项目对象
-        
+
     Raises:
         HTTPException: 401/404
-        
+
     Usage:
         project = await verify_project_access_from_request(project_id, request, db)
     """
     user_id = get_user_id(request)
     return await verify_project_access(project_id, user_id, db)
+
+
+# ==================== 公共装饰配置 API ====================
+
+@router.get("/decoration-config")
+async def get_public_decoration_config():
+    """
+    获取公共装饰配置（所有用户可访问，无需登录）
+
+    返回管理员设置的装饰类型和是否强制启用
+    """
+    try:
+        engine = await get_engine("shared_postgres")
+        session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        async with session_maker() as session:
+            result = await session.execute(
+                select(SystemDecorationConfig).limit(1)
+            )
+            config = result.scalar_one_or_none()
+
+            if not config:
+                return {
+                    "decoration_type": "auto",
+                    "force_enabled": False
+                }
+
+            return {
+                "decoration_type": config.decoration_type,
+                "force_enabled": config.force_enabled
+            }
+    except Exception as e:
+        logger.error(f"获取公共装饰配置失败: {str(e)}", exc_info=True)
+        # 返回默认配置，不影响前端 fallback
+        return {
+            "decoration_type": "auto",
+            "force_enabled": False
+        }

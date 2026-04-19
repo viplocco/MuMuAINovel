@@ -23,26 +23,30 @@ class CareerService:
     ) -> str:
         """
         构建职业体系生成的提示词
-        
+
         Args:
             project: 项目对象
             main_career_count: 主职业数量
             sub_career_count: 副职业数量
-            
+
         Returns:
             完整的提示词
         """
+        # 构建 world_setting - 使用 world_setting_markdown
+        world_setting = project.world_setting_markdown or ""
+        if not world_setting:
+            # 兜底：如果没有 world_setting_markdown，拼接分散字段
+            world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
         project_context = f"""
 项目信息：
 - 书名：{project.title}
 - 类型：{project.genre or '未设定'}
 - 主题：{project.theme or '未设定'}
-- 时间背景：{project.world_time_period or '未设定'}
-- 地理位置：{project.world_location or '未设定'}
-- 氛围基调：{project.world_atmosphere or '未设定'}
-- 世界规则：{project.world_rules or '未设定'}
+- 世界设定：
+{world_setting}
 """
-        
+
         user_requirements = f"""
 生成要求：
 - 主职业数量：{main_career_count}个

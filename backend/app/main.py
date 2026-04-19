@@ -183,13 +183,14 @@ from app.api import (
     wizard_stream, relationships, organizations,
     auth, users, settings, writing_styles, memories,
     mcp_plugins, admin, inspiration, prompt_templates,
-    changelog, careers, career_templates, foreshadows, prompt_workshop, book_import, items, summaries
+    changelog, careers, career_templates, foreshadows, prompt_workshop, book_import, items, summaries, common
 )
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(common.router, prefix="/api")  # 公共API（无需认证）
 
 app.include_router(projects.router, prefix="/api")
 app.include_router(wizard_stream.router, prefix="/api")

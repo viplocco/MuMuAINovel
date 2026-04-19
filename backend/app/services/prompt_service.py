@@ -1253,11 +1253,8 @@ class PromptService:
 </task>
 
 <worldview priority="P0">
-【世界观信息】
-时间背景：{time_period}
-地理位置：{location}
-氛围基调：{atmosphere}
-世界规则：{rules}
+【世界观设定】
+{world_setting}
 
 主题：{theme}
 类型：{genre}
@@ -1387,11 +1384,8 @@ class PromptService:
 </project>
 
 <worldview priority="P1">
-【世界观】
-时间背景：{time_period}
-地理位置：{location}
-氛围基调：{atmosphere}
-世界规则：{rules}
+【世界观设定】
+{world_setting}
 </worldview>
 
 <characters priority="P1">
@@ -1501,11 +1495,8 @@ class PromptService:
 </project>
 
 <worldview priority="P1">
-【世界观】
-时间背景：{time_period}
-地理位置：{location}
-氛围基调：{atmosphere}
-世界规则：{rules}
+【世界观设定】
+{world_setting}
 </worldview>
 
 <previous_context priority="P0">
@@ -2861,10 +2852,8 @@ class PromptService:
 主题：{project_theme}
 叙事视角：{project_narrative_perspective}
 
-【世界观背景】
-时间背景：{project_world_time_period}
-地理位置：{project_world_location}
-氛围基调：{project_world_atmosphere}
+【世界观设定】
+{project_world_setting}
 </project>
 
 <characters priority="P1">
@@ -2970,10 +2959,8 @@ class PromptService:
 主题：{project_theme}
 叙事视角：{project_narrative_perspective}
 
-【世界观背景】
-时间背景：{project_world_time_period}
-地理位置：{project_world_location}
-氛围基调：{project_world_atmosphere}
+【世界观设定】
+{project_world_setting}
 </project>
 
 <characters priority="P1">
@@ -3567,11 +3554,8 @@ class PromptService:
 类型：{genre}
 主题：{theme}
 
-【世界观】
-时间背景：{time_period}
-地理位置：{location}
-氛围基调：{atmosphere}
-世界规则：{rules}
+【世界观设定】
+{world_setting}
 </project>
 
 <context priority="P0">
@@ -3830,11 +3814,8 @@ class PromptService:
 类型：{genre}
 主题：{theme}
 
-【世界观】
-时间背景：{time_period}
-地理位置：{location}
-氛围基调：{atmosphere}
-世界规则：{rules}
+【世界观设定】
+{world_setting}
 </project>
 
 <context priority="P0">
@@ -3950,10 +3931,7 @@ class PromptService:
 简介：{description}
 
 【世界观设定】
-时间背景：{time_period}
-地理位置：{location}
-氛围基调：{atmosphere}
-世界规则：{rules}
+{world_setting}
 
 {attribute_schema_info}
 </worldview>
@@ -4326,9 +4304,7 @@ class PromptService:
 **主题**：{project_context.get('theme', '未设定')}
 **叙事视角**：{project_context.get('narrative_perspective', '第三人称')}
 **世界观设定**：
-- 时代背景：{project_context.get('time_period', '未设定')}
-- 地理位置：{project_context.get('location', '未设定')}
-- 氛围基调：{project_context.get('atmosphere', '未设定')}
+{project_context.get('world_setting', '未设定')}
 
 ---
 """)
@@ -4566,7 +4542,7 @@ class PromptService:
                 "name": "批量角色生成",
                 "category": "角色生成",
                 "description": "批量生成多个角色和组织，建立角色关系网络",
-                "parameters": ["count", "time_period", "location", "atmosphere", "rules", "theme", "genre", "requirements"]
+                "parameters": ["count", "world_setting", "theme", "genre", "requirements"]
             },
             "SINGLE_CHARACTER_GENERATION": {
                 "name": "单个角色生成",
@@ -4584,15 +4560,15 @@ class PromptService:
                 "name": "大纲生成",
                 "category": "大纲生成",
                 "description": "根据项目信息生成完整的章节大纲",
-                "parameters": ["title", "theme", "genre", "chapter_count", "narrative_perspective", "target_words", 
-                             "time_period", "location", "atmosphere", "rules", "characters_info", "requirements", "mcp_references"]
+                "parameters": ["title", "theme", "genre", "chapter_count", "narrative_perspective", "target_words",
+                             "world_setting", "characters_info", "requirements", "mcp_references"]
             },
             "OUTLINE_CONTINUE": {
                 "name": "大纲续写",
                 "category": "大纲生成",
                 "description": "基于已有章节续写大纲",
-                "parameters": ["title", "theme", "genre", "narrative_perspective", "chapter_count", "time_period",
-                             "location", "atmosphere", "rules", "characters_info", "current_chapter_count",
+                "parameters": ["title", "theme", "genre", "narrative_perspective", "chapter_count", "world_setting",
+                             "characters_info", "current_chapter_count",
                              "all_chapters_brief", "recent_plot", "memory_context", "foreshadow_reminders", "mcp_references",
                              "plot_stage_instruction", "start_chapter", "end_chapter", "story_direction", "requirements"]
             },
@@ -4650,19 +4626,17 @@ class PromptService:
                 "name": "大纲单批次展开",
                 "category": "情节展开",
                 "description": "将大纲节点展开为详细章节规划（单批次）",
-                "parameters": ["project_title", "project_genre", "project_theme", "project_narrative_perspective", 
-                             "project_world_time_period", "project_world_location", "project_world_atmosphere", 
-                             "characters_info", "outline_order_index", "outline_title", "outline_content", 
+                "parameters": ["project_title", "project_genre", "project_theme", "project_narrative_perspective",
+                             "project_world_setting", "characters_info", "outline_order_index", "outline_title", "outline_content",
                              "context_info", "strategy_instruction", "target_chapter_count", "scene_instruction", "scene_field"]
             },
             "OUTLINE_EXPAND_MULTI": {
                 "name": "大纲分批展开",
                 "category": "情节展开",
                 "description": "将大纲节点展开为详细章节规划（分批）",
-                "parameters": ["project_title", "project_genre", "project_theme", "project_narrative_perspective", 
-                             "project_world_time_period", "project_world_location", "project_world_atmosphere", 
-                             "characters_info", "outline_order_index", "outline_title", "outline_content", 
-                             "context_info", "previous_context", "strategy_instruction", "start_index", 
+                "parameters": ["project_title", "project_genre", "project_theme", "project_narrative_perspective",
+                             "project_world_setting", "characters_info", "outline_order_index", "outline_title", "outline_content",
+                             "context_info", "previous_context", "strategy_instruction", "start_index",
                              "end_index", "target_chapter_count", "scene_instruction", "scene_field"]
             },
             "MCP_TOOL_TEST": {
@@ -4700,7 +4674,7 @@ class PromptService:
                 "name": "自动角色生成",
                 "category": "自动角色引入",
                 "description": "根据剧情需求自动生成新角色的完整设定",
-                "parameters": ["title", "genre", "theme", "time_period", "location", "atmosphere", "rules",
+                "parameters": ["title", "genre", "theme", "world_setting",
                              "existing_characters", "plot_context", "character_specification", "mcp_references"]
             },
             "AUTO_ORGANIZATION_ANALYSIS": {
@@ -4714,14 +4688,14 @@ class PromptService:
                 "name": "自动组织生成",
                 "category": "自动组织引入",
                 "description": "根据剧情需求自动生成新组织的完整设定",
-                "parameters": ["title", "genre", "theme", "time_period", "location", "atmosphere", "rules",
+                "parameters": ["title", "genre", "theme", "world_setting",
                              "existing_organizations", "existing_characters", "plot_context", "organization_specification", "mcp_references"]
             },
             "CAREER_SYSTEM_GENERATION": {
                 "name": "职业体系生成",
                 "category": "世界构建",
                 "description": "根据世界观和项目简介自动生成完整的职业体系，包括主职业和副职业",
-                "parameters": ["title", "genre", "theme", "description", "time_period", "location", "atmosphere", "rules", "attribute_schema_info", "attr_example_name", "stage_example"]
+                "parameters": ["title", "genre", "theme", "description", "world_setting", "attribute_schema_info", "attr_example_name", "stage_example"]
             },
             "INSPIRATION_TITLE_SYSTEM": {
                 "name": "灵感模式-书名生成(系统提示词)",
@@ -4782,6 +4756,18 @@ class PromptService:
                 "category": "物品管理",
                 "description": "分析章节内容中的物品出现、流转和状态变化",
                 "parameters": ["chapter_number", "title", "content", "existing_items", "analysis_requirements", "categories_info"]
+            },
+            "WORLD_BUILDING_MARKDOWN": {
+                "name": "世界构建-Markdown格式",
+                "category": "世界构建",
+                "description": "生成Markdown格式的完整世界设定文档，涵盖物理、社会、隐喻、交互四维度及世界概述",
+                "parameters": ["title", "genre", "theme", "description", "chapter_count", "narrative_perspective"]
+            },
+            "WORLD_BUILDING_MARKDOWN_CONTINUE": {
+                "name": "世界构建-Markdown续写",
+                "category": "世界构建",
+                "description": "当Markdown世界设定生成因长度中断时，从中断位置续写完成剩余内容",
+                "parameters": ["title", "previous_content_tail", "last_section", "missing_sections"]
             }
         }
         

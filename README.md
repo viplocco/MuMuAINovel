@@ -121,6 +121,8 @@
 - [x] **提示词工坊** - 社区驱动的 Prompt 模板分享平台，一键导入优质提示词
 - [x] **拆书功能** - 目前呼声比较高的功能，一键拆书，给当年的ta一个圆满的结局
 - [x] **物品管理** - 智能追踪物品的出现、流转、消耗，支持物品分类、稀有度、属性等详细信息管理
+- [x] **系统装饰管理** - 管理员可全局控制季节装饰显示，支持强制启用模式，用户无需手动切换
+- [x] **用户管理增强** - 管理员可管理用户账户，包括创建、编辑、禁用、重置密码等操作
 
 ### 📝 规划中功能
 
@@ -274,6 +276,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./.env:/app/.env:ro
+      - chroma_data:/app/data/chroma_db
     environment:
       # 应用配置
       - APP_NAME=${APP_NAME:-MuMuAINovel}
@@ -333,6 +336,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  chroma_data:
     driver: local
 
 networks:
@@ -522,8 +527,8 @@ ports:
 MuMuAINovel/
 ├── backend/                 # 后端服务 (FastAPI)
 │   ├── app/
-│   │   ├── api/            # API 路由 (25+ 路由文件)
-│   │   ├── models/         # 数据模型 (21 个模型)
+│   │   ├── api/            # API 路由 (26+ 路由文件)
+│   │   ├── models/         # 数据模型 (22 个模型)
 │   │   ├── services/       # 业务逻辑
 │   │   ├── middleware/     # 中间件
 │   │   ├── schemas/        # Pydantic 模式
@@ -534,7 +539,7 @@ MuMuAINovel/
 │   └── requirements.txt    # Python 依赖
 ├── frontend/               # 前端应用 (React)
 │   ├── src/
-│   │   ├── pages/         # 页面组件 (27+ 页面)
+│   │   ├── pages/         # 页面组件 (29+ 页面)
 │   │   ├── components/    # 通用组件
 │   │   ├── services/      # API 服务
 │   │   └── store/         # 状态管理 (Zustand)

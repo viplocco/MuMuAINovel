@@ -9,10 +9,12 @@
  * - 冬天 (WinterSeason): 12月1日 ~ 2月28日 (预留，非春节)
  *
  * 提供统一的状态管理和可拖动的控制按钮。
+ * 支持管理员全局配置（装饰类型、强制启用）。
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import SpringFestival from './SpringFestival';
 import SpringSeason from './SpringSeason';
+import { decorationApi } from '../services/api';
 // 预留其他季节装饰导入
 // import SummerSeason from './SummerSeason';
 // import AutumnSeason from './AutumnSeason';
@@ -140,6 +142,12 @@ export default function SeasonDecor() {
   // 当前季节
   const [currentSeason, setCurrentSeason] = useState<SeasonType>(getCurrentSeason);
 
+  // 全局装饰配置（管理员设置）
+  const [globalConfig, setGlobalConfig] = useState<{
+    decoration_type: string;
+    force_enabled: boolean;
+  } | null>(null);
+
   // 装饰可见状态
   const [visible, setVisible] = useState(() => {
     const saved = localStorage.getItem('season-decor-visible');
@@ -170,6 +178,51 @@ export default function SeasonDecor() {
     return () => clearInterval(interval);
   }, [currentSeason]);
 
+  // 获取全局装饰配置（管理员设置）
+  useEffect(() => {
+    const loadGlobalConfig = async () => {
+      try {
+        const config = await decorationApi.getPublicConfig();
+        setGlobalConfig(config);
+      } catch {
+        // 静默失败，使用现有本地设置（不影响现有功能）
+        setGlobalConfig(null);
+      }
+    };
+
+    loadGlobalConfig();
+
+    // 定时刷新配置（每5分钟）
+    const interval = setInterval(loadGlobalConfig, 300000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 计算实际装饰类型
+  const getActualDecorationType = useCallback((): SeasonType => {
+    // 无全局配置时使用现有逻辑
+    if (!globalConfig) return currentSeason;
+
+    // 强制启用且不是 auto 时，使用全局设置
+    if (globalConfig.force_enabled && globalConfig.decoration_type !== 'auto') {
+      return globalConfig.decoration_type as SeasonType;
+    }
+
+    // auto 模式时根据日期判断
+    if (globalConfig.decoration_type === 'auto') return getCurrentSeason();
+
+    // 否则使用全局指定的类型
+    return globalConfig.decoration_type as SeasonType;
+  }, [globalConfig, currentSeason]);
+
+  // 计算实际可见状态
+  const getActualVisibility = useCallback(() => {
+    // 强制启用时必须显示
+    if (globalConfig?.force_enabled) return true;
+
+    // 否则使用现有本地设置
+    return visible;
+  }, [globalConfig, visible]);
+
   // 自动贴边
   const snapToEdge = useCallback((x: number, y: number): BtnPosition => {
     const vw = window.innerWidth;
@@ -183,12 +236,15 @@ export default function SeasonDecor() {
     return { x: snapX, y: clampedY, side };
   }, []);
 
-  // 点击切换
+  // 点击切换（强制启用时不执行）
   const toggleVisible = useCallback(() => {
+    // 强制启用时不允许切换
+    if (globalConfig?.force_enabled) return;
+
     const next = !visible;
     setVisible(next);
     localStorage.setItem('season-decor-visible', String(next));
-  }, [visible]);
+  }, [visible, globalConfig]);
 
   // 拖动开始
   const handleDragStart = useCallback((clientX: number, clientY: number) => {
@@ -298,8 +354,13 @@ export default function SeasonDecor() {
     return () => window.removeEventListener('resize', handleResize);
   }, [snapToEdge]);
 
-  // 获取当前季节配置
-  const config = SEASON_CONFIG[currentSeason];
+  // 计算实际装饰类型和可见状态
+  const actualSeason = getActualDecorationType();
+  const actualVisible = getActualVisibility();
+  const actualConfig = SEASON_CONFIG[actualSeason];
+
+  // 是否强制启用（用于按钮禁用状态）
+  const isForceEnabled = globalConfig?.force_enabled ?? false;
 
   // 按钮样式
   const btnStyle: React.CSSProperties = {
@@ -307,7 +368,7 @@ export default function SeasonDecor() {
     left: btnPos.x - 22,
     top: btnPos.y - 22,
     transition: isDragging ? 'none' : 'left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), top 0.1s ease',
-    cursor: isDragging ? 'grabbing' : 'grab',
+    cursor: isForceEnabled ? 'not-allowed' : (isDragging ? 'grabbing' : 'grab'),
     touchAction: 'none',
     userSelect: 'none',
     zIndex: 10000,
@@ -321,26 +382,27 @@ export default function SeasonDecor() {
     border: 'none',
     outline: 'none',
     padding: 0,
-    background: currentSeason === 'spring-festival'
+    opacity: isForceEnabled ? 0.6 : 1, // 强制启用时显示禁用样式
+    background: actualSeason === 'spring-festival'
       ? 'linear-gradient(135deg, #FF0000 0%, #CC0000 100%)'
-      : currentSeason === 'spring'
+      : actualSeason === 'spring'
         ? 'linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)'
-        : currentSeason === 'summer'
+        : actualSeason === 'summer'
           ? 'linear-gradient(135deg, #FF9800 0%, #F57C00 100%)'
-          : currentSeason === 'autumn'
+          : actualSeason === 'autumn'
             ? 'linear-gradient(135deg, #FF5722 0%, #E64A19 100%)'
-            : currentSeason === 'winter'
+            : actualSeason === 'winter'
               ? 'linear-gradient(135deg, #64B5F6 0%, #1976D2 100%)'
               : 'linear-gradient(135deg, #9E9E9E 0%, #616161 100%)',
-    boxShadow: currentSeason === 'spring-festival'
+    boxShadow: actualSeason === 'spring-festival'
       ? '0 4px 16px rgba(255, 0, 0, 0.4), 0 0 20px rgba(255, 215, 0, 0.3)'
-      : currentSeason === 'spring'
+      : actualSeason === 'spring'
         ? '0 4px 16px rgba(76, 175, 80, 0.4), 0 0 20px rgba(255, 182, 193, 0.3)'
         : '0 4px 16px rgba(0, 0, 0, 0.3)',
   };
 
   // 如果当前季节没有装饰组件实现，不显示按钮和装饰
-  if (!config.component) {
+  if (!actualConfig.component) {
     return null;
   }
 
@@ -351,13 +413,16 @@ export default function SeasonDecor() {
         ref={btnRef}
         className={`season-decor-btn ${isDragging ? 'season-decor-btn-dragging' : ''}`}
         style={btnStyle}
-        title={visible ? `关闭${config.name}装饰` : `开启${config.name}装饰`}
+        title={isForceEnabled
+          ? `${actualConfig.name}装饰已由管理员强制启用`
+          : (actualVisible ? `关闭${actualConfig.name}装饰` : `开启${actualConfig.name}装饰`)
+        }
       >
-        {visible ? config.iconOn : config.iconOff}
+        {actualVisible ? actualConfig.iconOn : actualConfig.iconOff}
       </button>
 
       {/* 渲染对应季节的装饰组件 */}
-      {config.component && <config.component visible={visible} />}
+      {actualConfig.component && <actualConfig.component visible={actualVisible} />}
     </>
   );
 }

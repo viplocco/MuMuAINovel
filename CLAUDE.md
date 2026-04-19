@@ -126,8 +126,8 @@ alembic revision --autogenerate -m "描述"      # 创建新迁移
 
 ```
 backend/app/
-├── api/           # REST API 路由（25+ 路由文件）
-├── models/        # SQLAlchemy ORM 模型（21 个模型）
+├── api/           # REST API 路由（26+ 路由文件）
+├── models/        # SQLAlchemy ORM 模型（22 个模型）
 ├── services/      # 业务逻辑层
 ├── middleware/    # 认证和请求 ID 中间件
 ├── mcp/           # Model Context Protocol 集成
@@ -141,7 +141,7 @@ backend/app/
 
 ```
 frontend/src/
-├── pages/         # 页面组件（27 个页面）
+├── pages/         # 页面组件（29+ 个页面）
 ├── components/    # 可复用 UI 组件
 ├── services/      # Axios API 客户端
 ├── store/         # Zustand 状态管理
@@ -231,6 +231,7 @@ frontend/src/
 | `PromptTemplate` | 用户自定义提示词模板 |
 | `PromptWorkshopItem` | 提示词工坊内容 |
 | `MCPPlugin` | MCP 工具配置 |
+| `SystemDecorationConfig` | 系统装饰配置（全局装饰管理） |
 
 ## 必需的环境变量
 

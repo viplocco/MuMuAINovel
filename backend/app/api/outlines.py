@@ -492,16 +492,20 @@ async def _build_outline_continue_context(
     }
     
     try:
+        # 构建 world_setting - 使用 world_setting_markdown
+        world_setting = project.world_setting_markdown or ""
+        if not world_setting:
+            # 兜底：如果没有 world_setting_markdown，拼接分散字段
+            world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
         # 1. 项目基础信息
         project_info_parts = [
             f"【项目基础信息】",
             f"标题：{project.title}",
             f"主题：{project.theme or '未设定'}",
             f"类型：{project.genre or '未设定'}",
-            f"时代背景：{project.world_time_period or '未设定'}",
-            f"地点设定：{project.world_location or '未设定'}",
-            f"氛围基调：{project.world_atmosphere or '未设定'}",
-            f"世界规则：{project.world_rules or '未设定'}",
+            f"世界观设定：",
+            world_setting,
             f"叙事视角：{project.narrative_perspective or '第三人称'}"
         ]
         context['project_info'] = "\n".join(project_info_parts)
@@ -1101,6 +1105,13 @@ async def new_outline_generator(
         # 使用提示词模板
         yield await tracker.preparing("准备AI提示词...")
         template = await PromptService.get_template("OUTLINE_CREATE", user_id_for_mcp or "", db)
+
+        # 构建 world_setting - 使用 world_setting_markdown
+        world_setting = project.world_setting_markdown or ""
+        if not world_setting:
+            # 兜底：如果没有 world_setting_markdown，拼接分散字段
+            world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
         prompt = PromptService.format_prompt(
             template,
             title=project.title,
@@ -1108,10 +1119,7 @@ async def new_outline_generator(
             genre=data.get("genre") or project.genre or "通用",
             chapter_count=chapter_count,
             narrative_perspective=data.get("narrative_perspective") or "第三人称",
-            time_period=project.world_time_period or "未设定",
-            location=project.world_location or "未设定",
-            atmosphere=project.world_atmosphere or "未设定",
-            rules=project.world_rules or "未设定",
+            world_setting=world_setting,
             characters_info=characters_info or "暂无角色信息",
             requirements=data.get("requirements") or "",
             mcp_references=""
@@ -1530,6 +1538,13 @@ async def continue_outline_generator(
             
             # 使用标准续写提示词模板（增强版）
             template = await PromptService.get_template("OUTLINE_CONTINUE", user_id or "", db)
+
+            # 构建 world_setting - 使用 world_setting_markdown
+            world_setting = project.world_setting_markdown or ""
+            if not world_setting:
+                # 兜底：如果没有 world_setting_markdown，拼接分散字段
+                world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
             prompt = PromptService.format_prompt(
                 template,
                 # 基础信息
@@ -1537,10 +1552,7 @@ async def continue_outline_generator(
                 theme=project.theme or "未设定",
                 genre=project.genre or "通用",
                 narrative_perspective=project.narrative_perspective or "第三人称",
-                time_period=project.world_time_period or "未设定",
-                location=project.world_location or "未设定",
-                atmosphere=project.world_atmosphere or "未设定",
-                rules=project.world_rules or "未设定",
+                world_setting=world_setting,
                 # 上下文信息
                 recent_outlines=context['recent_outlines'],
                 characters_info=context['characters_info'],

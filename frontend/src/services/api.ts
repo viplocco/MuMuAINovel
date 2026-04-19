@@ -1408,3 +1408,36 @@ export const summaryApi = {
       data
     ),
 };
+
+// ==================== 装饰配置 API ====================
+
+export const decorationApi = {
+  // 获取公共装饰配置（所有用户，无需登录）
+  getPublicConfig: () =>
+    api.get<unknown, { decoration_type: string; force_enabled: boolean }>('/common/decoration-config'),
+
+  // 获取完整装饰配置（管理员）
+  getAdminConfig: () =>
+    api.get<unknown, {
+      id: string;
+      decoration_type: string;
+      force_enabled: boolean;
+      description?: string;
+      created_at?: string;
+      updated_at?: string;
+      updated_by?: string;
+    }>('/admin/decoration-config'),
+
+  // 更新装饰配置（管理员）
+  updateConfig: (data: {
+    decoration_type: string;
+    force_enabled: boolean;
+    description?: string;
+  }) =>
+    api.put<unknown, {
+      id: string;
+      decoration_type: string;
+      force_enabled: boolean;
+      description?: string;
+    }>('/admin/decoration-config', data),
+};

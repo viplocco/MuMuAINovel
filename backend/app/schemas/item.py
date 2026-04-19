@@ -10,10 +10,13 @@ class ItemStatus(str, Enum):
     APPEARED = "appeared"      # 已出现（未被持有）
     OWNED = "owned"            # 被持有
     EQUIPPED = "equipped"      # 已装备
+    BORROWED = "borrowed"      # 借用中（暂时持有但会归还）
+    STORED = "stored"          # 存储中（放入仓库/宝库）
     CONSUMED = "consumed"      # 已消耗
     DESTROYED = "destroyed"    # 已销毁
     LOST = "lost"              # 已丢失
     SEALED = "sealed"          # 被封印
+    PENDING = "pending"        # 待获取（已知但未获得）
 
 
 class ItemRarity(str, Enum):
@@ -160,9 +163,14 @@ class ItemResponse(ItemBase):
     source_chapter_id: Optional[str] = None
     status_changed_at: Optional[datetime] = None
 
+    # === 伏笔关联字段（新增） ===
+    is_foreshadow_item: bool = Field(False, description="是否伏笔关联物品")
+    related_foreshadow_id: Optional[str] = Field(None, description="关联伏笔ID")
+
     # 上下文管理字段
     last_mentioned_chapter: Optional[int] = Field(None, description="最后被提及的章节号")
-    mention_count: int = Field(0, description="累计提及次数")
+    mention_count: int = Field(0, description="累计提及次数（主名称）")
+    alias_mention_count: int = Field(0, description="别名提及次数（累计）")
     context_priority: float = Field(1.0, description="上下文优先级(0.0-1.0)")
 
     created_at: Optional[datetime] = None

@@ -22,7 +22,8 @@ from app.models import (
     RelationshipType, CharacterRelationship, Organization, OrganizationMember,
     StoryMemory, PlotAnalysis, AnalysisTask, BatchGenerationTask,
     RegenerationTask, Career, CharacterCareer, User, MCPPlugin, PromptTemplate,
-    Item, ItemCategory, ItemTransfer, ItemStatusChange, ItemQuantityChange
+    Item, ItemCategory, ItemTransfer, ItemStatusChange, ItemQuantityChange,
+    SystemDecorationConfig,
 )
 
 # 引擎缓存：每个用户一个引擎

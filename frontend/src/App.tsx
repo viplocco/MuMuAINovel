@@ -21,6 +21,7 @@ import PromptWorkshop from './pages/PromptWorkshop';
 import Settings from './pages/Settings';
 import MCPPlugins from './pages/MCPPlugins';
 import UserManagement from './pages/UserManagement';
+import DecorationManagement from './pages/DecorationManagement';
 import PromptTemplates from './pages/PromptTemplates';
 import Sponsor from './pages/Sponsor';
 // import Polish from './pages/Polish';
@@ -57,6 +58,7 @@ function App() {
           <Route path="/prompt-templates" element={<ProtectedRoute><><PromptTemplates /><AppFooter /></></ProtectedRoute>} />
           <Route path="/mcp-plugins" element={<ProtectedRoute><MCPPlugins /></ProtectedRoute>} />
           <Route path="/user-management" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
+          <Route path="/decoration-management" element={<ProtectedRoute><DecorationManagement /></ProtectedRoute>} />
           <Route path="/chapters/:chapterId/reader" element={<ProtectedRoute><ChapterReader /></ProtectedRoute>} />
           <Route path="/project/:projectId" element={<ProtectedRoute><ProjectDetail /></ProtectedRoute>}>
             <Route index element={<Navigate to="sponsor" replace />} />

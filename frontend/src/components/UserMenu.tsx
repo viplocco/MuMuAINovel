@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Dropdown, Avatar, Space, Typography, Modal, Form, Input, Button, theme, App } from 'antd';
-import { UserOutlined, LogoutOutlined, TeamOutlined, CrownOutlined, LockOutlined } from '@ant-design/icons';
+import { UserOutlined, LogoutOutlined, TeamOutlined, CrownOutlined, LockOutlined, BgColorsOutlined } from '@ant-design/icons';
 import { authApi } from '../services/api';
 import type { User } from '../types';
 import type { MenuProps } from 'antd';
@@ -95,6 +95,12 @@ export default function UserMenu({ showFullInfo = false, compact = false }: User
         icon: <TeamOutlined />,
         label: '用户管理',
         onClick: handleShowUserManagement,
+      },
+      {
+        key: 'decoration-management',
+        icon: <BgColorsOutlined />,
+        label: '装饰管理',
+        onClick: () => navigate('/decoration-management'),
       },
       {
         type: 'divider' as const,

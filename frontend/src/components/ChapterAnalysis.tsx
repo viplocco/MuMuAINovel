@@ -434,7 +434,7 @@ export default function ChapterAnalysis({ chapterId, projectId, visible, onClose
             children: (
               <div style={{ height: isMobile ? 'calc(80vh - 180px)' : 'calc(90vh - 220px)', overflowY: 'auto', paddingRight: '8px' }}>
                 {/* 根据建议重新生成按钮 */}
-                {(analysis_data.suggestions?.length > 0 ||
+                {(analysis_data.suggestions?.filter((s) => typeof s === 'string').length > 0 ||
                   (analysis_data.consistency_issues?.some(i => i.type === 'word_count_overflow' && i.suggestion)) ||
                   ((analysis_data.ai_flavor_indicators?.length ?? 0) > 0)) && (
                   <Alert
@@ -442,7 +442,7 @@ export default function ChapterAnalysis({ chapterId, projectId, visible, onClose
                     description={
                       <div>
                         <p style={{ marginBottom: 12 }}>
-                          AI已分析出 {analysis_data.suggestions?.length || 0} 条改进建议
+                          AI已分析出 {analysis_data.suggestions?.filter((s) => typeof s === 'string').length || 0} 条改进建议
                           {analysis_data.consistency_issues &&
                             analysis_data.consistency_issues.filter(i => i.type === 'word_count_overflow' && i.suggestion).length > 0 &&
                             `、${analysis_data.consistency_issues.filter(i => i.type === 'word_count_overflow' && i.suggestion).length} 条字数超标建议`}
@@ -544,18 +544,20 @@ export default function ChapterAnalysis({ chapterId, projectId, visible, onClose
                   </Card>
                 )}
 
-                {(analysis_data.suggestions?.length > 0 ||
+                {(analysis_data.suggestions?.filter((s) => typeof s === 'string').length > 0 ||
                   (analysis_data.consistency_issues?.some(i => i.type === 'word_count_overflow' && i.suggestion)) ||
                   ((analysis_data.ai_flavor_indicators?.length ?? 0) > 0)) && (
                   <Card title={<><BulbOutlined /> 改进建议</>} size={isMobile ? 'small' : 'default'}>
                     <List
                       dataSource={[
-                        // 常规建议
-                        ...(analysis_data.suggestions || []).map((item, index) => ({
-                          type: 'suggestion',
-                          content: item,
-                          index: index + 1
-                        })),
+                        // 常规建议 - 防御性处理：确保只有字符串才被渲染
+                        ...(analysis_data.suggestions || [])
+                          .filter((item) => typeof item === 'string')
+                          .map((item, index) => ({
+                            type: 'suggestion',
+                            content: item,
+                            index: index + 1
+                          })),
                         // 字数超标建议
                         ...(analysis_data.consistency_issues || [])
                           .filter(i => i.type === 'word_count_overflow' && i.suggestion)
@@ -566,7 +568,7 @@ export default function ChapterAnalysis({ chapterId, projectId, visible, onClose
                             overflow_percent: issue.overflow_percent,
                             expected_value: issue.expected_value,
                             described_value: issue.described_value,
-                            index: (analysis_data.suggestions?.length || 0) + idx + 1
+                            index: (analysis_data.suggestions?.filter((s) => typeof s === 'string').length || 0) + idx + 1
                           })),
                         // AI味问题建议
                         ...(analysis_data.ai_flavor_indicators || [])
@@ -581,7 +583,7 @@ export default function ChapterAnalysis({ chapterId, projectId, visible, onClose
                             severity: indicator.severity,
                             indicator_type: indicator.type,
                             position_hint: indicator.position_hint,
-                            index: (analysis_data.suggestions?.length || 0) +
+                            index: (analysis_data.suggestions?.filter((s) => typeof s === 'string').length || 0) +
                                    (analysis_data.consistency_issues?.filter(i => i.type === 'word_count_overflow' && i.suggestion).length || 0) + idx + 1
                           }))
                       ]}

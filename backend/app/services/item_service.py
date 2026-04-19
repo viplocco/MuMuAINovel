@@ -15,11 +15,52 @@ logger = get_logger(__name__)
 
 # ==================== 权重配置常量 ====================
 
+# 题材适配权重调整系数（根据genre动态调整分类权重）
+GENRE_CATEGORY_ADJUSTMENTS = {
+    # 仙侠/玄幻：武器法宝权重提升，货币权重降低
+    "仙侠": {"武器": 1.2, "法宝": 1.2, "丹药": 1.1, "货币": 0.7, "典籍": 1.0},
+    "玄幻": {"武器": 1.2, "法宝": 1.2, "丹药": 1.1, "货币": 0.7, "典籍": 1.0},
+    # 都市商战：货币权重提升，武器权重降低
+    "都市": {"货币": 1.5, "武器": 0.7, "装备": 1.1, "道具": 1.0},
+    "商战": {"货币": 2.0, "武器": 0.5, "装备": 1.0, "材料": 1.1},
+    # 悬疑推理：线索类物品权重提升
+    "悬疑": {"剧情物品": 1.5, "特殊物品": 1.3, "典籍": 1.2, "道具": 1.1, "武器": 0.8},
+    "推理": {"剧情物品": 1.5, "特殊物品": 1.3, "典籍": 1.2, "道具": 1.1, "武器": 0.6},
+    # 科幻：科技装备权重提升
+    "科幻": {"装备": 1.3, "武器": 1.1, "特殊物品": 1.2, "材料": 1.0},
+    # 武侠：武器典籍权重提升
+    "武侠": {"武器": 1.3, "典籍": 1.2, "丹药": 1.0, "法宝": 0.9},
+    # 言情：剧情物品权重提升
+    "言情": {"剧情物品": 1.3, "特殊物品": 1.1, "装备": 1.0},
+    # 默认：无调整
+    "default": {},
+}
+
+# 题材适配衰减系数（不同题材节奏不同）
+GENRE_DECAY_FACTORS = {
+    # 长篇小说题材：衰减更温和（物品可能很久后重新出现）
+    "仙侠": 0.03,
+    "玄幻": 0.03,
+    "武侠": 0.04,
+    # 中等篇幅题材：标准衰减
+    "都市": 0.05,
+    "言情": 0.05,
+    "科幻": 0.05,
+    # 短篇/紧凑题材：衰减更快（物品应高频出现）
+    "悬疑": 0.06,
+    "推理": 0.06,
+    # 默认
+    "default": 0.05,
+}
+
 # 持有者重要性权重（与角色 role_type 绑定）
 CHARACTER_IMPORTANCE_WEIGHTS = {
     "主角": 1.0,       # 核心角色，物品最关键
+    "protagonist": 1.0,  # 英文role_type兼容
     "重要配角": 0.7,   # 常出场，有剧情影响
+    "supporting": 0.7,   # 英文role_type兼容
     "反派": 0.8,       # 与主角对抗，装备值得关注
+    "antagonist": 0.8,   # 英文role_type兼容
     "普通配角": 0.4,   # 偶尔出场
     "路人NPC": 0.2,    # 几乎不重要
     "组织势力": 0.5,   # 组织持有的公共物品
@@ -166,22 +207,30 @@ def calculate_context_priority_v2(
     is_plot_critical: bool = False,
     status: str = 'appeared',
     rarity_min: float = 0.0,
-    category_min: float = 0.0
+    category_min: float = 0.0,
+    # === 新增参数 ===
+    genre: Optional[str] = None,
+    is_foreshadow_item: bool = False,
+    foreshadow_urgency: int = 0,
+    foreshadow_target_chapter: Optional[int] = None,
+    current_chapter: Optional[int] = None,
+    alias_mention_count: int = 0,  # 别名提及次数
 ) -> float:
     """
-    计算物品的上下文优先级 V2 - 多维度权重融合
+    计算物品的上下文优先级 V2 - 多维度权重融合（增强版）
 
     优先级范围：0.0 - 1.0
-    - 1.0: 最高优先级，主角的核心装备且当章提及
+    - 1.0: 最高优先级，主角的核心装备且当章提及或即将回收的伏笔物品
     - 0.0: 已完成使命（消耗/销毁），完全排除
 
     保底机制（按优先级从高到低）：
-    1. 剧情关键物品保底: 0.60
-    2. 刚提及保底: 当章(distance=0) → 0.50, 近期(distance≤3) → 0.40
-    3. 稀有度保底: 神器0.60, 传说0.50, 史诗0.40, 稀有0.30
-    4. 分类保底: 神器/剧情物品0.40, 武器/法宝/灵兽0.30
-    5. 状态保底: equipped0.30, owned0.25, appeared0.20
-    6. 基础保底: 任何物品最低0.15
+    1. 伏笔物品紧急回收保底: 0.70-0.85（根据紧急度）
+    2. 剧情关键物品保底: 0.60
+    3. 刚提及保底: 当章(distance=0) → 0.50, 近期(distance≤3) → 0.40
+    4. 稀有度保底: 神器0.60, 传说0.50, 史诗0.40, 稀有0.30
+    5. 分类保底: 神器/剧情物品0.40, 武器/法宝/灵兽0.30
+    6. 状态保底: equipped0.30, owned0.25, appeared0.20
+    7. 基础保底: 任何物品最低0.15
 
     Args:
         distance: 距离上次提及的章节数
@@ -190,9 +239,15 @@ def calculate_context_priority_v2(
         rarity_weight: 稀有度权重因子
         rarity_min: 稀有度保底优先级
         category_min: 分类保底优先级
-        mention_count: 累计提及次数
+        mention_count: 累计提及次数（主名称）
         is_plot_critical: 是否剧情关键物品
         status: 物品状态
+        genre: 小说题材（用于动态衰减系数）
+        is_foreshadow_item: 是否伏笔关联物品
+        foreshadow_urgency: 伏笔紧急度 (0=不紧急, 1=需关注, 2=急需回收, 3=已超期)
+        foreshadow_target_chapter: 伏笔计划回收章节号
+        current_chapter: 当前章节号
+        alias_mention_count: 别名/曾用名的提及次数
 
     Returns:
         计算后的优先级值
@@ -204,17 +259,65 @@ def calculate_context_priority_v2(
     # 被封印或丢失的物品，低优先级但保留可能恢复的信息
     if status in ('sealed', 'lost'):
         # 稀有度高的封印物品仍需关注（可能被解封）
-        sealed_min = max(0.10, rarity_min * 0.6)
+        # 如果是伏笔物品且紧急，封印状态也要高优先级
+        if is_foreshadow_item and foreshadow_urgency >= 2:
+            sealed_min = max(0.50, rarity_min * 0.8)
+        else:
+            sealed_min = max(0.10, rarity_min * 0.6)
         return sealed_min
 
-    # === 计算实际优先级 ===
+    # === 新增：伏笔物品特殊处理 ===
+    # 伏笔物品禁用衰减或反向增长
+    if is_foreshadow_item:
+        # 计算伏笔距离回收的章节数
+        if foreshadow_target_chapter and current_chapter:
+            chapters_to_resolve = foreshadow_target_chapter - current_chapter
+            # 即将回收的伏笔物品，优先级大幅提升
+            if chapters_to_resolve <= 0:  # 已到回收章节或超期
+                # 超期伏笔最高优先级
+                return min(1.0, max(0.85, rarity_min + 0.25))
+            elif chapters_to_resolve <= 2:
+                # 急需回收（2章内）
+                min_priority = 0.75
+            elif chapters_to_resolve <= 5:
+                # 近期回收（5章内）
+                min_priority = 0.65
+            elif chapters_to_resolve <= 10:
+                # 中期回收（10章内）
+                min_priority = 0.50
+            else:
+                # 远期伏笔，保持较高基础优先级但不禁用衰减
+                min_priority = 0.40
+        else:
+            # 无目标章节的伏笔物品，根据紧急度判断
+            if foreshadow_urgency >= 3:
+                min_priority = 0.85  # 超期伏笔最高优先级
+            elif foreshadow_urgency >= 2:
+                min_priority = 0.75  # 急需回收
+            elif foreshadow_urgency >= 1:
+                min_priority = 0.60  # 需关注
+            else:
+                min_priority = 0.40  # 伏笔物品基础保底
+
+        # 伏笔物品禁用时间衰减（使用固定值）
+        if foreshadow_urgency >= 1 or (foreshadow_target_chapter and current_chapter and foreshadow_target_chapter - current_chapter <= 10):
+            # 紧急或近期回收的伏笔，禁用衰减，直接返回保底值或更高
+            # 结合稀有度提升
+            final_priority = max(min_priority, rarity_min + 0.15, category_min + 0.10)
+            return min(1.0, final_priority)
+        else:
+            # 远期伏笔，温和衰减
+            decay = math.exp(-0.02 * max(0, distance))  # 使用更温和的衰减系数
+            base_importance = character_importance * item_category_weight * rarity_weight
+            calculated = base_importance * decay
+            return max(min_priority, calculated, rarity_min)
+
+    # === 计算实际优先级（非伏笔物品） ===
 
     # 基础权重融合（持有者 × 类别 × 稀有度）
-    # 注意：稀有度权重现在更高（神器1.5），所以即使持有者不重要，稀有度也能提升优先级
     base_importance = character_importance * item_category_weight * rarity_weight
 
     # 稀有度加成：高稀有度物品本身就应该重要，不受持有者限制
-    # 如果稀有度权重 >= 1.2（史诗及以上），给予额外加成
     if rarity_weight >= 1.5:  # 神器
         rarity_bonus = 0.30
     elif rarity_weight >= 1.3:  # 传说
@@ -224,57 +327,81 @@ def calculate_context_priority_v2(
     else:
         rarity_bonus = 0.0
 
-    # 将稀有度加成加入基础重要性
     base_importance = base_importance + rarity_bonus
-    # 限幅到 0.0-1.0
     base_importance = min(1.0, max(0.0, base_importance))
 
-    # 时间衰减（使用更温和的衰减系数）
-    decay = math.exp(-0.05 * max(0, distance))
+    # === 新增：题材适配衰减系数 ===
+    decay_factor = GENRE_DECAY_FACTORS.get(genre, GENRE_DECAY_FACTORS["default"])
+    decay = math.exp(-decay_factor * max(0, distance))
 
-    # 活跃度因子（基于提及次数）
-    activity_factor = min(1.0, 0.7 + mention_count * 0.03)
+    # 活跃度因子（基于主名称+别名提及次数）
+    total_mentions = mention_count + alias_mention_count
+    activity_factor = min(1.0, 0.7 + total_mentions * 0.03)
 
     # 计算优先级
     calculated_priority = base_importance * decay * activity_factor
 
-    # === 多层保底机制 ===
+    # === 多层保底机制（优化为叠加而非简单max） ===
 
-    # 1. 剧情关键物品保底（最高优先级）
-    min_priority = 0.60 if is_plot_critical else 0.0
+    # 初始化保底值
+    min_priority = 0.0
 
-    # 2. 刚提及保底：刚在剧情中出现的物品应该有更高的优先级
+    # 1. 剧情关键物品保底
+    if is_plot_critical:
+        min_priority = 0.60
+
+    # 2. 刚提及保底
     if distance == 0:
-        # 当章提及的物品，给予较高保底
         min_priority = max(min_priority, 0.50)
     elif distance <= 3:
-        # 近3章内提及，给予中等保底
         min_priority = max(min_priority, 0.40)
 
-    # 3. 稀有度保底（神器/传说不应被忽略）
+    # 3. 稀有度保底
     min_priority = max(min_priority, rarity_min)
 
-    # 4. 分类保底（武器/法宝等重要分类不应被忽略）
+    # 4. 分类保底
     min_priority = max(min_priority, category_min)
 
-    # 5. 状态保底：根据物品状态设置不同的保底值
+    # 5. 状态保底
     if status == 'equipped':
         state_min = 0.30
     elif status == 'owned':
         state_min = 0.25
     elif status == 'appeared':
         state_min = 0.20
+    elif status == 'borrowed':  # 新增：借用状态
+        state_min = 0.25
+    elif status == 'stored':    # 新增：存储状态
+        state_min = 0.15
     else:
         state_min = 0.15
 
     min_priority = max(min_priority, state_min)
 
-    # 6. 被持有的物品额外提升（基于持有者重要性）
-    if status in ('owned', 'equipped'):
+    # 6. 被持有的物品额外提升
+    if status in ('owned', 'equipped', 'borrowed'):
         min_priority = max(min_priority, base_importance * 0.5)
 
-    # 7. 基础保底：任何物品最低 0.15
+    # 7. 基础保底
     min_priority = max(min_priority, 0.15)
+
+    # === 新增：保底叠加奖励 ===
+    # 如果多个保底条件同时满足，给予叠加奖励（而非简单取最大）
+    bonus_count = 0
+    if is_plot_critical:
+        bonus_count += 1
+    if distance <= 3:
+        bonus_count += 1
+    if rarity_min >= 0.40:  # 史诗及以上
+        bonus_count += 1
+    if category_min >= 0.30:  # 重要分类
+        bonus_count += 1
+    if status in ('equipped', 'owned'):
+        bonus_count += 1
+
+    # 每满足2个条件，额外提升0.05（最多0.15）
+    stack_bonus = min(0.15, (bonus_count // 2) * 0.05)
+    min_priority = min(1.0, min_priority + stack_bonus)
 
     # 应用保底值（取保底值和计算值的较大者）
     priority = max(min_priority, calculated_priority)
@@ -288,7 +415,8 @@ def calculate_context_priority(
     last_mentioned_chapter: Optional[int],
     current_chapter: int,
     status: str,
-    is_plot_critical: bool
+    is_plot_critical: bool,
+    genre: Optional[str] = None
 ) -> float:
     """
     计算物品的上下文优先级（兼容旧调用）
@@ -310,8 +438,145 @@ def calculate_context_priority(
         category_min=0.0,          # 无分类保底
         mention_count=0,
         is_plot_critical=is_plot_critical,
-        status=status
+        status=status,
+        genre=genre
     )
+
+
+def get_genre_adjusted_category_weight(category_name: Optional[str], genre: Optional[str]) -> float:
+    """
+    获取题材适配后的分类权重
+
+    Args:
+        category_name: 物品分类名称
+        genre: 小说题材
+
+    Returns:
+        调整后的分类权重
+    """
+    # 获取基础权重
+    base_weight = get_item_category_weight(category_name)
+
+    # 应用题材调整
+    if genre and genre in GENRE_CATEGORY_ADJUSTMENTS:
+        adjustments = GENRE_CATEGORY_ADJUSTMENTS[genre]
+        if category_name:
+            # 精确匹配
+            if category_name in adjustments:
+                base_weight *= adjustments[category_name]
+            # 模糊匹配
+            else:
+                for key, factor in adjustments.items():
+                    if key in category_name or category_name in key:
+                        base_weight *= factor
+                        break
+
+    return min(1.5, max(0.3, base_weight))  # 限幅
+
+
+async def get_foreshadow_item_info(
+    item_name: str,
+    project_id: str,
+    db: AsyncSession,
+    current_chapter: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    查询物品是否关联伏笔，返回伏笔紧急度信息
+
+    Args:
+        item_name: 物品名称
+        project_id: 项目ID
+        db: 数据库会话
+        current_chapter: 当前章节号
+
+    Returns:
+        {
+            "is_foreshadow_item": bool,
+            "foreshadow_urgency": int,
+            "foreshadow_target_chapter": Optional[int],
+            "foreshadow_id": Optional[str]
+        }
+    """
+    _ensure_models()
+    from app.models.foreshadow import Foreshadow
+
+    # 查询与物品相关的伏笔（通过related_characters/tags或标题包含物品名）
+    query = (
+        select(Foreshadow)
+        .where(Foreshadow.project_id == project_id)
+        .where(Foreshadow.status.in_(['planted', 'partially_resolved']))  # 未回收的伏笔
+        .where(Foreshadow.include_in_context == True)  # 允许在上下文中显示
+    )
+
+    result = await db.execute(query)
+    foreshadows = result.scalars().all()
+
+    # 筛选与该物品相关的伏笔
+    related_foreshadow = None
+    for fs in foreshadows:
+        # 检查标题是否包含物品名
+        if item_name in fs.title:
+            related_foreshadow = fs
+            break
+        # 检查内容是否包含物品名
+        if fs.content and item_name in fs.content:
+            related_foreshadow = fs
+            break
+        # 检查标签
+        if fs.tags and isinstance(fs.tags, list):
+            if item_name in fs.tags:
+                related_foreshadow = fs
+                break
+
+    if not related_foreshadow:
+        return {
+            "is_foreshadow_item": False,
+            "foreshadow_urgency": 0,
+            "foreshadow_target_chapter": None,
+            "foreshadow_id": None
+        }
+
+    # 计算紧急度
+    urgency = related_foreshadow.get_urgency_level(current_chapter or 0) if current_chapter else related_foreshadow.urgency
+
+    return {
+        "is_foreshadow_item": True,
+        "foreshadow_urgency": urgency,
+        "foreshadow_target_chapter": related_foreshadow.target_resolve_chapter_number,
+        "foreshadow_id": related_foreshadow.id
+    }
+
+
+def calculate_dynamic_threshold(
+    total_item_count: int,
+    token_budget: int = 2000,
+    avg_item_context_length: int = 80
+) -> float:
+    """
+    根据物品总数和token预算动态计算优先级阈值
+
+    Args:
+        total_item_count: 项目物品总数
+        token_budget: 分配给物品上下文的token预算
+        avg_item_context_length: 平均每个物品上下文长度（字符/token）
+
+    Returns:
+        动态优先级阈值
+    """
+    # 估算能容纳的物品数量
+    max_items_in_context = max(5, token_budget // avg_item_context_length)
+
+    # 如果物品总数少于预算，使用低阈值（0.15，包含所有物品）
+    if total_item_count <= max_items_in_context:
+        return 0.15
+
+    # 否则根据比例计算阈值
+    # 目标：筛选出约 max_items_in_context 个高优先级物品
+    # 假设优先级分布大致均匀，阈值 = 1.0 - (max_items / total) * 0.7
+    ratio = max_items_in_context / total_item_count
+    threshold = max(0.20, min(0.60, 0.15 + (1 - ratio) * 0.45))
+
+    return threshold
 
 
 # 延迟导入模型（避免循环导入）
@@ -412,7 +677,7 @@ class ItemService:
                 select(Item, ItemCategory.name)
                 .outerjoin(ItemCategory, Item.category_id == ItemCategory.id)
                 .where(and_(*conditions))
-                .order_by(desc(Item.updated_at))
+                .order_by(desc(Item.context_priority), desc(Item.updated_at))
                 .offset(offset)
                 .limit(limit)
             )
@@ -513,10 +778,26 @@ class ItemService:
     async def create_item(
         self,
         db: AsyncSession,
-        data: ItemCreate
+        data: ItemCreate,
+        # === 新增可选参数 ===
+        genre: Optional[str] = None,
+        is_foreshadow_item: bool = False,
+        related_foreshadow_id: Optional[str] = None
     ) -> Item:
         """创建物品"""
         try:
+            # 获取项目genre（如果未传入）
+            if not genre:
+                try:
+                    from app.models.project import Project
+                    proj_query = select(Project).where(Project.id == data.project_id)
+                    proj_result = await db.execute(proj_query)
+                    proj = proj_result.scalar_one_or_none()
+                    if proj:
+                        genre = proj.genre
+                except Exception as e:
+                    logger.warning(f"查询项目genre失败: {e}")
+
             # 获取持有者重要性权重
             character_importance = CHARACTER_IMPORTANCE_WEIGHTS["default"]
             if data.owner_character_name:
@@ -532,7 +813,7 @@ class ItemService:
                 except Exception as e:
                     logger.warning(f"查询持有者角色类型失败: {e}")
 
-            # 获取物品类别权重
+            # 获取物品类别权重（使用题材适配）
             category_name = None
             if data.category_id:
                 try:
@@ -544,7 +825,8 @@ class ItemService:
                 except Exception as e:
                     logger.warning(f"查询分类名称失败: {e}")
 
-            item_category_weight = get_item_category_weight(category_name, data.tags)
+            # 使用题材适配的权重
+            item_category_weight = get_genre_adjusted_category_weight(category_name, genre)
 
             # 获取稀有度权重和保底
             rarity_str = data.rarity.value if hasattr(data.rarity, 'value') else data.rarity
@@ -555,7 +837,7 @@ class ItemService:
             # 获取状态
             status_str = data.status.value if hasattr(data.status, 'value') else data.status
 
-            # 计算初始优先级
+            # 计算初始优先级（使用增强版函数）
             initial_priority = calculate_context_priority_v2(
                 distance=0,
                 character_importance=character_importance,
@@ -565,11 +847,15 @@ class ItemService:
                 category_min=category_min,
                 mention_count=1,
                 is_plot_critical=data.is_plot_critical or False,
-                status=status_str
+                status=status_str,
+                # === 新增参数 ===
+                genre=genre,
+                is_foreshadow_item=is_foreshadow_item,
+                alias_mention_count=0
             )
 
             logger.info(f"📊 创建物品优先级: {data.name} → {initial_priority:.2f} "
-                       f"(持有者={character_importance:.1f}, 类别={item_category_weight:.1f}, 稀有度保底={rarity_min:.1f})")
+                       f"(持有者={character_importance:.1f}, 类别={item_category_weight:.1f}, 稀有度保底={rarity_min:.1f}, genre={genre})")
 
             item = Item(
                 id=str(uuid.uuid4()),
@@ -598,9 +884,13 @@ class ItemService:
                 tags=data.tags or [],
                 notes=data.notes,
                 is_plot_critical=data.is_plot_critical or False,
+                # === 新增伏笔关联字段 ===
+                is_foreshadow_item=is_foreshadow_item,
+                related_foreshadow_id=related_foreshadow_id,
                 # 上下文管理字段
                 last_mentioned_chapter=data.source_chapter_number,
                 mention_count=1,
+                alias_mention_count=0,
                 context_priority=initial_priority,
                 status_changed_at=datetime.now()
             )
@@ -671,6 +961,7 @@ class ItemService:
 
                 # 获取物品类别权重
                 category_name = None
+                genre = None
                 if item.category_id:
                     try:
                         cat_query = select(ItemCategory).where(ItemCategory.id == item.category_id)
@@ -681,10 +972,32 @@ class ItemService:
                     except Exception as e:
                         logger.warning(f"查询分类名称失败: {e}")
 
+                # 获取项目 genre
+                try:
+                    from app.models.project import Project
+                    proj_query = select(Project).where(Project.id == item.project_id)
+                    proj_result = await db.execute(proj_query)
+                    proj = proj_result.scalar_one_or_none()
+                    if proj:
+                        genre = proj.genre
+                except Exception as e:
+                    logger.warning(f"查询项目genre失败: {e}")
+
                 item_category_weight = get_item_category_weight(category_name, item.tags)
+                # 应用题材调整权重
+                item_category_weight = get_genre_adjusted_category_weight(category_name, genre)
                 rarity_weight = get_rarity_weight(item.rarity)
                 rarity_min = get_rarity_min_priority(item.rarity)
                 category_min = get_category_min_priority(category_name, item.tags)
+
+                # 获取伏笔相关信息
+                foreshadow_urgency = 0
+                foreshadow_target_chapter = None
+                if item.is_foreshadow_item and item.related_foreshadow_id:
+                    foreshadow_info = await get_foreshadow_item_info(db, item.related_foreshadow_id)
+                    if foreshadow_info:
+                        foreshadow_urgency = foreshadow_info.get('urgency', 0)
+                        foreshadow_target_chapter = foreshadow_info.get('target_chapter')
 
                 new_priority = calculate_context_priority_v2(
                     distance=0,
@@ -695,7 +1008,12 @@ class ItemService:
                     category_min=category_min,
                     mention_count=item.mention_count or 1,
                     is_plot_critical=item.is_plot_critical or False,
-                    status=item.status
+                    status=item.status,
+                    genre=genre,
+                    is_foreshadow_item=item.is_foreshadow_item or False,
+                    alias_mention_count=item.alias_mention_count or 0,
+                    foreshadow_urgency=foreshadow_urgency,
+                    foreshadow_target_chapter=foreshadow_target_chapter
                 )
                 item.context_priority = new_priority
                 logger.info(f"  📊 重新计算优先级: {new_priority:.2f} "
@@ -1176,6 +1494,94 @@ class ItemService:
             logger.error(f"删除分类失败: {str(e)}")
             raise
 
+    # ==================== 章节物品清理 ====================
+
+    async def clean_chapter_item_records(
+        self,
+        db: AsyncSession,
+        project_id: str,
+        chapter_id: str
+    ) -> Dict[str, int]:
+        """清理章节重新分析前的物品相关记录
+
+        清理以下数据：
+        - ItemTransfer: 该章节的流转记录
+        - ItemQuantityChange: 该章节的数量变更记录
+        - ItemStatusChange: 该章节的状态变更记录
+        - ItemAttributeChange: 该章节的属性变更记录
+
+        Args:
+            db: 数据库会话
+            project_id: 项目ID
+            chapter_id: 章节ID
+
+        Returns:
+            清理的记录数量统计
+        """
+        from app.models.item_transfer import ItemTransfer
+        from app.models.item_quantity_change import ItemQuantityChange
+        from app.models.item_status_change import ItemStatusChange
+        from app.models.item_attribute_change import ItemAttributeChange
+
+        try:
+            cleaned_counts = {}
+
+            # 清理流转记录
+            transfer_delete = await db.execute(
+                delete(ItemTransfer).where(
+                    and_(
+                        ItemTransfer.project_id == project_id,
+                        ItemTransfer.chapter_id == chapter_id
+                    )
+                )
+            )
+            cleaned_counts['transfers'] = transfer_delete.rowcount
+
+            # 清理数量变更记录
+            quantity_delete = await db.execute(
+                delete(ItemQuantityChange).where(
+                    and_(
+                        ItemQuantityChange.project_id == project_id,
+                        ItemQuantityChange.chapter_id == chapter_id
+                    )
+                )
+            )
+            cleaned_counts['quantity_changes'] = quantity_delete.rowcount
+
+            # 清理状态变更记录
+            status_delete = await db.execute(
+                delete(ItemStatusChange).where(
+                    and_(
+                        ItemStatusChange.project_id == project_id,
+                        ItemStatusChange.chapter_id == chapter_id
+                    )
+                )
+            )
+            cleaned_counts['status_changes'] = status_delete.rowcount
+
+            # 清理属性变更记录
+            attribute_delete = await db.execute(
+                delete(ItemAttributeChange).where(
+                    and_(
+                        ItemAttributeChange.project_id == project_id,
+                        ItemAttributeChange.chapter_id == chapter_id
+                    )
+                )
+            )
+            cleaned_counts['attribute_changes'] = attribute_delete.rowcount
+
+            await db.commit()
+
+            total = sum(cleaned_counts.values())
+            if total > 0:
+                logger.info(f"🧹 清理章节 {chapter_id} 的物品记录: {cleaned_counts}")
+
+            return cleaned_counts
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"清理章节物品记录失败: {str(e)}")
+            raise
+
     # ==================== AI分析集成 ====================
 
     async def sync_from_analysis(
@@ -1192,6 +1598,18 @@ class ItemService:
             created_items = []
             updated_items = []
             skipped_reasons = []
+
+            # === 新增：获取项目genre ===
+            genre = None
+            try:
+                from app.models.project import Project
+                proj_query = select(Project).where(Project.id == project_id)
+                proj_result = await db.execute(proj_query)
+                proj = proj_result.scalar_one_or_none()
+                if proj:
+                    genre = proj.genre
+            except Exception as e:
+                logger.warning(f"查询项目genre失败: {e}")
 
             # 获取已有物品列表
             if not existing_items:
@@ -1215,7 +1633,8 @@ class ItemService:
                     else:
                         # 创建新物品
                         new_item = await self._create_item_from_analysis(
-                            db, project_id, item_result, chapter_id, chapter_number
+                            db, project_id, item_result, chapter_id, chapter_number,
+                            genre=genre  # 传递genre
                         )
                         if new_item:
                             created_items.append(new_item)
@@ -1432,7 +1851,10 @@ class ItemService:
         project_id: str,
         item_result: ItemAnalysisResult,
         chapter_id: str,
-        chapter_number: int
+        chapter_number: int,
+        # === 新增参数 ===
+        genre: Optional[str] = None,
+        current_chapter: Optional[int] = None
     ) -> Optional[Item]:
         """从分析结果创建物品"""
         try:
@@ -1516,7 +1938,10 @@ class ItemService:
             # 获取分类保底
             category_min = get_category_min_priority(category_name, [item_result.item_type] if item_result.item_type else None)
 
-            # 计算新版本优先级
+            # 使用题材适配的权重
+            item_category_weight = get_genre_adjusted_category_weight(category_name, genre)
+
+            # 计算新版本优先级（使用增强版函数）
             initial_priority = calculate_context_priority_v2(
                 distance=0,  # 新创建物品，距离为0
                 character_importance=character_importance,
@@ -1526,11 +1951,15 @@ class ItemService:
                 category_min=category_min,
                 mention_count=1,
                 is_plot_critical=is_plot_critical,
-                status=status
+                status=status,
+                # === 新增参数 ===
+                genre=genre,
+                current_chapter=current_chapter or chapter_number,
+                alias_mention_count=len(item_result.aliases or [])
             )
 
             logger.info(f"  📊 优先级计算: 持有者权重={character_importance:.2f}, 类别权重={item_category_weight:.2f}, "
-                       f"稀有度权重={rarity_weight:.2f}, 稀有度保底={rarity_min:.2f}, 分类保底={category_min:.2f} → 优先级={initial_priority:.2f}")
+                       f"稀有度权重={rarity_weight:.2f}, 稀有度保底={rarity_min:.2f}, 分类保底={category_min:.2f}, genre={genre} → 优先级={initial_priority:.2f}")
 
             item = Item(
                 id=str(uuid.uuid4()),
@@ -1711,32 +2140,27 @@ class ItemService:
             if item_result.to_character and item_result.to_character != old_owner:
                 item.owner_character_name = item_result.to_character
 
-                # 创建流转记录（如果有明确的转移事件）
-                if item_result.event_type in ['transfer', 'give', 'trade', 'steal', 'loot', 'inherit', 'find', 'buy']:
-                    transfer = ItemTransfer(
-                        id=str(uuid.uuid4()),
-                        project_id=item.project_id,
-                        item_id=item_id,
-                        transfer_type=item_result.event_type,
-                        from_character_name=item_result.from_character or old_owner,
-                        to_character_name=item_result.to_character,
-                        chapter_id=chapter_id,
-                        chapter_number=chapter_number,
-                        quantity=1.0,
-                        description=item_result.description,
-                        quote_text=item_result.keyword,
-                        source_type='analysis'
-                    )
-                    db.add(transfer)
-                    changes_logged.append(f"持有者: {old_owner}→{item_result.to_character}")
-                else:
-                    # 非流转类型的持有者变更，记录为属性变更
-                    await self._log_attribute_change(
-                        db, item, 'owner_character_name', '持有者',
-                        old_owner, item_result.to_character,
-                        chapter_id, chapter_number, item_result.event_type, item_result.description
-                    )
-                    changes_logged.append(f"持有者: {old_owner}→{item_result.to_character}")
+                # 【修复】持有者变更始终创建流转记录
+                # 使用 event_type 作为 transfer_type，若不是流转类型则使用默认值
+                transfer_event_types = ['transfer', 'give', 'trade', 'steal', 'loot', 'inherit', 'find', 'buy', 'obtain', 'craft']
+                transfer_type = item_result.event_type if item_result.event_type in transfer_event_types else 'owner_change'
+
+                transfer = ItemTransfer(
+                    id=str(uuid.uuid4()),
+                    project_id=item.project_id,
+                    item_id=item_id,
+                    transfer_type=transfer_type,
+                    from_character_name=item_result.from_character or old_owner,
+                    to_character_name=item_result.to_character,
+                    chapter_id=chapter_id,
+                    chapter_number=chapter_number,
+                    quantity=1.0,
+                    description=item_result.description,
+                    quote_text=item_result.keyword,
+                    source_type='analysis'
+                )
+                db.add(transfer)
+                changes_logged.append(f"持有者: {old_owner}→{item_result.to_character} (类型={transfer_type})")
 
             # === 2. 数量变更 ===
             if item_result.quantity_after is not None:
@@ -1945,6 +2369,7 @@ class ItemService:
 
             # 获取物品类别权重
             category_name = None
+            genre = None
             if item.category_id:
                 try:
                     cat_query = select(ItemCategory).where(ItemCategory.id == item.category_id)
@@ -1955,10 +2380,32 @@ class ItemService:
                 except Exception as e:
                     logger.warning(f"查询分类名称失败: {e}")
 
+            # 获取项目 genre
+            try:
+                from app.models.project import Project
+                proj_query = select(Project).where(Project.id == item.project_id)
+                proj_result = await db.execute(proj_query)
+                proj = proj_result.scalar_one_or_none()
+                if proj:
+                    genre = proj.genre
+            except Exception as e:
+                logger.warning(f"查询项目genre失败: {e}")
+
             item_category_weight = get_item_category_weight(category_name, item.tags)
+            # 应用题材调整权重
+            item_category_weight = get_genre_adjusted_category_weight(category_name, genre)
             rarity_weight = get_rarity_weight(item.rarity)
             rarity_min = get_rarity_min_priority(item.rarity)
             category_min = get_category_min_priority(category_name, item.tags)
+
+            # 获取伏笔相关信息
+            foreshadow_urgency = 0
+            foreshadow_target_chapter = None
+            if item.is_foreshadow_item and item.related_foreshadow_id:
+                foreshadow_info = await get_foreshadow_item_info(db, item.related_foreshadow_id)
+                if foreshadow_info:
+                    foreshadow_urgency = foreshadow_info.get('urgency', 0)
+                    foreshadow_target_chapter = foreshadow_info.get('target_chapter')
 
             # 计算距离（当前章节 - 上次提及）
             distance = 0  # 本次刚提及，距离为0
@@ -1972,7 +2419,13 @@ class ItemService:
                 category_min=category_min,
                 mention_count=item.mention_count or 1,
                 is_plot_critical=item.is_plot_critical or False,
-                status=item.status
+                status=item.status,
+                genre=genre,
+                is_foreshadow_item=item.is_foreshadow_item or False,
+                alias_mention_count=item.alias_mention_count or 0,
+                foreshadow_urgency=foreshadow_urgency,
+                foreshadow_target_chapter=foreshadow_target_chapter,
+                current_chapter=chapter_number
             )
             item.context_priority = new_priority
             changes_logged.append(f"优先级={new_priority:.2f} (持有者={character_importance:.1f}, 类别={item_category_weight:.1f}, 稀有度保底={rarity_min:.1f})")
@@ -2247,20 +2700,39 @@ class ItemService:
         project_id: str,
         chapter_number: int,
         character_names: Optional[List[str]] = None,
-        max_items: int = 15
+        max_items: int = 15,
+        # === 新增参数 ===
+        genre: Optional[str] = None,
+        token_budget: int = 2000,
+        include_foreshadow_items: bool = True
     ) -> str:
-        """构建章节生成的物品上下文（基于上下文优先级过滤）
+        """构建章节生成的物品上下文（基于上下文优先级过滤 + 动态阈值截断）
 
         优先级过滤规则：
-        - priority >= 0.3: 注入到上下文
-        - priority < 0.3: 过滤掉（噪音过大）
+        - 使用动态阈值截断，根据物品总数和token预算自动调整
+        - 伏笔关联物品优先级更高，禁用衰减
         - 按优先级降序排序，优先注入高优先级物品
         """
         try:
             lines = []
 
-            # === 优先级阈值：只注入高优先级物品 ===
-            PRIORITY_THRESHOLD = 0.3
+            # === 动态阈值计算 ===
+            # 先获取物品总数
+            count_query = select(func.count(Item.id)).where(
+                Item.project_id == project_id,
+                Item.status.in_(['appeared', 'owned', 'equipped', 'borrowed', 'stored', 'sealed'])
+            )
+            count_result = await db.execute(count_query)
+            total_item_count = count_result.scalar() or 0
+
+            # 计算动态阈值
+            PRIORITY_THRESHOLD = calculate_dynamic_threshold(
+                total_item_count=total_item_count,
+                token_budget=token_budget,
+                avg_item_context_length=80
+            )
+
+            logger.info(f"📊 物品上下文: 总数={total_item_count}, 动态阈值={PRIORITY_THRESHOLD:.2f}")
 
             # 1. 获取本章角色持有的物品（按优先级排序）
             if character_names:
@@ -2313,17 +2785,46 @@ class ItemService:
                         if item.special_effects:
                             lines.append(f"  特效: {item.special_effects[:50]}")
 
+            # === 新增：伏笔关联物品优先查询 ===
+            # 伏笔物品应该优先显示，即使阈值较高
+            foreshadow_items = []
+            if include_foreshadow_items:
+                foreshadow_query = (
+                    select(Item)
+                    .where(Item.project_id == project_id)
+                    .where(Item.is_foreshadow_item == True)
+                    .where(Item.status.in_(['appeared', 'owned', 'equipped', 'sealed', 'lost']))
+                    .order_by(desc(Item.context_priority))
+                    .limit(10)
+                )
+                foreshadow_result = await db.execute(foreshadow_query)
+                foreshadow_items = foreshadow_result.scalars().all()
+
+                if foreshadow_items:
+                    lines.append("\n【伏笔关联物品】⚠️ 可能即将回收")
+                    for item in foreshadow_items:
+                        fs_info = ""
+                        if item.related_foreshadow_id:
+                            # 查询伏笔详情（简化显示）
+                            fs_info = f"(关联伏笔)"
+                        lines.append(f"- {item.to_context_string()} {fs_info}")
+
             # 2. 获取剧情关键物品（保持原有逻辑，优先级总是高）
             critical_query = (
                 select(Item)
                 .where(Item.project_id == project_id)
                 .where(Item.is_plot_critical == True)
-                .where(Item.status.in_(['appeared', 'owned', 'equipped', 'sealed']))
-                .where(Item.context_priority >= PRIORITY_THRESHOLD)
+                .where(Item.status.in_(['appeared', 'owned', 'equipped', 'sealed', 'borrowed']))
+                # 剧情关键物品不使用动态阈值，总是显示
+                .order_by(desc(Item.context_priority))
                 .limit(5)
             )
             result = await db.execute(critical_query)
             critical_items = result.scalars().all()
+
+            # 过滤掉已显示的伏笔物品
+            foreshadow_ids = {item.id for item in foreshadow_items}
+            critical_items = [item for item in critical_items if item.id not in foreshadow_ids]
 
             if critical_items:
                 lines.append("\n【剧情关键物品】")
@@ -2331,12 +2832,12 @@ class ItemService:
                     lines.append(f"- {item.to_context_string()}")
 
             # 3. 获取高优先级物品（按上下文优先级排序）
-            # 替换原有的"近期出现物品"逻辑，改用优先级排序
+            # 使用动态阈值替代固定阈值
             high_priority_query = (
                 select(Item)
                 .where(Item.project_id == project_id)
-                .where(Item.status.in_(['appeared', 'owned', 'equipped']))
-                .where(Item.context_priority >= 0.5)  # 只取较高优先级
+                .where(Item.status.in_(['appeared', 'owned', 'equipped', 'borrowed', 'stored']))
+                .where(Item.context_priority >= PRIORITY_THRESHOLD)
                 .order_by(desc(Item.context_priority))
                 .limit(max_items)
             )

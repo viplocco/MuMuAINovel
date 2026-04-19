@@ -881,15 +881,23 @@ async def recalculate_items_priority(
             calculate_context_priority_v2,
             get_character_importance_weight,
             get_item_category_weight,
+            get_genre_adjusted_category_weight,
             get_rarity_weight,
             get_rarity_min_priority,
             get_category_min_priority,
             CHARACTER_IMPORTANCE_WEIGHTS
         )
+        from app.models.project import Project
 
         # 验证权限
         user_id = getattr(request.state, 'user_id', None)
         await verify_project_access(project_id, user_id, db)
+
+        # 获取项目信息（包含genre）
+        project_query = select(Project).where(Project.id == project_id)
+        project_result = await db.execute(project_query)
+        project = project_result.scalar_one_or_none()
+        genre = project.genre if project else None
 
         # 获取项目最新章节号（用于计算距离）
         latest_chapter_query = (
@@ -937,9 +945,9 @@ async def recalculate_items_priority(
                 if char and char.role_type:
                     character_importance = get_character_importance_weight(char.role_type)
 
-            # 获取物品类别权重
+            # 获取物品类别权重（使用题材适配）
             category_name = category_map.get(item.category_id) if item.category_id else None
-            item_category_weight = get_item_category_weight(category_name, item.tags)
+            item_category_weight = get_genre_adjusted_category_weight(category_name, genre)
 
             # 获取稀有度权重和保底
             rarity_weight = get_rarity_weight(item.rarity)
@@ -955,7 +963,7 @@ async def recalculate_items_priority(
             elif item.source_chapter_number:
                 distance = latest_chapter_number - item.source_chapter_number
 
-            # 计算新优先级
+            # 计算新优先级（使用增强版函数）
             new_priority = calculate_context_priority_v2(
                 distance=distance,
                 character_importance=character_importance,
@@ -965,7 +973,12 @@ async def recalculate_items_priority(
                 category_min=category_min,
                 mention_count=item.mention_count or 1,
                 is_plot_critical=item.is_plot_critical or False,
-                status=item.status
+                status=item.status,
+                # === 新增参数 ===
+                genre=genre,
+                is_foreshadow_item=item.is_foreshadow_item or False,
+                alias_mention_count=item.alias_mention_count or 0,
+                current_chapter=latest_chapter_number
             )
 
             # 更新物品

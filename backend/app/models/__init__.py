@@ -25,6 +25,7 @@ from app.models.item_transfer import ItemTransfer
 from app.models.item_status_change import ItemStatusChange
 from app.models.item_quantity_change import ItemQuantityChange
 from app.models.item_attribute_change import ItemAttributeChange
+from app.models.system_config import SystemDecorationConfig
 
 __all__ = [
     "Project",
@@ -61,4 +62,5 @@ __all__ = [
     "ItemStatusChange",
     "ItemQuantityChange",
     "ItemAttributeChange",
+    "SystemDecorationConfig",
 ]

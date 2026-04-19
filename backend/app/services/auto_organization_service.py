@@ -67,19 +67,22 @@ class AutoOrganizationService:
             user_id,
             db
         )
-        
+
         existing_orgs_summary = self._build_organization_summary(existing_organizations)
         existing_chars_summary = self._build_character_summary(existing_characters)
-        
+
+        # 构建 world_setting - 使用 world_setting_markdown
+        world_setting = project.world_setting_markdown or ""
+        if not world_setting:
+            # 兜底：如果没有 world_setting_markdown，拼接分散字段
+            world_setting = f"时间背景：{project.world_time_period or '未设定'}\n地理位置：{project.world_location or '未设定'}\n氛围基调：{project.world_atmosphere or '未设定'}\n世界规则：{project.world_rules or '未设定'}"
+
         prompt = PromptService.format_prompt(
             template,
             title=project.title,
             genre=project.genre or "未设定",
             theme=project.theme or "未设定",
-            time_period=project.world_time_period or "未设定",
-            location=project.world_location or "未设定",
-            atmosphere=project.world_atmosphere or "未设定",
-            rules=project.world_rules or "未设定",
+            world_setting=world_setting,
             existing_organizations=existing_orgs_summary,
             existing_characters=existing_chars_summary,
             plot_context="根据剧情需要引入的新组织",
