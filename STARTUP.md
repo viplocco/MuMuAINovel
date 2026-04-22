@@ -1,7 +1,7 @@
 # MuMuAINovel 启动指南
 
 > 本文档记录项目的快速启动步骤
-> 生成时间：2026-03-21
+> 生成时间：2026-04-22
 
 ---
 
@@ -171,8 +171,8 @@ docker ps | grep postgres
 MuMuAINovel/
 ├── backend/          # FastAPI 后端 (Python 3.11+)
 │   ├── app/         # 应用代码
-│   │   ├── api/     # 25+ API 路由
-│   │   ├── models/  # 21 数据模型
+│   │   ├── api/     # 27+ API 路由
+│   │   ├── models/  # 35+ 数据模型
 │   │   ├── services/# 业务逻辑
 │   │   └── mcp/     # MCP 工具集成
 │   ├── .venv/       # Python 虚拟环境
@@ -181,7 +181,7 @@ MuMuAINovel/
 │   └── static/      # 前端构建产物
 ├── frontend/        # React 前端
 │   ├── src/         # 源代码
-│   │   ├── pages/  # 27+ 页面组件
+│   │   ├── pages/  # 28+ 页面组件
 │   │   ├── components/
 │   │   └── store/  # Zustand 状态管理
 │   └── dist/        # 构建产物
@@ -203,4 +203,4 @@ MuMuAINovel/
 ---
 
 **维护者**: OpenClaw Assistant (小欧)
-**最后更新**: 2026-03-21
+**最后更新**: 2026-04-22

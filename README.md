@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-1.3.8-blue.svg)
+![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109.0-green.svg)
 ![React](https://img.shields.io/badge/react-18.3.1-blue.svg)
@@ -123,6 +123,10 @@
 - [x] **物品管理** - 智能追踪物品的出现、流转、消耗，支持物品分类、稀有度、属性等详细信息管理
 - [x] **系统装饰管理** - 管理员可全局控制季节装饰显示，支持强制启用模式，用户无需手动切换
 - [x] **用户管理增强** - 管理员可管理用户账户，包括创建、编辑、禁用、重置密码等操作
+- [x] **节奏分析功能** - 可视化章节类型分布和节奏强度曲线，帮助把控故事节奏
+- [x] **伏笔预警功能** - 自动检测未回收伏笔，智能预警提醒，上下文优先级管理
+- [x] **章节摘要管理** - 管理章节摘要，支持生成、编辑和查看
+- [x] **世界设定辅助** - 动态数组编辑器组件，辅助构建世界观设定
 
 ### 📝 规划中功能
 
@@ -527,8 +531,8 @@ ports:
 MuMuAINovel/
 ├── backend/                 # 后端服务 (FastAPI)
 │   ├── app/
-│   │   ├── api/            # API 路由 (26+ 路由文件)
-│   │   ├── models/         # 数据模型 (22 个模型)
+│   │   ├── api/            # API 路由 (27+ 路由文件)
+│   │   ├── models/         # 数据模型 (35+ 个模型)
 │   │   ├── services/       # 业务逻辑
 │   │   ├── middleware/     # 中间件
 │   │   ├── schemas/        # Pydantic 模式
@@ -539,7 +543,7 @@ MuMuAINovel/
 │   └── requirements.txt    # Python 依赖
 ├── frontend/               # 前端应用 (React)
 │   ├── src/
-│   │   ├── pages/         # 页面组件 (29+ 页面)
+│   │   ├── pages/         # 页面组件 (28+ 页面)
 │   │   ├── components/    # 通用组件
 │   │   ├── services/      # API 服务
 │   │   └── store/         # 状态管理 (Zustand)

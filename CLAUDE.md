@@ -126,8 +126,8 @@ alembic revision --autogenerate -m "描述"      # 创建新迁移
 
 ```
 backend/app/
-├── api/           # REST API 路由（26+ 路由文件）
-├── models/        # SQLAlchemy ORM 模型（22 个模型）
+├── api/           # REST API 路由（27+ 路由文件）
+├── models/        # SQLAlchemy ORM 模型（35+ 个模型）
 ├── services/      # 业务逻辑层
 ├── middleware/    # 认证和请求 ID 中间件
 ├── mcp/           # Model Context Protocol 集成
@@ -141,7 +141,7 @@ backend/app/
 
 ```
 frontend/src/
-├── pages/         # 页面组件（29+ 个页面）
+├── pages/         # 页面组件（28+ 个页面）
 ├── components/    # 可复用 UI 组件
 ├── services/      # Axios API 客户端
 ├── store/         # Zustand 状态管理
@@ -210,6 +210,22 @@ frontend/src/
 - 流程：创建任务 → 解析章节 → 生成预览 → 应用导入（流式）
 - 自动反向生成项目信息和章节大纲
 
+**节奏分析功能：**
+- `/api/outlines/rhythm-analysis/{project_id}` 提供章节类型分布和节奏强度曲线数据
+- 支持 17 种细粒度章节类型：主线推进、支线展开、过渡、小高潮、大高潮、人物关系、感情线、奇遇事件、秘境副本、反派视角、日常互动、战斗、修炼成长、势力冲突、伏笔埋设、伏笔回收
+- 数据维度区分：`data_level` 标识数据来源（chapter 或 outline）
+- 前端通过横向柱状图可视化展示节奏强度
+
+**伏笔预警功能：**
+- 伏笔状态自动追踪：planted（已埋入）、resolved（已回收）、abandoned（已废弃）
+- 上下文优先级管理：AI 生成时智能引用相关伏笔
+- 预警机制：检测未回收伏笔并提醒作者
+
+**章节摘要管理：**
+- 章节生成后自动创建摘要记录
+- 支持手动编辑和 AI 辅助生成
+- 用于构建 AI 上下文，提升连续性
+
 ### 数据库模型（核心）
 
 | 模型 | 说明 |
@@ -220,18 +236,35 @@ frontend/src/
 | `Character` | 角色档案及属性 |
 | `CharacterRelationship` | 角色间关系 |
 | `Organization` | 故事中的组织/势力 |
+| `OrganizationMember` | 组织成员关系 |
 | `Career` | 自定义职业/等级体系 |
 | `CareerTemplate` | 职业模板库 |
+| `CharacterCareer` | 角色职业关联 |
 | `StoryMemory` | AI 上下文的长期记忆 |
+| `PlotAnalysis` | 情节分析记录 |
 | `Foreshadow` | 伏笔追踪 |
 | `Item` | 物品管理 |
 | `ItemCategory` | 物品分类 |
 | `ItemTransfer` | 物品流转记录 |
+| `ItemAttributeChange` | 物品属性变更 |
+| `ItemQuantityChange` | 物品数量变更 |
+| `ItemStatusChange` | 物品状态变更 |
 | `WritingStyle` | 自定义写作风格 |
 | `PromptTemplate` | 用户自定义提示词模板 |
 | `PromptWorkshopItem` | 提示词工坊内容 |
+| `PromptSubmission` | 提示词提交记录 |
+| `PromptWorkshopLike` | 提示词点赞记录 |
 | `MCPPlugin` | MCP 工具配置 |
+| `User` | 用户账户 |
+| `UserPassword` | 用户密码记录 |
+| `Settings` | 用户个人设置 |
 | `SystemDecorationConfig` | 系统装饰配置（全局装饰管理） |
+| `AnalysisTask` | 分析任务记录 |
+| `BatchGenerationTask` | 批量生成任务 |
+| `RegenerationTask` | 重生成任务 |
+| `GenerationHistory` | 生成历史记录 |
+| `ProjectDefaultStyle` | 项目默认风格设置 |
+| `RelationshipType` | 关系类型定义 |
 
 ## 必需的环境变量
 
