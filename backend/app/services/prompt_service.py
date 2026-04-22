@@ -1381,6 +1381,12 @@ class PromptService:
 类型：{genre}
 开篇章节数：{chapter_count}
 叙事视角：{narrative_perspective}
+
+【节奏规划基础数据】
+目标字数：{target_words}
+每章字数：约3000字
+预估总章节数：{estimated_total_chapters}
+当前生成：开篇{chapter_count}章（占总进度{progress_percent}%）
 </project>
 
 <worldview priority="P1">
@@ -1418,7 +1424,11 @@ class PromptService:
    ],
    "key_points": ["情节要点1", "情节要点2"],
    "emotion": "本章情感基调",
-   "goal": "本章叙事目标"
+   "goal": "本章叙事目标",
+   "chapter_types": ["主线推进(60%)", "战斗(40%)"],
+   "story_lines": ["主线", "XX人物关系线"],
+   "rhythm_intensity": 7,
+   "rhythm_range": "5-8"
  }},
  {{
    "chapter_number": 2,
@@ -1431,13 +1441,31 @@ class PromptService:
    ],
    "key_points": ["要点1", "要点2"],
    "emotion": "情感基调",
-   "goal": "叙事目标"
+   "goal": "叙事目标",
+   "chapter_types": ["主线推进"],
+   "story_lines": ["主线"],
+   "rhythm_intensity": 5,
+   "rhythm_range": "4-6"
  }}
 ]
 
 【characters字段说明】
 - type为"character"表示个人角色，type为"organization"表示组织/势力/门派/帮派等
 - 必须区分角色和组织，不要把组织当作角色
+
+【新增字段说明】
+- chapter_types: 章节类型数组，支持多类型+占比标记
+  - 格式：["类型1(占比%)", "类型2(占比%)"]，如 ["主线推进(60%)", "战斗(40%)"]
+  - 单类型时可简写为 ["主线推进"]，默认占比100%
+  - 可选类型（细粒度分类）：
+    * 基础类型：主线推进、支线展开、过渡、小高潮、大高潮
+    * 人物类型：人物关系、感情线、日常互动
+    * 事件类型：奇遇事件、秘境副本、战斗、修炼成长
+    * 视角类型：反派视角、势力冲突
+    * 伏笔类型：伏笔埋设、伏笔回收
+- story_lines: 涉及的故事线列表，如 ["主线", "修炼线", "情感线"]
+- rhythm_intensity: 节奏强度(1-10)，1=平淡过渡，10=高潮爆发
+- rhythm_range: 节奏范围(格式"{{min}}-{{max}}")，仅用于可展开的大纲节点
 
 【格式规范】
 - 纯JSON数组输出，无markdown标记
@@ -1451,10 +1479,54 @@ class PromptService:
 ✅ 开局设定：前几章完成世界观呈现、主角登场、初始状态
 ✅ 矛盾引入：引出核心冲突，但不急于展开
 ✅ 角色亮相：主要角色依次登场，展示性格和关系
-✅ 节奏控制：开篇不宜过快，给读者适应时间
 ✅ 悬念设置：埋下伏笔和钩子，为续写预留空间
 ✅ 视角统一：采用{narrative_perspective}视角
 ✅ 留白艺术：结尾不收束过紧，留发展空间
+
+【黄金三章原则 - 开篇必遵】
+⚠️ 开篇前三章决定读者留存，必须严格遵守黄金三章原则：
+
+**第一章（先声夺人）**：
+- 开场即出矛盾/冲突/悬念，拒绝平淡铺垫
+- 要简单交代我是谁、我在干什么，我面临的处境
+- 主角立即登场并展现核心特质（性格/能力/处境）
+- 设置至少一个强力钩子（悬念/危机/机遇）
+- 节奏强度：7-8，类型：主线推进或小高潮
+
+**第二章（伏笔密集）**：
+- 承接第一章钩子，快速展开冲突
+- 埋入3-5个核心伏笔（世界观线索/角色关系/未来冲突）
+- 引入关键配角或势力，建立初步关系网
+- 节奏强度：6-7，类型：主线推进
+
+**第三章（悬念突出）**：
+- 制造第一个小高潮或关键转折
+- 悬念升级，读者必须想知道"接下来会发生什么"
+- 明确故事核心矛盾/目标/对手
+- 节奏强度：7-8，类型：小高潮或主线推进
+
+【章节类型系统性分布规划】
+⚠️ 章节类型分布需根据总章节数系统性规划，不可随机生成！
+
+**类型位置规划原则**：
+- 高潮前置铺垫：大高潮/小高潮前必须有1-2章过渡或准备类章节
+- 秘境前置准备：秘境副本前需有准备章节（装备/队伍/情报）
+- 高潮后缓冲：大高潮后需有缓冲章节（收获盘点、关系修复）
+- 波浪式节奏：每5-10章形成一个节奏波：铺垫→发展→小高潮→缓冲
+
+【多类型组合规则】
+允许组合：
+- 秘境副本(70%) + 小高潮(30%)：秘境结尾达成阶段性突破
+- 主线推进(60%) + 小高潮(40%)：主线关键节点达成阶段性突破
+- 主线推进(50%) + 人物关系(50%)：推进主线的同时深化关键关系
+- 奇遇事件(60%) + 主线推进(40%)：奇遇直接推动主线发展
+
+禁止组合：
+- 大高潮 + 过渡（矛盾，高潮强度高，过渡强度低）
+- 小高潮 + 人物关系（冲突，高潮需要剧情推进而非情感）
+- 多类型超过3个（过于复杂，难以聚焦）
+
+⚠️ 注意：黄金三章期间不使用过渡章节，前三章平均强度不低于6
 
 【必须遵守】
 ✅ 数量精确：数组包含{chapter_count}个章节对象
@@ -1492,7 +1564,28 @@ class PromptService:
 主题：{theme}
 类型：{genre}
 叙事视角：{narrative_perspective}
+
+【节奏规划基础数据】
+预估总章节数：{estimated_total_chapters}
+已完成章节：{current_chapter_count}章（进度{progress_percent}%）
+当前情节阶段：{plot_stage}（development/climax/ending）
 </project>
+
+<rhythm_analysis priority="P0">
+【已生成章节类型分布统计】
+{chapter_type_distribution}
+
+【后续节奏规划建议 - 必须参考】
+⚠️ 以下建议基于热门网络小说的节奏规律生成，续写时必须严格遵守：
+{rhythm_suggestions}
+
+【节奏规划执行要点】
+✅ 根据上述建议确定本次续写的节奏基调
+✅ 高潮章节前必须有铺垫章节（设置压力/危机/期待感）
+✅ 连续高强度后必须插入过渡/缓冲章节
+✅ 波浪式节奏：每批续写应形成"铺垫→发展→高潮/转折→缓冲"的节奏波
+✅ 章节类型分布需平衡，避免单一类型过多
+</rhythm_analysis>
 
 <worldview priority="P1">
 【世界观设定】
@@ -1544,7 +1637,11 @@ class PromptService:
    ],
    "key_points": ["情节要点1", "情节要点2"],
    "emotion": "本章情感基调",
-   "goal": "本章叙事目标"
+   "goal": "本章叙事目标",
+   "chapter_types": ["主线推进(60%)", "战斗(40%)"],
+   "story_lines": ["主线", "XX人物关系线"],
+   "rhythm_intensity": 7,
+   "rhythm_range": "5-8"
  }},
  {{
    "chapter_number": {start_chapter} + 1,
@@ -1557,13 +1654,31 @@ class PromptService:
    ],
    "key_points": ["要点1", "要点2"],
    "emotion": "情感基调",
-   "goal": "叙事目标"
+   "goal": "叙事目标",
+   "chapter_types": ["主线推进"],
+   "story_lines": ["主线"],
+   "rhythm_intensity": 5,
+   "rhythm_range": "4-6"
  }}
 ]
 
 【characters字段说明】
 - type为"character"表示个人角色，type为"organization"表示组织/势力/门派/帮派等
 - 必须区分角色和组织，不要把组织当作角色
+
+【新增字段说明】
+- chapter_types: 章节类型数组，支持多类型+占比标记
+  - 格式：["类型1(占比%)", "类型2(占比%)"]，如 ["主线推进(60%)", "战斗(40%)"]
+  - 单类型时可简写为 ["主线推进"]，默认占比100%
+  - 可选类型（细粒度分类）：
+    * 基础类型：主线推进、支线展开、过渡、小高潮、大高潮
+    * 人物类型：人物关系、感情线、日常互动
+    * 事件类型：奇遇事件、秘境副本、战斗、修炼成长
+    * 视角类型：反派视角、势力冲突
+    * 伏笔类型：伏笔埋设、伏笔回收
+- story_lines: 涉及的故事线列表，如 ["主线", "修炼线", "情感线"]
+- rhythm_intensity: 节奏强度(1-10)，1=平淡过渡，10=高潮爆发
+- rhythm_range: 节奏范围(格式"{{min}}-{{max}}")，仅用于可展开的大纲节点
 
 【格式规范】
 - 纯JSON数组输出，无markdown标记
@@ -1581,6 +1696,21 @@ class PromptService:
 ✅ 大纲详细：充分解析最近10章大纲的structure字段信息
 ✅ 伏笔规划：参考已埋入伏笔，合理规划回收时机
 ✅ 记忆一致：确保关键情节与前文不矛盾
+
+【续写节奏规划】
+✅ 参考已有大纲的章节类型分布，保持整体节奏平衡
+✅ 根据情节阶段{plot_stage}调整类型分配：
+  - development阶段：主线推进为主，穿插支线和过渡
+  - climax阶段：增加高潮密度，确保高潮前有铺垫章节
+  - ending阶段：节奏回落，过渡和收束为主
+✅ 高潮前置铺垫：生成高潮章节前，先规划1-2章过渡/准备
+✅ 结局阶段（ending）：节奏回落，收束伏笔
+
+【章节类型系统性分布规划】
+⚠️ 章节类型分布需根据总章节数系统性规划：
+- 高潮前置铺垫：大高潮/小高潮前必须有1-2章过渡或准备类章节
+- 秘境前置准备：秘境副本前需有准备章节
+- 波浪式节奏：每5-10章形成一个节奏波：铺垫→发展→小高潮→缓冲
 
 【必须遵守】
 ✅ 数量精确：数组包含{chapter_count}个章节
@@ -2866,6 +2996,9 @@ class PromptService:
 序号：第 {outline_order_index} 节
 标题：{outline_title}
 内容：{outline_content}
+
+【结构化信息】
+{outline_structure_info}
 </outline_node>
 
 <context priority="P2">
@@ -2887,9 +3020,24 @@ class PromptService:
     "emotional_tone": "情感基调（如：紧张、温馨、悲伤）",
     "narrative_goal": "叙事目标（该章要达成的叙事效果）",
     "conflict_type": "冲突类型（如：内心挣扎、人际冲突）",
-    "estimated_words": 3000{scene_field}
+    "estimated_words": 3000,
+    "rhythm_intensity": 7,
+    "chapter_types": ["主线推进(70%)", "战斗(30%)"],
+    "story_lines": ["主线", "XX人物关系线"]{scene_field}
   }}
 ]
+
+【新增字段说明】
+- rhythm_intensity: 子章节节奏强度(1-10)
+  - 应在大纲节点的 rhythm_range 范围内分布
+  - 结合展开策略调整：climax策略递增，balanced策略均匀，detail策略偏低
+- chapter_types: 章节类型数组（从父大纲的 chapter_types 范围中具体落实）
+  - 格式：["类型1(占比%)", "类型2(占比%)"]，如 ["主线推进(60%)", "战斗(40%)"]
+  - 可选类型：主线推进、支线展开、人物关系、奇遇事件、秘境副本、大高潮、小高潮、过渡
+  - 子章节的类型应继承父大纲的类型范围，并结合本章内容具体分配
+- story_lines: 涉及的故事线列表（从父大纲的 story_lines 中具体落实）
+  - 格式：["故事线1", "故事线2"]，如 ["主线", "修炼线", "情感线"]
+  - 子章节应明确本章涉及的具体故事线
 
 【格式规范】
 - 纯JSON数组输出，无其他文字
@@ -2925,6 +3073,15 @@ class PromptService:
 ✅ 每章有明确且独特的叙事价值
 ✅ 最后一章结束时恰好完成当前大纲内容
 ✅ 关键事件无重叠：检查相邻章节key_events
+
+【展开节奏分配】
+✅ 子章节节奏强度应在大纲节点的 rhythm_range 范围内分布
+✅ 结合展开策略调整节奏分配：
+  - climax策略：子章节强度递增，最后一章达到上限
+  - balanced策略：子章节强度均匀分布
+  - detail策略：子章节强度偏低（注重细节刻画）
+✅ 每个子章节必须标注 rhythm_intensity 字段
+✅ 高潮类大纲（如大高潮、小高潮）子章节强度应在8-10范围
 
 【禁止事项】
 ❌ 输出非JSON格式
@@ -2997,9 +3154,21 @@ class PromptService:
     "emotional_tone": "情感基调",
     "narrative_goal": "叙事目标",
     "conflict_type": "冲突类型",
-    "estimated_words": 3000{scene_field}
+    "estimated_words": 3000,
+    "rhythm_intensity": 7,
+    "chapter_types": ["主线推进(70%)", "战斗(30%)"],
+    "story_lines": ["主线", "XX人物关系线"]{scene_field}
   }}
 ]
+
+【新增字段说明】
+- rhythm_intensity: 子章节节奏强度(1-10)
+  - 结合展开策略调整：climax策略递增，balanced策略均匀，detail策略偏低
+- chapter_types: 章节类型数组（从父大纲的 chapter_types 范围中具体落实）
+  - 格式：["类型1(占比%)", "类型2(占比%)"]
+  - 子章节的类型应继承父大纲的类型范围
+- story_lines: 涉及的故事线列表（从父大纲的 story_lines 中具体落实）
+  - 子章节应明确本章涉及的具体故事线
 
 【格式规范】
 - 纯JSON数组输出，无其他文字
@@ -4561,7 +4730,7 @@ class PromptService:
                 "category": "大纲生成",
                 "description": "根据项目信息生成完整的章节大纲",
                 "parameters": ["title", "theme", "genre", "chapter_count", "narrative_perspective", "target_words",
-                             "world_setting", "characters_info", "requirements", "mcp_references"]
+                             "estimated_total_chapters", "progress_percent", "world_setting", "characters_info", "requirements", "mcp_references"]
             },
             "OUTLINE_CONTINUE": {
                 "name": "大纲续写",
@@ -4570,7 +4739,8 @@ class PromptService:
                 "parameters": ["title", "theme", "genre", "narrative_perspective", "chapter_count", "world_setting",
                              "characters_info", "current_chapter_count",
                              "all_chapters_brief", "recent_plot", "memory_context", "foreshadow_reminders", "mcp_references",
-                             "plot_stage_instruction", "start_chapter", "end_chapter", "story_direction", "requirements"]
+                             "plot_stage_instruction", "start_chapter", "end_chapter", "story_direction", "requirements",
+                             "estimated_total_chapters", "progress_percent", "plot_stage", "chapter_type_distribution", "rhythm_suggestions"]
             },
             "CHAPTER_GENERATION_ONE_TO_MANY": {
                 "name": "章节创作-1-N模式（第1章）",

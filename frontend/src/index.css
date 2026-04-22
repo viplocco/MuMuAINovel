@@ -434,3 +434,36 @@ body {
   font-style: italic;
 }
 
+/* Modal 固定 header 和 footer，只有 body 滚动 */
+.modal-fixed-header-footer .ant-modal-wrap {
+  overflow: hidden !important;
+}
+
+.modal-fixed-header-footer .ant-modal {
+  max-height: calc(100vh - 50px);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-fixed-header-footer .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  max-height: 100%;
+}
+
+.modal-fixed-header-footer .ant-modal-header {
+  flex-shrink: 0;
+}
+
+.modal-fixed-header-footer .ant-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.modal-fixed-header-footer .ant-modal-footer {
+  flex-shrink: 0;
+}
+

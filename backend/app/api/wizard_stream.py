@@ -896,10 +896,7 @@ async def career_system_generator(
             genre=project.genre or '未设定',
             theme=project.theme or '未设定',
             description=project.description or '暂无简介',
-            time_period=world_data.get('time_period', '未设定'),
-            location=world_data.get('location', '未设定'),
-            atmosphere=world_data.get('atmosphere', '未设定'),
-            rules=world_data.get('rules', '未设定'),
+            world_setting=project.world_setting_markdown or '未设定',
             attribute_schema_info=attribute_schema_info,
             attr_example_name=attr_example_name,
             stage_example=stage_example
@@ -1961,6 +1958,8 @@ async def outline_generator(
             chapter_count=outline_count,
             narrative_perspective=narrative_perspective,
             target_words=target_words // 10,  # 开局约占总字数的1/10
+            estimated_total_chapters=max(outline_count, target_words // 3000),
+            progress_percent=round(outline_count / max(1, target_words // 3000) * 100, 1),
             world_setting=world_setting,
             characters_info=characters_info or "暂无角色信息",
             mcp_references="",

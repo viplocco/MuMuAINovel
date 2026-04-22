@@ -410,6 +410,11 @@ const CareerSystemRenderer: React.FC<{ content: string; incrementalData?: any[];
   // 清洗并解析 JSON
   const parseCareerData = (text: string): CareerSystemData | null => {
     try {
+      // 如果是占位符文本或空内容，直接返回 null
+      if (!text || text.trim() === '' || text.includes('等待生成') || text.includes('正在生成')) {
+        return null;
+      }
+
       // 清洗 JSON
       let cleanContent = text;
 
@@ -418,6 +423,11 @@ const CareerSystemRenderer: React.FC<{ content: string; incrementalData?: any[];
       cleanContent = cleanContent.replace(/^```\s*\n?/g, '');
       cleanContent = cleanContent.replace(/\n?```\s*$/g, '');
       cleanContent = cleanContent.trim();
+
+      // 如果清洗后不是以 { 开头，说明不是有效 JSON
+      if (!cleanContent.startsWith('{')) {
+        return null;
+      }
 
       // 规范化中文引号
       cleanContent = cleanContent.replace(/[""]([^""]+)[""]\s*:/g, '"$1":');
@@ -428,7 +438,7 @@ const CareerSystemRenderer: React.FC<{ content: string; incrementalData?: any[];
 
       return JSON.parse(cleanContent);
     } catch (e) {
-      console.error('职业体系 JSON 解析失败:', e);
+      // 不打印错误日志，避免控制台污染
       return null;
     }
   };
@@ -789,6 +799,11 @@ const OutlineSystemRenderer: React.FC<{ content: string; incrementalData?: any[]
   // 清洗并解析 JSON
   const parseOutlineData = (text: string): OutlineData[] | null => {
     try {
+      // 如果是占位符文本或空内容，直接返回 null
+      if (!text || text.trim() === '' || text.includes('等待生成') || text.includes('正在生成')) {
+        return null;
+      }
+
       // 清洗 JSON
       let cleanContent = text;
 
@@ -797,6 +812,11 @@ const OutlineSystemRenderer: React.FC<{ content: string; incrementalData?: any[]
       cleanContent = cleanContent.replace(/^```\s*\n?/g, '');
       cleanContent = cleanContent.replace(/\n?```\s*$/g, '');
       cleanContent = cleanContent.trim();
+
+      // 如果清洗后不是以 { 或 [ 开头，说明不是有效 JSON
+      if (!cleanContent.startsWith('{') && !cleanContent.startsWith('[')) {
+        return null;
+      }
 
       // 规范化中文引号
       cleanContent = cleanContent.replace(/[""]([^""]+)[""]\s*:/g, '"$1":');
@@ -812,7 +832,7 @@ const OutlineSystemRenderer: React.FC<{ content: string; incrementalData?: any[]
       if (parsed.created_outlines) return parsed.created_outlines;
       return null;
     } catch (e) {
-      console.error('大纲 JSON 解析失败:', e);
+      // 不打印错误日志，避免控制台污染
       return null;
     }
   };

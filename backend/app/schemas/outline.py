@@ -120,6 +120,9 @@ class ChapterPlanItem(BaseModel):
     conflict_type: str = Field(..., description="冲突类型")
     estimated_words: int = Field(3000, description="预计字数", ge=1000)
     scenes: Optional[list[str]] = Field(None, description="场景列表(可选)")
+    rhythm_intensity: int = Field(5, description="节奏强度(1-10)", ge=1, le=10)
+    chapter_types: Optional[list[str]] = Field(None, description="章节类型数组，如['主线推进(60%)', '战斗(40%)']")
+    story_lines: Optional[list[str]] = Field(None, description="涉及的故事线列表，如['主线', '修炼线']")
 
     @field_validator('key_events', 'character_focus', mode='before')
     @classmethod
@@ -127,10 +130,10 @@ class ChapterPlanItem(BaseModel):
         """扁平化可能包含嵌套列表的字段"""
         return _flatten_nested_list(v)
 
-    @field_validator('scenes', mode='before')
+    @field_validator('scenes', 'chapter_types', 'story_lines', mode='before')
     @classmethod
-    def flatten_scenes(cls, v):
-        """扁平化scenes字段（可选字段）"""
+    def flatten_optional_list_fields(cls, v):
+        """扁平化可选列表字段"""
         if v is None:
             return None
         return _flatten_nested_list(v)

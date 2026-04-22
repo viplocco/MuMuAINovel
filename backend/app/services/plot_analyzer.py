@@ -185,8 +185,9 @@ class PlotAnalyzer:
                     logger.warning(f"⚠️ AI响应为空或过短(长度: {len(accumulated_text)}), 尝试 {attempt}/{max_retries}")
                     last_error = "AI响应为空或过短"
                     if attempt < max_retries:
-                        wait_time = min(2 ** attempt, 10)
-                        logger.info(f"  ⏳ 等待 {wait_time} 秒后重试...")
+                        # 空响应：短间隔快速重试
+                        wait_time = 2 + attempt  # attempt从1开始：3s→4s→5s
+                        logger.info(f"  ⏳ 等待 {wait_time} 秒后重试（空响应快速重试）...")
                         # 调用重试回调，通知调用方正在重试
                         if on_retry:
                             try:
@@ -218,8 +219,9 @@ class PlotAnalyzer:
                     logger.warning(f"⚠️ JSON解析失败, 尝试 {attempt}/{max_retries}")
                     last_error = "JSON解析失败"
                     if attempt < max_retries:
-                        wait_time = min(2 ** attempt, 10)
-                        logger.info(f"  ⏳ 等待 {wait_time} 秒后重试...")
+                        # JSON解析失败：中等间隔，给服务器恢复时间
+                        wait_time = min(3 * (attempt + 1), 12)  # attempt从1开始：6s→9s→12s
+                        logger.info(f"  ⏳ 等待 {wait_time} 秒后重试（JSON解析失败）...")
                         # 调用重试回调，通知调用方正在重试
                         if on_retry:
                             try:
@@ -235,10 +237,11 @@ class PlotAnalyzer:
             except Exception as e:
                 last_error = str(e)
                 logger.error(f"❌ 章节分析异常(尝试 {attempt}/{max_retries}): {last_error}")
-                
+
                 if attempt < max_retries:
-                    wait_time = min(2 ** attempt, 10)
-                    logger.info(f"  ⏳ 等待 {wait_time} 秒后重试...")
+                    # 异常：中等间隔
+                    wait_time = min(3 * (attempt + 1), 12)
+                    logger.info(f"  ⏳ 等待 {wait_time} 秒后重试（异常）...")
                     # 调用重试回调，通知调用方正在重试
                     if on_retry:
                         try:
@@ -711,42 +714,9 @@ class PlotAnalyzer:
                     }
                 })
 
-            # 6. 提取物品变化
-            for i, item_event in enumerate(analysis.get('items', [])):
-                item_name = item_event.get('item_name', '未知物品')
-                event_type = item_event.get('event_type', 'appear')
-
-                keyword = item_event.get('keyword', '')
-                position, length = self._find_text_position(chapter_content, keyword)
-
-                logger.info(f"  物品位置: keyword='{keyword[:30]}...', pos={position}, len={length}")
-
-                memories.append({
-                    'type': 'item_event',
-                    'content': item_event.get('description', ''),
-                    'title': f"物品[{item_name}] - {event_type}",
-                    'metadata': {
-                        'chapter_id': chapter_id,
-                        'chapter_number': chapter_number,
-                        'importance_score': 0.6,
-                        'tags': ['物品', item_event.get('item_type', '其他'), event_type],
-                        'is_foreshadow': 0,
-                        'item_name': item_name,
-                        'item_type': item_event.get('item_type'),
-                        'event_type': event_type,
-                        'from_character': item_event.get('from_character'),
-                        'to_character': item_event.get('to_character'),
-                        'quantity_change': item_event.get('quantity_change'),
-                        'quantity_after': item_event.get('quantity_after'),
-                        'reference_item_id': item_event.get('reference_item_id'),
-                        'rarity': item_event.get('rarity'),
-                        'special_effects': item_event.get('special_effects'),
-                        'suggested_category': item_event.get('suggested_category'),
-                        'keyword': keyword,
-                        'text_position': position,
-                        'text_length': length
-                    }
-                })
+            # 6. 物品变化处理已移至 chapters.py 中的单独提取逻辑
+            # 原因：物品记忆从专门物品分析结果提取，避免重复处理
+            # 物品记忆在 analyze_chapter_background 中从 item_analysis_result 单独提取
 
             # 7. 提取场景信息（已有 scenes 字段）
             for scene in analysis.get('scenes', []):
@@ -805,44 +775,52 @@ class PlotAnalyzer:
     def _find_text_position(self, full_text: str, keyword: str) -> tuple[int, int]:
         """
         在全文中查找关键词位置
-        
+
         Args:
             full_text: 完整文本
             keyword: 关键词
-        
+
         Returns:
             (起始位置, 长度) 如果未找到返回(-1, 0)
         """
         if not keyword or not full_text:
             return (-1, 0)
-        
+
         try:
             # 1. 精确匹配
             pos = full_text.find(keyword)
             if pos != -1:
                 return (pos, len(keyword))
-            
+
             # 2. 去除标点符号后匹配
             import re
             clean_keyword = re.sub(r'[，。！？、；：""''（）《》【】]', '', keyword)
             clean_text = re.sub(r'[，。！？、；：""''（）《》【】]', '', full_text)
             pos = clean_text.find(clean_keyword)
-            
+
             if pos != -1:
                 # 反向映射到原文位置（简化处理）
                 return (pos, len(clean_keyword))
-            
+
             # 3. 模糊匹配：查找关键词的前半部分
             if len(keyword) > 10:
                 partial = keyword[:min(15, len(keyword))]
                 pos = full_text.find(partial)
                 if pos != -1:
                     return (pos, len(partial))
-            
-            # 4. 未找到
-            logger.debug(f"未找到关键词位置: {keyword[:30]}...")
+
+            # 4. 新增：关键词前5字符的最后出现位置（作为近似位置）
+            if len(keyword) >= 5:
+                last_partial = keyword[:5]
+                pos = full_text.rfind(last_partial)  # 从后往前找
+                if pos != -1:
+                    logger.debug(f"使用关键词首5字符近似位置: '{last_partial}', pos={pos}")
+                    return (pos, 5)
+
+            # 5. 最终未找到
+            logger.warning(f"未找到关键词位置: {keyword[:30]}...")
             return (-1, 0)
-            
+
         except Exception as e:
             logger.error(f"查找位置失败: {str(e)}")
             return (-1, 0)

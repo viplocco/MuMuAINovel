@@ -1,12 +1,12 @@
 ﻿import { useState, useEffect, useMemo } from 'react';
-import { Button, List, Modal, Form, Input, Empty, Space, Popconfirm, Card, Select, Radio, Tag, InputNumber, Tabs, Pagination, theme, App } from 'antd';
-import { EditOutlined, DeleteOutlined, ThunderboltOutlined, BranchesOutlined, AppstoreAddOutlined, CheckCircleOutlined, ExclamationCircleOutlined, PlusOutlined, FileTextOutlined } from '@ant-design/icons';
+import { Button, List, Modal, Form, Input, Empty, Space, Popconfirm, Card, Select, Radio, Tag, InputNumber, Tabs, Pagination, theme, App, Progress, Collapse, Tooltip } from 'antd';
+import { EditOutlined, DeleteOutlined, ThunderboltOutlined, BranchesOutlined, AppstoreAddOutlined, CheckCircleOutlined, ExclamationCircleOutlined, PlusOutlined, FileTextOutlined, DownOutlined, UpOutlined, BarChartOutlined, LineChartOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useOutlineSync } from '../store/hooks';
 import { SSEPostClient } from '../utils/sseClient';
 import { SSEProgressModal } from '../components/SSEProgressModal';
 import { outlineApi, chapterApi, projectApi, characterApi } from '../services/api';
-import type { OutlineExpansionResponse, BatchOutlineExpansionResponse, ChapterPlanItem, ApiError, Character } from '../types';
+import type { OutlineExpansionResponse, BatchOutlineExpansionResponse, ChapterPlanItem, ApiError, Character, RhythmAnalysisResponse } from '../types';
 
 // 大纲生成请求数据类型
 interface OutlineGenerateRequestData {
@@ -93,6 +93,11 @@ interface OutlineStructureData {
   title?: string;
   summary?: string;
   content?: string;
+  // 新增：故事线分布相关字段
+  chapter_types?: string[];
+  story_lines?: string[];
+  rhythm_intensity?: number;
+  rhythm_range?: string;
 }
 
 function parseOutlineStructure(structure?: string): OutlineStructureData {
@@ -106,6 +111,202 @@ function parseOutlineStructure(structure?: string): OutlineStructureData {
 }
 
 const { TextArea } = Input;
+
+/** 节奏建议展示组件 - 结构化渲染节奏分析和后续5章规划 */
+function RhythmSuggestionsDisplay({ suggestions, token }: { suggestions: string; token: any }) {
+  // 解析建议文本，分为三个部分：策略建议、进度统计、后续5章规划
+  const lines = suggestions.split('\n');
+
+  // 找到分隔线位置
+  const dividerIndex = lines.findIndex(line => line.startsWith('====='));
+  const chapterPlanStart = lines.findIndex(line => line.includes('【后续5章节奏规划建议】'));
+
+  // 策略建议部分
+  const strategyLines = dividerIndex >= 0 ? lines.slice(0, dividerIndex) : lines;
+
+  // 后续5章规划部分
+  const planLines = chapterPlanStart >= 0 ? lines.slice(chapterPlanStart + 1) : [];
+
+  // 解析章节规划数据
+  const chapterPlans: Array<{
+    chapterNum: string;
+    title: string;
+    types: string;
+    intensity: string;
+    content: string;
+    purpose: string;
+  }> = [];
+
+  let currentChapter: any = null;
+  for (const line of planLines) {
+    if (line.startsWith('📖 第')) {
+      // 新章节开始
+      if (currentChapter) chapterPlans.push(currentChapter);
+      const match = line.match(/📖 第(\d+)章：(.+)/);
+      if (match) {
+        currentChapter = { chapterNum: match[1], title: match[2], types: '', intensity: '', content: '', purpose: '' };
+      }
+    } else if (currentChapter) {
+      if (line.startsWith('   类型：')) {
+        currentChapter.types = line.replace('   类型：', '');
+      } else if (line.startsWith('   节奏强度：')) {
+        currentChapter.intensity = line.replace('   节奏强度：', '');
+      } else if (line.startsWith('   建议内容：')) {
+        currentChapter.content = line.replace('   建议内容：', '');
+      } else if (line.startsWith('   目的：')) {
+        currentChapter.purpose = line.replace('   目的：', '');
+      }
+    }
+  }
+  if (currentChapter) chapterPlans.push(currentChapter);
+
+  // 根据节奏强度选择颜色
+  const getIntensityColor = (intensity: string) => {
+    const value = parseInt(intensity.replace('/10', '')) || 5;
+    if (value >= 8) return '#ff4d4f'; // 高潮 - 红
+    if (value >= 6) return '#faad14'; // 上升 - 黄
+    if (value >= 4) return '#1890ff'; // 中等 - 蓝
+    return '#52c41a'; // 低 - 绿
+  };
+
+  // 根据类型选择颜色
+  const getTypeColor = (types: string) => {
+    if (types.includes('大高潮')) return 'red';
+    if (types.includes('小高潮')) return 'orange';
+    if (types.includes('过渡')) return 'green';
+    if (types.includes('支线')) return 'cyan';
+    if (types.includes('奇遇') || types.includes('秘境')) return 'purple';
+    return 'blue';
+  };
+
+  return (
+    <div>
+      {/* 策略建议部分 */}
+      {strategyLines.map((line, idx) => {
+        const isTitle = line.startsWith('【') && line.includes('】');
+        const isListItem = line.trim().startsWith('•');
+        const isEmphasis = line.trim().startsWith('⚠️') || line.trim().startsWith('✅');
+
+        if (!line.trim()) return null;
+
+        return (
+          <div key={idx} style={{
+            fontWeight: isTitle ? 600 : 400,
+            color: isTitle ? token.colorPrimary : isEmphasis ? token.colorInfoText : token.colorTextSecondary,
+            marginTop: isTitle && idx > 0 ? 8 : 0,
+            marginBottom: isListItem ? 2 : 0,
+            paddingLeft: isListItem ? 8 : 0,
+          }}>
+            {line}
+          </div>
+        );
+      })}
+
+      {/* 进度统计 */}
+      {planLines.filter(line => line.startsWith('📊')).map((line, idx) => (
+        <div key={`progress-${idx}`} style={{
+          fontWeight: 500,
+          color: token.colorPrimary,
+          marginTop: 16,
+          marginBottom: 12,
+          fontSize: 14
+        }}>
+          {line}
+        </div>
+      ))}
+
+      {/* 后续5章规划卡片 */}
+      {chapterPlans.length > 0 && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: 12,
+          marginTop: 12
+        }}>
+          {chapterPlans.map((plan, idx) => (
+            <div key={idx} style={{
+              background: token.colorBgContainer,
+              borderRadius: token.borderRadius,
+              border: `1px solid ${getIntensityColor(plan.intensity)}30`,
+              padding: '12px 14px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
+            }}>
+              {/* 章节号和标题 */}
+              <div style={{
+                fontWeight: 600,
+                color: getIntensityColor(plan.intensity),
+                marginBottom: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}>
+                <span style={{
+                  background: getIntensityColor(plan.intensity),
+                  color: '#fff',
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontSize: 12
+                }}>
+                  第{plan.chapterNum}章
+                </span>
+                <span style={{ fontSize: 13 }}>{plan.title}</span>
+              </div>
+
+              {/* 类型标签 */}
+              <div style={{ marginBottom: 6 }}>
+                <Tag color={getTypeColor(plan.types)} style={{ margin: 0 }}>
+                  {plan.types.split('/')[0].trim()}
+                </Tag>
+              </div>
+
+              {/* 节奏强度 */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginBottom: 6
+              }}>
+                <Progress
+                  percent={parseInt(plan.intensity.replace('/10', '')) * 10 || 50}
+                  strokeColor={getIntensityColor(plan.intensity)}
+                  trailColor={getIntensityColor(plan.intensity) + '20'}
+                  showInfo={false}
+                  size="small"
+                  style={{ flex: 1 }}
+                />
+                <span style={{
+                  color: getIntensityColor(plan.intensity),
+                  fontWeight: 500,
+                  fontSize: 12
+                }}>
+                  {plan.intensity}
+                </span>
+              </div>
+
+              {/* 建议内容 */}
+              <div style={{
+                color: token.colorTextSecondary,
+                fontSize: 12,
+                lineHeight: 1.6,
+                marginBottom: 4
+              }}>
+                📝 {plan.content}
+              </div>
+
+              {/* 目的 */}
+              <div style={{
+                color: token.colorTextTertiary,
+                fontSize: 11
+              }}>
+                🎯 {plan.purpose}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Outline() {
   const { message } = App.useApp();
@@ -127,6 +328,9 @@ export default function Outline() {
   // ✅ 新增：记录场景区域的展开/折叠状态
   const [scenesExpandStatus, setScenesExpandStatus] = useState<Record<string, boolean>>({});
 
+  // ✅ 新增：记录大纲卡片内容区域的展开/折叠状态
+  const [outlineCardExpanded, setOutlineCardExpanded] = useState<Record<string, boolean>>({});
+
   // 缓存批量展开的规划数据，避免重复AI调用
   const [cachedBatchExpansionResponse, setCachedBatchExpansionResponse] = useState<BatchOutlineExpansionResponse | null>(null);
 
@@ -135,6 +339,10 @@ export default function Outline() {
   const [batchPreviewData, setBatchPreviewData] = useState<BatchOutlineExpansionResponse | null>(null);
   const [selectedOutlineIdx, setSelectedOutlineIdx] = useState(0);
   const [selectedChapterIdx, setSelectedChapterIdx] = useState(0);
+
+  // 节奏分析数据状态
+  const [rhythmAnalysis, setRhythmAnalysis] = useState<RhythmAnalysisResponse | null>(null);
+  const [rhythmLoading, setRhythmLoading] = useState(false);
 
   // SSE进度状态
   const [sseProgress, setSSEProgress] = useState(0);
@@ -187,6 +395,28 @@ export default function Outline() {
       console.error('加载角色列表失败:', error);
     }
   };
+
+  // 加载节奏分析数据
+  const loadRhythmAnalysis = async () => {
+    if (!currentProject?.id || outlines.length === 0) return;
+    setRhythmLoading(true);
+    try {
+      const data = await outlineApi.getRhythmAnalysis(currentProject.id);
+      setRhythmAnalysis(data);
+    } catch (error) {
+      console.error('加载节奏分析失败:', error);
+    } finally {
+      setRhythmLoading(false);
+    }
+  };
+
+  // 当大纲数据变化时加载节奏分析
+  useEffect(() => {
+    if (currentProject?.id && outlines.length > 0) {
+      loadRhythmAnalysis();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id, outlines.length]);
 
   // 从后端返回字段直接构建展开状态，避免前端 N+1 请求
   const outlineExpandStatus = useMemo(() => {
@@ -292,12 +522,9 @@ export default function Outline() {
         title: '编辑大纲',
         width: 800,
         centered: true,
-        styles: {
-          body: {
-            maxHeight: 'calc(100vh - 200px)',
-            overflowY: 'auto'
-          }
-        },
+        closable: true,
+        maskClosable: false,
+        rootClassName: 'modal-fixed-header-footer',
         content: (
           <Form
             form={editForm}
@@ -396,7 +623,7 @@ export default function Outline() {
             </Form.Item>
           </Form>
         ),
-        okText: '更新',
+        okText: '保存',
         cancelText: '取消',
         onOk: async () => {
           const values = await editForm.validateFields();
@@ -1137,6 +1364,9 @@ export default function Outline() {
         narrative_goal: string;
         conflict_type: string;
         estimated_words: number;
+        rhythm_intensity?: number;
+        chapter_types?: string[];
+        story_lines?: string[];
         scenes?: Array<{
           location: string;
           characters: string[];
@@ -1154,6 +1384,7 @@ export default function Outline() {
       ),
       width: isMobile ? '95%' : 900,
       centered: true,
+      closable: true,
       style: isMobile ? {
         top: 20,
         maxWidth: 'calc(100vw - 16px)',
@@ -1273,6 +1504,17 @@ export default function Outline() {
                           {plan.conflict_type}
                         </Tag>
                         <Tag color="green">约{plan.estimated_words}字</Tag>
+                        {plan.rhythm_intensity && (
+                          <Tag
+                            color={
+                              plan.rhythm_intensity >= 8 ? 'red' :
+                              plan.rhythm_intensity >= 6 ? 'orange' :
+                              plan.rhythm_intensity >= 4 ? 'blue' : 'default'
+                            }
+                          >
+                            强度 {plan.rhythm_intensity}/10
+                          </Tag>
+                        )}
                       </Space>
                     </Card>
 
@@ -1370,8 +1612,42 @@ export default function Outline() {
                           ))}
                         </Space>
                       </Card>
-                    )
-                    }
+                    )}
+
+                    {plan.chapter_types && plan.chapter_types.length > 0 && (
+                      <Card size="small" title="章节类型">
+                        <Space wrap style={{ maxWidth: '100%' }}>
+                          {plan.chapter_types.map((type, typeIdx) => {
+                            const typeName = type.includes('(') ? type.split('(')[0].trim() : type;
+                            let tagColor = 'blue';
+                            if (typeName.includes('高潮')) tagColor = 'red';
+                            else if (typeName.includes('主线')) tagColor = 'blue';
+                            else if (typeName.includes('支线')) tagColor = 'cyan';
+                            else if (typeName.includes('奇遇')) tagColor = 'gold';
+                            else if (typeName.includes('秘境') || typeName.includes('副本')) tagColor = 'purple';
+                            else if (typeName.includes('人物') || typeName.includes('关系')) tagColor = 'pink';
+                            else if (typeName.includes('过渡')) tagColor = 'default';
+                            return (
+                              <Tag key={typeIdx} color={tagColor} style={{ whiteSpace: 'normal', height: 'auto', lineHeight: '1.5' }}>
+                                {type}
+                              </Tag>
+                            );
+                          })}
+                        </Space>
+                      </Card>
+                    )}
+
+                    {plan.story_lines && plan.story_lines.length > 0 && (
+                      <Card size="small" title="故事线">
+                        <Space wrap style={{ maxWidth: '100%' }}>
+                          {plan.story_lines.map((line, lineIdx) => (
+                            <Tag key={lineIdx} color="green" style={{ whiteSpace: 'normal', height: 'auto', lineHeight: '1.5' }}>
+                              {line}
+                            </Tag>
+                          ))}
+                        </Space>
+                      </Card>
+                    )}
                   </Space>
                 </div >
               )
@@ -1423,6 +1699,15 @@ export default function Outline() {
                         <Tag color="blue">{plan.emotional_tone}</Tag>
                         <Tag color="orange">{plan.conflict_type}</Tag>
                         <Tag color="green">约{plan.estimated_words}字</Tag>
+                        {plan.rhythm_intensity && (
+                          <Tag color={
+                            plan.rhythm_intensity >= 8 ? 'red' :
+                            plan.rhythm_intensity >= 6 ? 'orange' :
+                            plan.rhythm_intensity >= 4 ? 'blue' : 'default'
+                          }>
+                            强度 {plan.rhythm_intensity}/10
+                          </Tag>
+                        )}
                       </Space>
                     </Card>
 
@@ -1449,6 +1734,40 @@ export default function Outline() {
                         ))}
                       </Space>
                     </Card>
+
+                    {plan.chapter_types && plan.chapter_types.length > 0 && (
+                      <Card size="small" title="章节类型">
+                        <Space wrap>
+                          {plan.chapter_types.map((type, typeIdx) => {
+                            const typeName = type.includes('(') ? type.split('(')[0].trim() : type;
+                            const pct = type.includes('(') ? type.match(/\((\d+%?)\)/)?.[1] : '';
+                            let tagColor = 'blue';
+                            if (typeName.includes('高潮')) tagColor = 'red';
+                            else if (typeName.includes('主线')) tagColor = 'blue';
+                            else if (typeName.includes('支线')) tagColor = 'cyan';
+                            else if (typeName.includes('奇遇')) tagColor = 'gold';
+                            else if (typeName.includes('秘境') || typeName.includes('副本')) tagColor = 'purple';
+                            else if (typeName.includes('人物') || typeName.includes('关系')) tagColor = 'pink';
+                            else if (typeName.includes('过渡')) tagColor = 'default';
+                            return (
+                              <Tag key={typeIdx} color={tagColor}>
+                                {typeName}{pct && ` (${pct})`}
+                              </Tag>
+                            );
+                          })}
+                        </Space>
+                      </Card>
+                    )}
+
+                    {plan.story_lines && plan.story_lines.length > 0 && (
+                      <Card size="small" title="故事线">
+                        <Space wrap>
+                          {plan.story_lines.map((line, lineIdx) => (
+                            <Tag key={lineIdx} color="green">{line}</Tag>
+                          ))}
+                        </Space>
+                      </Card>
+                    )}
 
                     {plan.scenes && plan.scenes.length > 0 && (
                       <Card size="small" title="场景">
@@ -1863,6 +2182,49 @@ export default function Outline() {
                     </Space>
                   </Card>
                 )}
+
+                {batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].rhythm_intensity && (
+                  <Card size="small" title="节奏强度" variant="borderless">
+                    <Tag
+                      color={
+                        batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].rhythm_intensity! >= 8 ? 'red' :
+                        batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].rhythm_intensity! >= 6 ? 'orange' :
+                        batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].rhythm_intensity! >= 4 ? 'blue' : 'default'
+                      }
+                    >
+                      {batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].rhythm_intensity}/10
+                    </Tag>
+                  </Card>
+                )}
+
+                {batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].chapter_types && batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].chapter_types!.length > 0 && (
+                  <Card size="small" title="章节类型" variant="borderless">
+                    <Space wrap>
+                      {batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].chapter_types!.map((type: string, typeIdx: number) => {
+                        const typeName = type.includes('(') ? type.split('(')[0].trim() : type;
+                        let tagColor = 'blue';
+                        if (typeName.includes('高潮')) tagColor = 'red';
+                        else if (typeName.includes('主线')) tagColor = 'blue';
+                        else if (typeName.includes('支线')) tagColor = 'cyan';
+                        else if (typeName.includes('奇遇')) tagColor = 'gold';
+                        else if (typeName.includes('秘境') || typeName.includes('副本')) tagColor = 'purple';
+                        else if (typeName.includes('人物') || typeName.includes('关系')) tagColor = 'pink';
+                        else if (typeName.includes('过渡')) tagColor = 'default';
+                        return <Tag key={typeIdx} color={tagColor}>{type}</Tag>;
+                      })}
+                    </Space>
+                  </Card>
+                )}
+
+                {batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].story_lines && batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].story_lines!.length > 0 && (
+                  <Card size="small" title="故事线" variant="borderless">
+                    <Space wrap>
+                      {batchPreviewData.expansion_results[selectedOutlineIdx].chapter_plans[selectedChapterIdx].story_lines!.map((line: string, lineIdx: number) => (
+                        <Tag key={lineIdx} color="green">{line}</Tag>
+                      ))}
+                    </Space>
+                  </Card>
+                )}
               </Space>
             ) : (
               <Empty description="请选择章节查看详情" />
@@ -2047,6 +2409,279 @@ export default function Outline() {
 
         {/* 可滚动内容区域 */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
+          {/* 节奏分布图表区域 */}
+          {outlines.length > 0 && rhythmAnalysis && (
+            <Collapse
+              defaultActiveKey={['curve']}
+              style={{ marginBottom: 16 }}
+              items={[
+                {
+                  key: 'distribution',
+                  label: (
+                    <Space>
+                      <BarChartOutlined style={{ color: token.colorPrimary }} />
+                      <span style={{ fontWeight: 500 }}>章节类型分布</span>
+                      <Tag color="blue">
+                        {rhythmAnalysis.data_level === 'chapter'
+                          ? `${rhythmAnalysis.distribution.total} 章（来自 ${rhythmAnalysis.total_outlines || 0} 个大纲）`
+                          : `${rhythmAnalysis.distribution.total} 个大纲`}
+                      </Tag>
+                    </Space>
+                  ),
+                  children: (
+                    <div style={{ padding: '8px 0' }}>
+                      {/* 分布柱状图 */}
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', gap: 8 }}>
+                        {Object.entries(rhythmAnalysis.distribution.counts)
+                          .filter(([, count]) => count > 0)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([type, count]) => {
+                            const pct = rhythmAnalysis.distribution.percentages[type] || 0;
+                            // 根据类型选择颜色（细粒度场景类型）
+                            let barColor = token.colorPrimary;
+                            let bgColor = token.colorPrimaryBg;
+                            // 高潮类型
+                            if (type.includes('高潮')) { barColor = '#ff4d4f'; bgColor = '#fff1f0'; }
+                            // 主线类型
+                            else if (type.includes('主线')) { barColor = '#1890ff'; bgColor = '#e6f7ff'; }
+                            // 支线类型
+                            else if (type.includes('支线')) { barColor = '#13c2c2'; bgColor = '#e6fffb'; }
+                            // 感情线类型
+                            else if (type.includes('感情') || type.includes('恋爱')) { barColor = '#f5222d'; bgColor = '#fff1f0'; }
+                            // 人物关系类型
+                            else if (type.includes('人物') || type.includes('关系')) { barColor = '#eb2f96'; bgColor = '#fff0f6'; }
+                            // 奇遇类型
+                            else if (type.includes('奇遇') || type.includes('机缘')) { barColor = '#faad14'; bgColor = '#fffbe6'; }
+                            // 秘境副本类型
+                            else if (type.includes('秘境') || type.includes('副本') || type.includes('探险')) { barColor = '#722ed1'; bgColor = '#f9f0ff'; }
+                            // 反派视角类型
+                            else if (type.includes('反派') || type.includes('敌人') || type.includes('对手')) { barColor = '#595959'; bgColor = '#fafafa'; }
+                            // 日常互动类型
+                            else if (type.includes('日常') || type.includes('生活')) { barColor = '#52c41a'; bgColor = '#f6ffed'; }
+                            // 战斗类型
+                            else if (type.includes('战斗') || type.includes('打斗') || type.includes('对决')) { barColor = '#fa8c16'; bgColor = '#fff2e8'; }
+                            // 修炼成长类型
+                            else if (type.includes('修炼') || type.includes('成长') || type.includes('突破')) { barColor = '#2f54eb'; bgColor = '#f0f5ff'; }
+                            // 势力冲突类型
+                            else if (type.includes('势力') || type.includes('门派') || type.includes('阵营')) { barColor = '#13c2c2'; bgColor = '#e6fffb'; }
+                            // 伏笔类型
+                            else if (type.includes('伏笔') || type.includes('铺垫')) { barColor = '#faad14'; bgColor = '#fffbe6'; }
+                            // 过渡类型
+                            else if (type.includes('过渡')) { barColor = '#8c8c8c'; bgColor = '#f5f5f5'; }
+
+                            return (
+                              <Tooltip key={type} title={`${count} ${rhythmAnalysis.data_level === 'chapter' ? '章' : '个大纲'}，占比 ${pct}%`}>
+                                <div style={{
+                                  padding: '8px 12px',
+                                  background: bgColor,
+                                  borderRadius: token.borderRadius,
+                                  border: `1px solid ${barColor}20`
+                                }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 12 }}>
+                                    <span style={{ fontWeight: 500, color: barColor }}>{type}</span>
+                                    <span style={{ color: token.colorTextSecondary }}>{count} ({pct}%)</span>
+                                  </div>
+                                  <Progress
+                                    percent={pct}
+                                    strokeColor={barColor}
+                                    trailColor={barColor + '20'}
+                                    showInfo={false}
+                                    size="small"
+                                  />
+                                </div>
+                              </Tooltip>
+                            );
+                          })}
+                      </div>
+                      {/* 节奏建议 */}
+                      {rhythmAnalysis.suggestions && (
+                        <div style={{
+                          marginTop: 12,
+                          padding: '12px 16px',
+                          background: token.colorInfoBg,
+                          borderLeft: `3px solid ${token.colorInfo}`,
+                          borderRadius: token.borderRadius,
+                          fontSize: 13,
+                          lineHeight: '1.8'
+                        }}>
+                          <RhythmSuggestionsDisplay suggestions={rhythmAnalysis.suggestions} token={token} />
+                        </div>
+                      )}
+                    </div>
+                  )
+                },
+                {
+                  key: 'curve',
+                  label: (
+                    <Space>
+                      <LineChartOutlined style={{ color: token.colorSuccess }} />
+                      <span style={{ fontWeight: 500 }}>节奏强度曲线</span>
+                      <Tag color="green">
+                        {rhythmAnalysis.data_level === 'chapter'
+                          ? `${rhythmAnalysis.rhythm_curve.length} 章`
+                          : `${rhythmAnalysis.rhythm_curve.length} 个大纲单元`}
+                      </Tag>
+                    </Space>
+                  ),
+                  children: (
+                    <div style={{ padding: '8px 0' }}>
+                      {/* 横向滚动柱状图容器 */}
+                      <div style={{
+                        position: 'relative',
+                        width: '100%'
+                      }}>
+                        {/* 滚动提示 */}
+                        {rhythmAnalysis.rhythm_curve.length > 20 && (
+                          <div style={{
+                            marginBottom: 8,
+                            padding: '6px 12px',
+                            background: token.colorInfoBg,
+                            borderRadius: token.borderRadius,
+                            fontSize: 12,
+                            color: token.colorInfoText,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8
+                          }}>
+                            <span>💡</span>
+                            <span>
+                              {rhythmAnalysis.data_level === 'chapter'
+                                ? `共有 ${rhythmAnalysis.rhythm_curve.length} 章，可左右滑动查看完整曲线`
+                                : `共有 ${rhythmAnalysis.rhythm_curve.length} 个大纲，可左右滑动查看完整曲线`}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* 横向柱状图 */}
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: 'row',
+                          alignItems: 'flex-end',
+                          gap: 2,
+                          overflowX: 'auto',
+                          overflowY: 'hidden',
+                          padding: '10px 4px',
+                          minHeight: 140,
+                          maxHeight: 180,
+                          background: token.colorFillQuaternary,
+                          borderRadius: token.borderRadius,
+                          scrollbarWidth: 'thin'
+                        }}>
+                          {rhythmAnalysis.rhythm_curve.map((item, idx) => {
+                            // 根据强度选择颜色和标签
+                            let intensityColor = '#8c8c8c';
+                            let intensityLabel = '过渡';
+                            if (item.intensity >= 8) {
+                              intensityColor = '#ff4d4f'; intensityLabel = '高潮';
+                            } else if (item.intensity >= 6) {
+                              intensityColor = '#faad14'; intensityLabel = '紧张';
+                            } else if (item.intensity >= 4) {
+                              intensityColor = '#1890ff'; intensityLabel = '平稳';
+                            }
+
+                            // 柱状条高度：强度 * 12px（最小12px，最大120px）
+                            const barHeight = Math.max(12, item.intensity * 12);
+
+                            return (
+                              <Tooltip
+                                key={idx}
+                                title={
+                                  <div style={{ fontSize: 12 }}>
+                                    <div><strong>#{item.index} {item.title}</strong></div>
+                                    {rhythmAnalysis.data_level === 'chapter' && item.outline_title && (
+                                      <div style={{ color: '#999', fontSize: 11 }}>
+                                        大纲: {item.outline_title} ({item.sub_index ?? 1})
+                                      </div>
+                                    )}
+                                    <div>类型: {item.all_types?.join(', ') || item.main_type}</div>
+                                    <div>强度: {item.intensity}/10 ({intensityLabel})</div>
+                                  </div>
+                                }
+                                placement="top"
+                              >
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    minWidth: isMobile ? 16 : 20,
+                                    maxWidth: isMobile ? 16 : 20,
+                                    cursor: 'pointer',
+                                    transition: 'transform 0.2s ease'
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'scaleY(1.1)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'scaleY(1)';
+                                  }}
+                                >
+                                  {/* 柱状条 */}
+                                  <div
+                                    style={{
+                                      width: isMobile ? 12 : 16,
+                                      height: barHeight,
+                                      background: intensityColor,
+                                      borderRadius: '2px 2px 0 0',
+                                      transition: 'background 0.2s ease',
+                                      position: 'relative'
+                                    }}
+                                  />
+                                  {/* 序号标签 */}
+                                  <span style={{
+                                    fontSize: isMobile ? 9 : 10,
+                                    color: token.colorTextSecondary,
+                                    marginTop: 2,
+                                    textAlign: 'center',
+                                    minWidth: isMobile ? 16 : 20
+                                  }}>
+                                    {item.index > 99 ? '···' : item.index}
+                                  </span>
+                                </div>
+                              </Tooltip>
+                            );
+                          })}
+                        </div>
+
+                        {/* 图例说明 */}
+                        <div style={{
+                          marginTop: 10,
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 8,
+                          fontSize: 11
+                        }}>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <span style={{ color: token.colorTextSecondary }}>强度说明：</span>
+                            <Tag color="red" style={{ margin: 0, fontSize: 10, padding: '0 6px' }}>8-10 高潮</Tag>
+                            <Tag color="orange" style={{ margin: 0, fontSize: 10, padding: '0 6px' }}>6-7 紧张</Tag>
+                            <Tag color="blue" style={{ margin: 0, fontSize: 10, padding: '0 6px' }}>4-5 平稳</Tag>
+                            <Tag color="default" style={{ margin: 0, fontSize: 10, padding: '0 6px' }}>1-3 过渡</Tag>
+                          </div>
+                          <span style={{ color: token.colorTextTertiary, fontSize: 10 }}>
+                            悬停查看详情
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
+              ]}
+            />
+          )}
+
+          {/* 加载状态 */}
+          {outlines.length > 0 && rhythmLoading && (
+            <Card style={{ marginBottom: 16 }} styles={{ body: { textAlign: 'center', padding: 20 } }}>
+              <Space>
+                <BarChartOutlined spin style={{ color: token.colorPrimary }} />
+                <span style={{ color: token.colorTextSecondary }}>正在加载节奏分析...</span>
+              </Space>
+            </Card>
+          )}
+
           {outlines.length === 0 ? (
             <Empty description="还没有大纲，开始创建吧！" />
           ) : filteredOutlines.length === 0 ? (
@@ -2095,26 +2730,62 @@ export default function Outline() {
                         <List.Item.Meta
                           style={{ width: '100%' }}
                           title={
-                            <Space size="small" style={{ fontSize: isMobile ? 13 : 16, flexWrap: 'wrap', lineHeight: isMobile ? '1.4' : '1.5' }}>
-                              <span style={{ color: token.colorPrimary, fontWeight: 'bold', fontSize: isMobile ? 13 : 16 }}>
-                                {currentProject?.outline_mode === 'one-to-one'
-                                  ? `第${item.order_index || '?'}章`
-                                  : `第${item.order_index || '?'}卷`
-                                }
-                              </span>
-                              <span style={{ fontSize: isMobile ? 13 : 16 }}>{item.title}</span>
-                              {/* ✅ 新增：展开状态标识 - 仅在一对多模式显示 */}
-                              {currentProject?.outline_mode === 'one-to-many' && (
-                                outlineExpandStatus[item.id] ? (
-                                  <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: isMobile ? 11 : 12 }}>已展开</Tag>
-                                ) : (
-                                  <Tag color="default" style={{ fontSize: isMobile ? 11 : 12 }}>未展开</Tag>
-                                )
-                              )}
-                            </Space>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                              <Space size="small" style={{ fontSize: isMobile ? 13 : 16, flexWrap: 'wrap', lineHeight: isMobile ? '1.4' : '1.5' }}>
+                                <span style={{ color: token.colorPrimary, fontWeight: 'bold', fontSize: isMobile ? 13 : 16 }}>
+                                  {currentProject?.outline_mode === 'one-to-one'
+                                    ? `第${item.order_index || '?'}章`
+                                    : `第${item.order_index || '?'}卷`
+                                  }
+                                </span>
+                                <span style={{ fontSize: isMobile ? 13 : 16 }}>{item.title}</span>
+                                {/* ✅ 新增：展开状态标识 - 仅在一对多模式显示 */}
+                                {currentProject?.outline_mode === 'one-to-many' && (
+                                  outlineExpandStatus[item.id] ? (
+                                    <Tag color="success" icon={<CheckCircleOutlined />} style={{ fontSize: isMobile ? 11 : 12 }}>已展开</Tag>
+                                  ) : (
+                                    <Tag color="default" style={{ fontSize: isMobile ? 11 : 12 }}>未展开</Tag>
+                                  )
+                                )}
+                              </Space>
+                              {/* ✅ 新增：卡片内容展开/收起按钮 */}
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={outlineCardExpanded[item.id] ? <UpOutlined /> : <DownOutlined />}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOutlineCardExpanded(prev => ({
+                                    ...prev,
+                                    [item.id]: !prev[item.id]
+                                  }));
+                                }}
+                                style={{ marginLeft: 8 }}
+                              />
+                            </div>
                           }
                           description={
                             <div style={{ fontSize: isMobile ? 12 : 14, lineHeight: isMobile ? '1.5' : '1.6' }}>
+                              {/* 收起时只显示大纲内容摘要 */}
+                              {!outlineCardExpanded[item.id] && (
+                                <div style={{
+                                  padding: isMobile ? '6px 8px' : '6px 10px',
+                                  background: token.colorBgContainer,
+                                  border: `1px solid ${token.colorBorder}`,
+                                  borderRadius: token.borderRadiusSM,
+                                  fontSize: isMobile ? 12 : 13,
+                                  color: token.colorText,
+                                  lineHeight: '1.6',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {item.content}
+                                </div>
+                              )}
+                              {/* 展开时显示完整内容 */}
+                              {outlineCardExpanded[item.id] && (
+                                <>
                               {/* 大纲内容 */}
                               <div style={{
                                 marginBottom: isMobile ? 10 : 12,
@@ -2745,8 +3416,253 @@ export default function Outline() {
                                 </div>
                               </div>
                             )}
-                          </div>
-                        }
+
+                            {/* ✨ 章节类型展示 (chapter_types) */}
+                            {structureData.chapter_types && structureData.chapter_types.length > 0 && (
+                              <div style={{
+                                marginTop: 12,
+                                padding: '10px 12px',
+                                background: token.colorPrimaryBg,
+                                borderLeft: `3px solid ${token.colorPrimary}`,
+                                borderRadius: token.borderRadius
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 8,
+                                  marginBottom: 8
+                                }}>
+                                  <span style={{
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    color: token.colorPrimary,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                  }}>
+                                    📊 章节类型
+                                    <Tag
+                                      color="blue"
+                                      style={{
+                                        margin: 0,
+                                        fontSize: 11,
+                                        borderRadius: 10,
+                                        padding: '0 6px'
+                                      }}
+                                    >
+                                      {structureData.chapter_types.length}
+                                    </Tag>
+                                  </span>
+                                </div>
+                                <Space wrap size={[4, 4]}>
+                                  {structureData.chapter_types.map((type, idx) => {
+                                    // 解析类型名称和占比
+                                    const typeMatch = type.match(/^([^(]+)\(?(\d*%?)?\)?$/);
+                                    const typeName = typeMatch ? typeMatch[1].trim() : type;
+                                    const percentage = typeMatch && typeMatch[2] ? typeMatch[2] : '';
+                                    // 根据类型名称选择颜色
+                                    let tagColor = 'blue';
+                                    if (typeName.includes('高潮')) tagColor = 'red';
+                                    else if (typeName.includes('主线')) tagColor = 'blue';
+                                    else if (typeName.includes('支线')) tagColor = 'cyan';
+                                    else if (typeName.includes('奇遇')) tagColor = 'gold';
+                                    else if (typeName.includes('秘境') || typeName.includes('副本')) tagColor = 'purple';
+                                    else if (typeName.includes('人物') || typeName.includes('关系')) tagColor = 'pink';
+                                    else if (typeName.includes('过渡')) tagColor = 'default';
+
+                                    return (
+                                      <Tag
+                                        key={idx}
+                                        color={tagColor}
+                                        style={{
+                                          margin: 0,
+                                          borderRadius: 4,
+                                          padding: isMobile ? '2px 8px' : '3px 10px',
+                                          fontSize: isMobile ? 11 : 12,
+                                          fontWeight: 500,
+                                          whiteSpace: 'normal',
+                                          wordBreak: 'break-word',
+                                          height: 'auto',
+                                          lineHeight: '1.5'
+                                        }}
+                                      >
+                                        {typeName}{percentage && ` (${percentage})`}
+                                      </Tag>
+                                    );
+                                  })}
+                                </Space>
+                              </div>
+                            )}
+
+                            {/* ✨ 故事线展示 (story_lines) */}
+                            {structureData.story_lines && structureData.story_lines.length > 0 && (
+                              <div style={{
+                                marginTop: 12,
+                                padding: '10px 12px',
+                                background: token.colorSuccessBg,
+                                borderLeft: `3px solid ${token.colorSuccess}`,
+                                borderRadius: token.borderRadius
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 8,
+                                  marginBottom: 8
+                                }}>
+                                  <span style={{
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    color: token.colorSuccess,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                  }}>
+                                    🔗 故事线
+                                    <Tag
+                                      color="green"
+                                      style={{
+                                        margin: 0,
+                                        fontSize: 11,
+                                        borderRadius: 10,
+                                        padding: '0 6px'
+                                      }}
+                                    >
+                                      {structureData.story_lines.length}
+                                    </Tag>
+                                  </span>
+                                </div>
+                                <Space wrap size={[4, 4]}>
+                                  {structureData.story_lines.map((line, idx) => (
+                                    <Tag
+                                      key={idx}
+                                      color="green"
+                                      style={{
+                                        margin: 0,
+                                        borderRadius: 4,
+                                        padding: isMobile ? '2px 8px' : '3px 10px',
+                                        fontSize: isMobile ? 11 : 12,
+                                        fontWeight: 500,
+                                        whiteSpace: 'normal',
+                                        wordBreak: 'break-word',
+                                        height: 'auto',
+                                        lineHeight: '1.5'
+                                      }}
+                                    >
+                                      {line}
+                                    </Tag>
+                                  ))}
+                                </Space>
+                              </div>
+                            )}
+
+                            {/* ✨ 节奏强度展示 (rhythm_intensity & rhythm_range) */}
+                            {(structureData.rhythm_intensity || structureData.rhythm_range) && (
+                              <div style={{
+                                marginTop: 12,
+                                padding: '10px 12px',
+                                background: token.colorWarningBg,
+                                borderLeft: `3px solid ${token.colorWarning}`,
+                                borderRadius: token.borderRadius
+                              }}>
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  flexWrap: 'wrap',
+                                  gap: 8
+                                }}>
+                                  <span style={{
+                                    fontSize: 13,
+                                    fontWeight: 600,
+                                    color: token.colorWarning,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                  }}>
+                                    ⚡ 节奏强度
+                                  </span>
+                                  <Space size={8} wrap>
+                                    {structureData.rhythm_intensity && (
+                                      <Tag
+                                        color={
+                                          structureData.rhythm_intensity >= 8 ? 'red' :
+                                          structureData.rhythm_intensity >= 6 ? 'orange' :
+                                          structureData.rhythm_intensity >= 4 ? 'blue' : 'default'
+                                        }
+                                        style={{
+                                          margin: 0,
+                                          borderRadius: 12,
+                                          padding: '2px 12px',
+                                          fontSize: 12,
+                                          fontWeight: 500
+                                        }}
+                                      >
+                                        {structureData.rhythm_intensity}/10
+                                        {structureData.rhythm_intensity >= 8 && ' (高潮)'}
+                                        {structureData.rhythm_intensity >= 6 && structureData.rhythm_intensity < 8 && ' (紧张)'}
+                                        {structureData.rhythm_intensity >= 4 && structureData.rhythm_intensity < 6 && ' (平稳)'}
+                                        {structureData.rhythm_intensity < 4 && ' (过渡)'}
+                                      </Tag>
+                                    )}
+                                    {structureData.rhythm_range && (
+                                      <Tag
+                                        color="gold"
+                                        style={{
+                                          margin: 0,
+                                          borderRadius: 12,
+                                          padding: '2px 12px',
+                                          fontSize: 12
+                                        }}
+                                      >
+                                        范围: {structureData.rhythm_range}
+                                      </Tag>
+                                    )}
+                                  </Space>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* ✨ 时间信息展示 */}
+                            {(item.created_at || item.updated_at) && (
+                              <div style={{
+                                marginTop: 12,
+                                padding: '8px 12px',
+                                background: token.colorFillQuaternary,
+                                borderRadius: token.borderRadius,
+                                fontSize: isMobile ? 11 : 12,
+                                color: token.colorTextSecondary,
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                gap: isMobile ? 4 : 12
+                              }}>
+                                {item.created_at && (
+                                  <span>
+                                    📅 创建于：{new Date(item.created_at).toLocaleString('zh-CN', {
+                                      year: 'numeric',
+                                      month: '2-digit',
+                                      day: '2-digit',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </span>
+                                )}
+                                {item.updated_at && item.updated_at !== item.created_at && (
+                                  <span>
+                                    🕐 更新于：{new Date(item.updated_at).toLocaleString('zh-CN', {
+                                      year: 'numeric',
+                                      month: '2-digit',
+                                      day: '2-digit',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                                </>
+                              )}
+                            </div>
+                          }
                       />
                         
                         {/* 操作按钮区域 - 在卡片内部 */}
@@ -2765,7 +3681,7 @@ export default function Outline() {
                               loading={isExpanding}
                               size={isMobile ? 'middle' : 'small'}
                             >
-                              展开
+                              拆分
                             </Button>
                           )}
                           <Button

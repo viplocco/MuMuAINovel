@@ -350,19 +350,24 @@ class AIService:
         if mcp_max_rounds is None:
             mcp_max_rounds = app_settings.mcp_max_rounds
 
-        # 检测 DeepSeek 模型并限制 max_tokens 和禁用工具
+        # 检测 DeepSeek 模型并限制 max_tokens（只在超过模型上限时）
         effective_model = model or self.default_model
         effective_max_tokens = max_tokens or self.default_max_tokens
-        is_deepseek = effective_model and effective_model.startswith("deepseek")
+        is_deepseek = effective_model and effective_model.lower().startswith("deepseek")
         if is_deepseek:
-            if effective_max_tokens and effective_max_tokens > 4096:
-                effective_max_tokens = 4096
-                logger.debug(f"DeepSeek 模型，限制 max_tokens 为 {effective_max_tokens}")
-            # DeepSeek 不支持 tool_choice 参数，且可能不支持 MCP 工具，禁用工具
+            # DeepSeek-V3.2 支持 32K 输出，只在超过上限时才限制
+            DEEPSEEK_MAX_TOKENS_LIMIT = 32000
+            if effective_max_tokens and effective_max_tokens > DEEPSEEK_MAX_TOKENS_LIMIT:
+                logger.info(f"🔧 DeepSeek 模型检测: max_tokens {effective_max_tokens} 超过上限，限制为 {DEEPSEEK_MAX_TOKENS_LIMIT}")
+                effective_max_tokens = DEEPSEEK_MAX_TOKENS_LIMIT
+            else:
+                logger.info(f"🔧 DeepSeek 模型检测: 使用配置的 max_tokens {effective_max_tokens}")
+            # DeepSeek 不支持 tool_choice 参数
             if tool_choice and tool_choice != "none":
                 tool_choice = None
             # 禁用 MCP 工具以避免 400 错误
             auto_mcp = False
+            logger.info(f"🔧 DeepSeek 模型检测: 禁用 MCP 工具")
 
         # 自动加载MCP工具（非 DeepSeek 模型）
         if auto_mcp and tools is None and not is_deepseek:
@@ -438,12 +443,16 @@ class AIService:
         effective_model = model or self.default_model
         effective_max_tokens = max_tokens or self.default_max_tokens
 
-        # 检测 DeepSeek 模型并限制 max_tokens 和禁用工具（流式调用同样需要）
-        is_deepseek = effective_model and effective_model.startswith("deepseek")
+        # 检测 DeepSeek 模型并限制 max_tokens（只在超过模型上限时）
+        is_deepseek = effective_model and effective_model.lower().startswith("deepseek")
         if is_deepseek:
-            if effective_max_tokens and effective_max_tokens > 4096:
-                effective_max_tokens = 4096
-                logger.debug(f"DeepSeek 流式调用，限制 max_tokens 为 {effective_max_tokens}")
+            # DeepSeek-V3.2 支持 32K 输出，只在超过上限时才限制
+            DEEPSEEK_MAX_TOKENS_LIMIT = 32000
+            if effective_max_tokens and effective_max_tokens > DEEPSEEK_MAX_TOKENS_LIMIT:
+                logger.info(f"🔧 DeepSeek 流式调用: max_tokens {effective_max_tokens} 超过上限，限制为 {DEEPSEEK_MAX_TOKENS_LIMIT}")
+                effective_max_tokens = DEEPSEEK_MAX_TOKENS_LIMIT
+            else:
+                logger.info(f"🔧 DeepSeek 流式调用: 使用配置的 max_tokens {effective_max_tokens}")
             # DeepSeek 不支持 tool_choice 参数
             if tool_choice and tool_choice != "none":
                 tool_choice = None
@@ -481,6 +490,14 @@ class AIService:
                 # 检查是否是结束信号
                 if isinstance(chunk, dict) and chunk.get("done"):
                     finish_reason = chunk.get("finish_reason")
+                    chunk_error = chunk.get("error")
+
+                    # 检测服务器端错误（如 network_error）
+                    if chunk_error or finish_reason in ("network_error", "error", "server_error"):
+                        error_msg = chunk_error or f"AI服务错误: finish_reason={finish_reason}"
+                        logger.error(f"❌ 流式生成服务端错误: {error_msg}")
+                        raise ValueError(error_msg)
+
                     logger.debug(f"流式生成结束, finish_reason: {finish_reason}, 已累积: {len(accumulated_content)}字")
                     break
                 elif isinstance(chunk, str):

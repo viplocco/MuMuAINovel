@@ -243,6 +243,13 @@ class OpenAIClient(BaseAIClient):
                             data_str = line[6:]
                             if data_str.strip() == "[DONE]":
                                 logger.info(f"📥 OpenAI 流式结束 - 原始行数: {raw_line_count}, 收到 {chunk_count} 个chunk, {content_count} 个有效内容块, finish_reason: {finish_reason}")
+
+                                # 检测服务器端错误（如 network_error）
+                                if finish_reason in ("network_error", "error", "server_error"):
+                                    logger.error(f"❌ AI服务返回错误状态: finish_reason={finish_reason}")
+                                    yield {"done": True, "finish_reason": finish_reason, "error": f"AI服务错误: {finish_reason}"}
+                                    break
+
                                 if tool_calls_buffer:
                                     yield {"tool_calls": list(tool_calls_buffer.values()), "done": True, "finish_reason": finish_reason}
                                 yield {"done": True, "finish_reason": finish_reason}

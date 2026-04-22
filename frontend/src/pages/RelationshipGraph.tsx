@@ -1235,6 +1235,10 @@ export default function RelationshipGraph() {
         <div style={{ flex: 1, minHeight: 0 }} className="relationship-graph-flow">
           <style>
             {`
+              .relationship-graph-flow {
+                touch-action: none;
+              }
+
               .relationship-graph-flow .react-flow__handle {
                 opacity: 0 !important;
                 background: transparent !important;

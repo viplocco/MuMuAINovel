@@ -894,6 +894,9 @@ export interface ChapterPlanItem {
     characters: string[];
     purpose: string;
   }>;
+  rhythm_intensity?: number;
+  chapter_types?: string[];
+  story_lines?: string[];
 }
 
 export interface OutlineExpansionRequest {
@@ -942,6 +945,32 @@ export interface BatchOutlineExpansionResponse {
     outline_title: string;
     reason: string;
   }>;
+}
+
+// 节奏分析相关类型定义
+export interface RhythmCurveItem {
+  index: number;
+  title: string;
+  intensity: number;
+  main_type: string;
+  all_types: string[];
+  outline_title?: string;  // 关联的大纲标题（章节级别数据时）
+  sub_index?: number;      // 大纲下的子序号（章节级别数据时）
+}
+
+export interface ChapterTypeDistribution {
+  counts: Record<string, number>;
+  percentages: Record<string, number>;
+  total: number;
+}
+
+export interface RhythmAnalysisResponse {
+  distribution: ChapterTypeDistribution;
+  rhythm_curve: RhythmCurveItem[];
+  suggestions: string;
+  data_level?: 'chapter' | 'outline';  // 数据维度标识
+  total_outlines?: number;              // 大纲总数
+  total_chapters?: number;              // 章节总数（细化模式）
 }
 
 export interface GenerateCharacterRequest {

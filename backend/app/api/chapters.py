@@ -973,7 +973,8 @@ async def analyze_chapter_items_specialized(
     chapter: Chapter,
     project_id: str,
     db_session: AsyncSession,
-    ai_service: AIService
+    ai_service: AIService,
+    max_retries: int = 2  # 新增参数：最大重试次数
 ) -> dict:
     """
     专门分析章节中的物品信息（使用 ITEM_ANALYSIS 提示词）
@@ -983,6 +984,7 @@ async def analyze_chapter_items_specialized(
         project_id: 项目ID
         db_session: 数据库会话
         ai_service: AI服务实例
+        max_retries: 最大重试次数，默认2次
 
     Returns:
         dict: 物品分析结果，包含 items 列表和 summary
@@ -1043,11 +1045,35 @@ async def analyze_chapter_items_specialized(
             categories_text = "（暂无分类）"
 
         # 4. 构建分析提示词
-        # 限制内容长度以加快响应
-        content_limit = 6000
-        chapter_content = chapter.content[:content_limit]
-        if len(chapter.content) > content_limit:
-            chapter_content += "\n...[内容已截断]..."
+        # 使用与主分析相同的均匀多段采样策略
+        ANALYSIS_CONTENT_LIMIT = 8000  # 物品分析适当提高上限
+
+        if len(chapter.content) <= ANALYSIS_CONTENT_LIMIT:
+            chapter_content = chapter.content
+        else:
+            # 均匀多段采样（与主分析策略一致）
+            head_length = int(ANALYSIS_CONTENT_LIMIT * 0.25)
+            tail_length = int(ANALYSIS_CONTENT_LIMIT * 0.25)
+            middle_total = ANALYSIS_CONTENT_LIMIT - head_length - tail_length
+
+            content_head = chapter.content[:head_length]
+            content_tail = chapter.content[-tail_length:]
+
+            # 中间部分均匀采样2段
+            content_middle_length = len(chapter.content) - head_length - tail_length
+            segment_count = 2
+            segment_length = middle_total // segment_count
+
+            middle_segments = []
+            for i in range(segment_count):
+                gap = content_middle_length // (segment_count + 1)
+                start_pos = head_length + gap * (i + 1) - segment_length // 2
+                start_pos = max(head_length, min(start_pos, len(chapter.content) - tail_length - segment_length))
+                segment = chapter.content[start_pos:start_pos + segment_length]
+                middle_segments.append(f"【中间部分{i+1}】\n{segment}")
+
+            chapter_content = f"【开头部分】\n{content_head}\n\n{''.join(middle_segments)}\n\n【结尾部分】\n{content_tail}\n\n⚠️ 此章节较长（共{len(chapter.content)}字），已均匀分段采样进行分析"
+            logger.info(f"📄 物品分析内容采样: {len(chapter.content)}字 → {len(chapter_content)}字（{segment_count + 2}段）")
 
         prompt = PromptService.ITEM_ANALYSIS.format(
             chapter_number=chapter.chapter_number,
@@ -1058,36 +1084,48 @@ async def analyze_chapter_items_specialized(
             categories_info=categories_text[:1000] if categories_text else "（暂无分类）"
         )
 
-        # 5. 执行AI分析
+        # 5. 执行AI分析（带重试机制）
         logger.info(f"📄 物品分析提示词长度: {len(prompt)} 字符")
 
-        analysis_response = await ai_service.generate_text(
-            prompt=prompt,
-            temperature=0.3,
-            max_tokens=8000
-        )
+        for attempt in range(1, max_retries + 1):
+            analysis_response = await ai_service.generate_text(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=8000
+            )
 
-        # 6. 解析分析结果
-        analysis_content = analysis_response.get('content', '') if isinstance(analysis_response, dict) else ''
+            analysis_content = analysis_response.get('content', '') if isinstance(analysis_response, dict) else ''
 
-        if not analysis_content or not analysis_content.strip():
-            logger.warning(f"⚠️ 物品分析返回空响应")
-            return {"items": [], "summary": "物品分析返回空响应"}
+            # 空响应检测（阈值50字符，因为JSON至少需要结构）
+            if not analysis_content or len(analysis_content.strip()) < 50:
+                logger.warning(f"⚠️ 物品分析响应为空(尝试 {attempt}/{max_retries})")
+                if attempt < max_retries:
+                    await asyncio.sleep(2 + attempt)
+                    continue
+                return {"items": [], "summary": "物品分析响应为空，已达最大重试"}
 
-        # 清理并解析JSON
-        cleaned_content = clean_json_response(analysis_content)
-        analysis_result = parse_json(cleaned_content)
-
-        if analysis_result is None:
+            # 解析JSON
             try:
-                analysis_result = json.loads(cleaned_content)
-            except json.JSONDecodeError:
-                logger.error(f"❌ 物品分析JSON解析失败")
+                cleaned_content = clean_json_response(analysis_content)
+                analysis_result = parse_json(cleaned_content)
+                if analysis_result and analysis_result.get('items'):
+                    logger.info(f"✅ 物品分析完成: 识别到 {len(analysis_result.get('items', []))} 个物品事件")
+                    return analysis_result
+                else:
+                    logger.warning(f"⚠️ 物品分析结果无items字段(尝试 {attempt}/{max_retries})")
+                    if attempt < max_retries:
+                        await asyncio.sleep(2)
+                        continue
+                    return {"items": [], "summary": "解析成功但无物品"}
+            except (json.JSONDecodeError, Exception) as parse_error:
+                logger.warning(f"⚠️ 物品分析JSON解析失败(尝试 {attempt}/{max_retries}): {parse_error}")
+                if attempt < max_retries:
+                    await asyncio.sleep(3)
+                    continue
                 return {"items": [], "summary": "JSON解析失败"}
 
-        logger.info(f"✅ 物品分析完成: 识别到 {len(analysis_result.get('items', []))} 个物品事件")
-
-        return analysis_result
+        # 达到最大重试仍未成功
+        return {"items": [], "summary": "物品分析失败，已达最大重试"}
 
     except Exception as e:
         logger.error(f"❌ 专门物品分析失败: {str(e)}", exc_info=True)
@@ -1434,6 +1472,45 @@ async def analyze_chapter_background(
             chapter_content=chapter.content or "",
             chapter_title=chapter.title or ""
         )
+
+        # 物品记忆单独提取（从专门物品分析结果）
+        # 注：主分析记忆提取已跳过 items 处理，避免重复
+        if item_analysis_result and item_analysis_result.get('items'):
+            item_memories = []
+            for item_data in item_analysis_result.get('items', []):
+                keyword = item_data.get('keyword', '')
+                position, length = analyzer._find_text_position(chapter.content or "", keyword)
+
+                item_memories.append({
+                    'type': 'item_event',
+                    'content': item_data.get('description', ''),
+                    'title': f"物品[{item_data.get('item_name', '未知')}] - {item_data.get('event_type', 'appear')}",
+                    'metadata': {
+                        'chapter_id': chapter_id,
+                        'chapter_number': chapter.chapter_number,
+                        'importance_score': 0.6,
+                        'tags': ['物品', item_data.get('item_type', '其他'), item_data.get('event_type', 'appear')],
+                        'is_foreshadow': 0,
+                        'item_name': item_data.get('item_name'),
+                        'item_type': item_data.get('item_type'),
+                        'event_type': item_data.get('event_type'),
+                        'from_character': item_data.get('from_character'),
+                        'to_character': item_data.get('to_character'),
+                        'quantity_change': item_data.get('quantity_change'),
+                        'quantity_after': item_data.get('quantity_after'),
+                        'reference_item_id': item_data.get('reference_item_id'),
+                        'rarity': item_data.get('rarity'),
+                        'special_effects': item_data.get('special_effects'),
+                        'suggested_category': item_data.get('suggested_category'),
+                        'keyword': keyword,
+                        'text_position': position,
+                        'text_length': length
+                    }
+                })
+
+            # 合并物品记忆到主记忆列表
+            memories.extend(item_memories)
+            logger.info(f"🎁 从物品分析单独提取 {len(item_memories)} 条记忆")
         
         # 先删除该章节的旧记忆（写操作，需要锁）
         async with write_lock:
@@ -1640,15 +1717,21 @@ async def analyze_chapter_background(
 
                 logger.info(f"🎁 开始根据物品分析结果同步物品信息...")
 
-                # 获取已有物品列表（用于匹配）
-                existing_items = await item_service._get_existing_items_for_matching(
-                    db_session, project_id
-                )
-                logger.info(f"📋 已获取{len(existing_items)}个已有物品用于匹配")
+                # 使用开头已获取的 existing_items 变量（第1179行附近），无需重新查询
+                logger.info(f"📋 使用已获取的{len(existing_items)}个物品用于同步")
 
                 # 转换分析结果为Schema格式（使用完整的字段）
                 analysis_items = []
                 for item_data in analysis_result.get('items', []):
+                    # 对 value 进行类型转换（AI可能返回浮点数如 0.5）
+                    raw_value = item_data.get('value')
+                    converted_value = None
+                    if raw_value is not None:
+                        try:
+                            converted_value = int(float(raw_value))
+                        except (ValueError, TypeError):
+                            converted_value = None
+
                     analysis_items.append(ItemAnalysisResult(
                         item_name=item_data.get('item_name', ''),
                         item_type=item_data.get('item_type'),
@@ -1664,7 +1747,7 @@ async def analyze_chapter_background(
                         quality=item_data.get('quality'),
                         special_effects=item_data.get('special_effects'),
                         lore=item_data.get('lore'),
-                        value=item_data.get('value'),
+                        value=converted_value,
                         aliases=item_data.get('aliases'),
                         attributes=item_data.get('attributes'),
                         is_plot_critical=item_data.get('is_plot_critical'),
@@ -2144,6 +2227,13 @@ async def generate_chapter_content_stream(
 
                 # 清理章节内容中的多余分隔符
                 cleaned_content = clean_chapter_content(full_content)
+
+                # 🚨 检测空内容（AI可能返回空响应）
+                if not cleaned_content or len(cleaned_content.strip()) < 50:
+                    error_msg = f"AI返回空内容或内容过短（{len(cleaned_content)}字符），可能是服务器端问题或内容过滤"
+                    logger.error(f"❌ {error_msg}")
+                    yield await tracker.error(error_msg, 500)
+                    return
 
                 # 更新章节内容到数据库
                 old_word_count = current_chapter.word_count or 0

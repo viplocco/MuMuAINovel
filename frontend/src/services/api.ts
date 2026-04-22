@@ -17,6 +17,7 @@ import type {
   OutlineExpansionResponse,
   BatchOutlineExpansionRequest,
   BatchOutlineExpansionResponse,
+  RhythmAnalysisResponse,
   Character,
   CharacterUpdate,
   Chapter,
@@ -496,6 +497,9 @@ export const outlineApi = {
           characters: string[];
           purpose: string;
         }> | null;
+        rhythm_intensity?: number;
+        chapter_types?: string[];
+        story_lines?: string[];
       }> | null;
     }>(`/outlines/${outlineId}/chapters`),
 
@@ -523,6 +527,10 @@ export const outlineApi = {
   // 批量展开大纲
   batchExpandOutlines: (data: BatchOutlineExpansionRequest) =>
     api.post<unknown, BatchOutlineExpansionResponse>('/outlines/batch-expand', data),
+
+  // 获取节奏分析数据（章节类型分布 + 节奏强度曲线）
+  getRhythmAnalysis: (projectId: string) =>
+    api.get<unknown, RhythmAnalysisResponse>(`/outlines/rhythm-analysis/${projectId}`),
 };
 
 export const characterApi = {

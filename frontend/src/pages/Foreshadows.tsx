@@ -511,44 +511,44 @@ export default function Foreshadows() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* 统计卡片 */}
       {stats && (
-        <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col span={3}>
-            <Card size="small">
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+          <Col xs={12} sm={6} md={3}>
+            <Card size="small" className="foreshadow-stats-card">
               <Statistic title="总计" value={stats.total} />
             </Card>
           </Col>
-          <Col span={3}>
-            <Card size="small">
+          <Col xs={12} sm={6} md={3}>
+            <Card size="small" className="foreshadow-stats-card">
               <Statistic title="待埋入" value={stats.pending} valueStyle={{ color: token.colorTextSecondary }} />
             </Card>
           </Col>
-          <Col span={3}>
-            <Card size="small">
+          <Col xs={12} sm={6} md={3}>
+            <Card size="small" className="foreshadow-stats-card">
               <Statistic title="已埋入" value={stats.planted} valueStyle={{ color: token.colorSuccess }} />
             </Card>
           </Col>
-          <Col span={3}>
-            <Card size="small">
+          <Col xs={12} sm={6} md={3}>
+            <Card size="small" className="foreshadow-stats-card">
               <Statistic title="已回收" value={stats.resolved} valueStyle={{ color: token.colorPrimary }} />
             </Card>
           </Col>
-          <Col span={3}>
-            <Card size="small">
+          <Col xs={12} sm={6} md={3}>
+            <Card size="small" className="foreshadow-stats-card">
               <Statistic title="部分回收" value={stats.partially_resolved} valueStyle={{ color: token.colorWarning }} />
             </Card>
           </Col>
-          <Col span={3}>
-            <Card size="small">
+          <Col xs={12} sm={6} md={3}>
+            <Card size="small" className="foreshadow-stats-card">
               <Statistic title="已废弃" value={stats.abandoned} valueStyle={{ color: token.colorTextSecondary }} />
             </Card>
           </Col>
-          <Col span={3}>
-            <Card size="small">
+          <Col xs={12} sm={6} md={3}>
+            <Card size="small" className="foreshadow-stats-card">
               <Statistic title="长线伏笔" value={stats.long_term_count} valueStyle={{ color: token.colorInfo }} />
             </Card>
           </Col>
-          <Col span={3}>
-            <Card size="small">
+          <Col xs={12} sm={6} md={3}>
+            <Card size="small" className="foreshadow-stats-card">
               <Statistic
                 title="超期未回收"
                 value={stats.overdue_count}
@@ -559,6 +559,30 @@ export default function Foreshadows() {
           </Col>
         </Row>
       )}
+
+      {/* 移动端统计卡片横向布局样式 */}
+      <style>{`
+        @media (max-width: 576px) {
+          .foreshadow-stats-card .ant-statistic {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+          }
+          .foreshadow-stats-card .ant-statistic-title {
+            margin-bottom: 0 !important;
+            font-size: 12px;
+            flex-shrink: 0;
+          }
+          .foreshadow-stats-card .ant-statistic-content {
+            display: flex;
+            align-items: center;
+          }
+          .foreshadow-stats-card .ant-statistic-content-value {
+            font-size: 18px !important;
+          }
+        }
+      `}</style>
 
       {/* 自动同步提示 */}
       <Alert

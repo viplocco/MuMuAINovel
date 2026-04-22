@@ -147,6 +147,22 @@ class PlotExpansionService:
         # 获取大纲上下文（前后大纲）
         context_info = await self._get_outline_context(outline, project.id, db)
 
+        # 解析大纲 structure 中的节奏信息
+        outline_structure = json.loads(outline.structure or '{}')
+        rhythm_info = {
+            'chapter_types': outline_structure.get('chapter_types', ['主线推进']),
+            'rhythm_intensity': outline_structure.get('rhythm_intensity', 5),
+            'rhythm_range': outline_structure.get('rhythm_range', '3-7'),
+            'emotion': outline_structure.get('emotion', ''),
+            'story_lines': outline_structure.get('story_lines', [])
+        }
+        # 格式化结构化信息为提示词文本
+        outline_structure_info = f"""章节类型：{', '.join(rhythm_info['chapter_types'])}
+节奏强度：{rhythm_info['rhythm_intensity']}
+节奏范围：{rhythm_info['rhythm_range']}
+情感基调：{rhythm_info['emotion'] or '未设定'}
+故事线：{', '.join(rhythm_info['story_lines']) or '主线'}"""
+
         # 获取策略说明文字
         strategy_instruction = get_strategy_instruction(expansion_strategy)
 
@@ -170,6 +186,7 @@ class PlotExpansionService:
             outline_order_index=outline.order_index,
             outline_title=outline.title,
             outline_content=outline.content,
+            outline_structure_info=outline_structure_info,  # 新增：结构化信息
             context_info=context_info,
             strategy_instruction=strategy_instruction,
             target_chapter_count=target_chapter_count,
@@ -501,7 +518,10 @@ class PlotExpansionService:
                 "narrative_goal": plan.get("narrative_goal", ""),
                 "conflict_type": plan.get("conflict_type", ""),
                 "estimated_words": plan.get("estimated_words", 3000),
-                "scenes": plan.get("scenes", []) if plan.get("scenes") else None
+                "scenes": plan.get("scenes", []) if plan.get("scenes") else None,
+                "rhythm_intensity": plan.get("rhythm_intensity"),
+                "chapter_types": plan.get("chapter_types"),
+                "story_lines": plan.get("story_lines")
             }, ensure_ascii=False)
             
             chapter = Chapter(
