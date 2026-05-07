@@ -46,13 +46,14 @@ RUN apt-get update && apt-get install -y \
 # 复制后端依赖文件
 COPY backend/requirements.txt ./
 
-# 使用国内 pip 镜像安装 PyTorch CPU 版本
-RUN pip config set global.timeout 600 && \
-    pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ torch --index-url https://download.pytorch.org/whl/cpu || \
-    pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ torch
+# 复制预下载的 wheel 包（离线安装，避免容器内网络慢）
+COPY wheels/ /wheels/
 
-# 安装其他 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+# 离线安装 PyTorch CPU 版本
+RUN pip install --no-cache-dir --no-index --find-links=/wheels/ torch
+
+# 离线安装其他 Python 依赖，缺失时回退到阿里云镜像
+RUN pip install --no-cache-dir --find-links=/wheels/ -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
 # 创建 embedding 目录
 RUN mkdir -p /app/embedding
